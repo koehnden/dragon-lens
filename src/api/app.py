@@ -1,0 +1,48 @@
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from src.api.routers import metrics, tracking, verticals
+from src.config import settings
+from src.models import init_db
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator:
+    init_db()
+    yield
+
+app = FastAPI(
+    title=settings.app_name,
+    description="Track brand visibility in Chinese LLMs",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, restrict this
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(verticals.router, prefix="/api/v1/verticals", tags=["verticals"])
+app.include_router(tracking.router, prefix="/api/v1/tracking", tags=["tracking"])
+app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
+
+
+@app.get("/")
+async def root():
+    return {
+        "name": settings.app_name,
+        "version": "0.1.0",
+        "status": "running",
+    }
+
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
