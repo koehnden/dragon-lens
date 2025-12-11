@@ -1,0 +1,617 @@
+openapi: 3.1.0
+info:
+  title: DragonLens
+  description: Track brand visibility in Chinese LLMs
+  version: 0.1.0
+paths:
+  /api/v1/verticals:
+    post:
+      tags:
+      - verticals
+      summary: Create Vertical
+      description: "Create a new vertical.\n\nArgs:\n    vertical: Vertical data to\
+        \ create\n    db: Database session\n\nReturns:\n    Created vertical\n\nRaises:\n\
+        \    HTTPException: If vertical with same name already exists"
+      operationId: create_vertical_api_v1_verticals_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerticalCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerticalResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - verticals
+      summary: List Verticals
+      description: "List all verticals.\n\nArgs:\n    skip: Number of records to skip\n\
+        \    limit: Maximum number of records to return\n    db: Database session\n\
+        \nReturns:\n    List of verticals"
+      operationId: list_verticals_api_v1_verticals_get
+      parameters:
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Skip
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VerticalResponse'
+                title: Response List Verticals Api V1 Verticals Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/verticals/{vertical_id}:
+    get:
+      tags:
+      - verticals
+      summary: Get Vertical
+      description: "Get a specific vertical by ID.\n\nArgs:\n    vertical_id: Vertical\
+        \ ID\n    db: Database session\n\nReturns:\n    Vertical data\n\nRaises:\n\
+        \    HTTPException: If vertical not found"
+      operationId: get_vertical_api_v1_verticals__vertical_id__get
+      parameters:
+      - name: vertical_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Vertical Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerticalResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tracking/jobs:
+    post:
+      tags:
+      - tracking
+      summary: Create Tracking Job
+      description: "Create a new tracking job.\n\nThis will:\n1. Create or get the\
+        \ vertical\n2. Create brands and prompts\n3. Create a Run record\n4. Enqueue\
+        \ a Celery task to process the tracking (TODO)\n\nArgs:\n    job: Tracking\
+        \ job configuration\n    db: Database session\n\nReturns:\n    Tracking job\
+        \ response with run ID"
+      operationId: create_tracking_job_api_v1_tracking_jobs_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackingJobCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackingJobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tracking/runs:
+    get:
+      tags:
+      - tracking
+      summary: List Runs
+      description: "List tracking runs with optional filters.\n\nArgs:\n    vertical_id:\
+        \ Filter by vertical ID\n    model_name: Filter by model name\n    skip: Number\
+        \ of records to skip\n    limit: Maximum number of records to return\n   \
+        \ db: Database session\n\nReturns:\n    List of runs"
+      operationId: list_runs_api_v1_tracking_runs_get
+      parameters:
+      - name: vertical_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Vertical Id
+      - name: model_name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Name
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Skip
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RunResponse'
+                title: Response List Runs Api V1 Tracking Runs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tracking/runs/{run_id}:
+    get:
+      tags:
+      - tracking
+      summary: Get Run
+      description: "Get details of a specific run.\n\nArgs:\n    run_id: Run ID\n\
+        \    db: Database session\n\nReturns:\n    Run details\n\nRaises:\n    HTTPException:\
+        \ If run not found"
+      operationId: get_run_api_v1_tracking_runs__run_id__get
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Run Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/metrics/latest:
+    get:
+      tags:
+      - metrics
+      summary: Get Latest Metrics
+      description: "Get latest metrics for a vertical and model.\n\nArgs:\n    vertical_id:\
+        \ Vertical ID\n    model_name: Model name\n    db: Database session\n\nReturns:\n\
+        \    Latest metrics for all brands in the vertical\n\nRaises:\n    HTTPException:\
+        \ If vertical not found or no data available"
+      operationId: get_latest_metrics_api_v1_metrics_latest_get
+      parameters:
+      - name: vertical_id
+        in: query
+        required: true
+        schema:
+          type: integer
+          description: Vertical ID
+          title: Vertical Id
+        description: Vertical ID
+      - name: model_name
+        in: query
+        required: true
+        schema:
+          type: string
+          description: Model name
+          title: Model Name
+        description: Model name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/metrics/daily:
+    get:
+      tags:
+      - metrics
+      summary: Get Daily Metrics
+      description: "Get daily metrics for a specific brand over time.\n\nArgs:\n \
+        \   vertical_id: Vertical ID\n    brand_id: Brand ID\n    model_name: Model\
+        \ name\n    start_date: Start date (optional)\n    end_date: End date (optional)\n\
+        \    db: Database session\n\nReturns:\n    Daily metrics time series"
+      operationId: get_daily_metrics_api_v1_metrics_daily_get
+      parameters:
+      - name: vertical_id
+        in: query
+        required: true
+        schema:
+          type: integer
+          description: Vertical ID
+          title: Vertical Id
+        description: Vertical ID
+      - name: brand_id
+        in: query
+        required: true
+        schema:
+          type: integer
+          description: Brand ID
+          title: Brand Id
+        description: Brand ID
+      - name: model_name
+        in: query
+        required: true
+        schema:
+          type: string
+          description: Model name
+          title: Model Name
+        description: Model name
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Start date
+          title: Start Date
+        description: Start date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: End date
+          title: End Date
+        description: End date
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /:
+    get:
+      summary: Root
+      operationId: root__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /health:
+    get:
+      summary: Health
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+components:
+  schemas:
+    BrandCreate:
+      properties:
+        display_name:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Display Name
+        aliases:
+          additionalProperties:
+            items:
+              type: string
+            type: array
+          type: object
+          title: Aliases
+          description: Brand aliases in different languages
+      type: object
+      required:
+      - display_name
+      title: BrandCreate
+    BrandMetrics:
+      properties:
+        brand_id:
+          type: integer
+          title: Brand Id
+        brand_name:
+          type: string
+          title: Brand Name
+        mention_rate:
+          type: number
+          title: Mention Rate
+        avg_rank:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Avg Rank
+        sentiment_positive:
+          type: number
+          title: Sentiment Positive
+        sentiment_neutral:
+          type: number
+          title: Sentiment Neutral
+        sentiment_negative:
+          type: number
+          title: Sentiment Negative
+      type: object
+      required:
+      - brand_id
+      - brand_name
+      - mention_rate
+      - avg_rank
+      - sentiment_positive
+      - sentiment_neutral
+      - sentiment_negative
+      title: BrandMetrics
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    MetricsResponse:
+      properties:
+        vertical_id:
+          type: integer
+          title: Vertical Id
+        vertical_name:
+          type: string
+          title: Vertical Name
+        model_name:
+          type: string
+          title: Model Name
+        date:
+          type: string
+          format: date-time
+          title: Date
+        brands:
+          items:
+            $ref: '#/components/schemas/BrandMetrics'
+          type: array
+          title: Brands
+      type: object
+      required:
+      - vertical_id
+      - vertical_name
+      - model_name
+      - date
+      - brands
+      title: MetricsResponse
+    PromptCreate:
+      properties:
+        text_en:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text En
+        text_zh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text Zh
+        language_original:
+          type: string
+          pattern: ^(en|zh)$
+          title: Language Original
+      type: object
+      required:
+      - language_original
+      title: PromptCreate
+    RunResponse:
+      properties:
+        id:
+          type: integer
+          title: Id
+        vertical_id:
+          type: integer
+          title: Vertical Id
+        model_name:
+          type: string
+          title: Model Name
+        status:
+          type: string
+          title: Status
+        run_time:
+          type: string
+          format: date-time
+          title: Run Time
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+        error_message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Message
+      type: object
+      required:
+      - id
+      - vertical_id
+      - model_name
+      - status
+      - run_time
+      - completed_at
+      - error_message
+      title: RunResponse
+    TrackingJobCreate:
+      properties:
+        vertical_name:
+          type: string
+          minLength: 1
+          title: Vertical Name
+        vertical_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Vertical Description
+        brands:
+          items:
+            $ref: '#/components/schemas/BrandCreate'
+          type: array
+          title: Brands
+        prompts:
+          items:
+            $ref: '#/components/schemas/PromptCreate'
+          type: array
+          title: Prompts
+        model_name:
+          type: string
+          title: Model Name
+          description: Model to use (qwen, deepseek, kimi)
+          default: qwen
+      type: object
+      required:
+      - vertical_name
+      - brands
+      - prompts
+      title: TrackingJobCreate
+    TrackingJobResponse:
+      properties:
+        run_id:
+          type: integer
+          title: Run Id
+        vertical_id:
+          type: integer
+          title: Vertical Id
+        model_name:
+          type: string
+          title: Model Name
+        status:
+          type: string
+          title: Status
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - run_id
+      - vertical_id
+      - model_name
+      - status
+      - message
+      title: TrackingJobResponse
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    VerticalCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+      type: object
+      required:
+      - name
+      title: VerticalCreate
+    VerticalResponse:
+      properties:
+        id:
+          type: integer
+          title: Id
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - name
+      - description
+      - created_at
+      title: VerticalResponse
