@@ -202,3 +202,52 @@ def test_get_daily_metrics_with_data(client: TestClient, db_session: Session, se
     assert data["data"][0]["mention_rate"] == 0.75
     assert data["data"][0]["avg_rank"] == 2.0
     assert data["data"][0]["sentiment_positive"] == 0.6
+
+
+def test_get_daily_metrics_brand_not_in_vertical(
+    client: TestClient, db_session: Session, setup_test_data
+):
+    other_vertical = Vertical(name="Other", description="Other vertical")
+    db_session.add(other_vertical)
+    db_session.flush()
+
+    other_brand = Brand(
+        vertical_id=other_vertical.id,
+        display_name="Ford",
+        aliases={"zh": [], "en": []},
+    )
+    db_session.add(other_brand)
+    db_session.commit()
+
+    response = client.get(
+        "/api/v1/metrics/daily",
+        params={
+            "vertical_id": setup_test_data["vertical_id"],
+            "brand_id": other_brand.id,
+            "model_name": "qwen",
+        },
+    )
+
+    assert response.status_code == 404
+    assert "Brand" in response.json()["detail"]
+
+
+def test_get_daily_metrics_invalid_date_range(
+    client: TestClient, setup_test_data
+):
+    vertical_id = setup_test_data["vertical_id"]
+    brand_id = setup_test_data["brand1_id"]
+
+    response = client.get(
+        "/api/v1/metrics/daily",
+        params={
+            "vertical_id": vertical_id,
+            "brand_id": brand_id,
+            "model_name": "qwen",
+            "start_date": "2024-05-02T00:00:00",
+            "end_date": "2024-05-01T00:00:00",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "start_date" in response.json()["detail"]

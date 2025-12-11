@@ -13,6 +13,31 @@ from src.models.schemas import BrandMetrics, MetricsResponse
 router = APIRouter()
 
 
+def get_vertical_or_raise(db: Session, vertical_id: int) -> Vertical:
+    vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+    if not vertical:
+        raise HTTPException(status_code=404, detail=f"Vertical {vertical_id} not found")
+    return vertical
+
+
+def validate_brand_belongs_to_vertical(
+    db: Session, brand_id: int, vertical_id: int
+) -> Brand:
+    brand = db.query(Brand).filter(Brand.id == brand_id).first()
+    if not brand or brand.vertical_id != vertical_id:
+        detail = f"Brand {brand_id} not found in vertical {vertical_id}"
+        raise HTTPException(status_code=404, detail=detail)
+    return brand
+
+
+def validate_date_range(
+    start_date: Optional[datetime], end_date: Optional[datetime]
+) -> None:
+    if start_date and end_date and start_date > end_date:
+        detail = "start_date must be on or before end_date"
+        raise HTTPException(status_code=400, detail=detail)
+
+
 @router.get("/latest", response_model=MetricsResponse)
 async def get_latest_metrics(
     vertical_id: int = Query(..., description="Vertical ID"),
@@ -33,16 +58,29 @@ async def get_latest_metrics(
     Raises:
         HTTPException: If vertical not found or no data available
     """
-    vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
-    if not vertical:
-        raise HTTPException(status_code=404, detail=f"Vertical {vertical_id} not found")
+    vertical = get_vertical_or_raise(db, vertical_id)
 
     latest_run = (
         db.query(Run)
-        .filter(Run.vertical_id == vertical_id, Run.model_name == model_name)
+        .filter(
+            Run.vertical_id == vertical_id,
+            Run.model_name == model_name,
+            Run.answers.any(),
+        )
         .order_by(Run.run_time.desc())
         .first()
     )
+
+    if not latest_run:
+        latest_run = (
+            db.query(Run)
+            .filter(
+                Run.vertical_id == vertical_id,
+                Run.model_name == model_name,
+            )
+            .order_by(Run.run_time.desc())
+            .first()
+        )
 
     if not latest_run:
         raise HTTPException(
@@ -90,7 +128,7 @@ async def get_latest_metrics(
             if m.mentioned:
                 sentiment_counts[m.sentiment.value] += 1
 
-        mentioned = mentioned_count if mentioned_count > 0 else 1  # Avoid division by zero
+        mentioned = mentioned_count if mentioned_count > 0 else 1
         sentiment_pos = sentiment_counts["positive"] / mentioned
         sentiment_neu = sentiment_counts["neutral"] / mentioned
         sentiment_neg = sentiment_counts["negative"] / mentioned
@@ -139,6 +177,10 @@ async def get_daily_metrics(
     Returns:
         Daily metrics time series
     """
+    get_vertical_or_raise(db, vertical_id)
+    validate_brand_belongs_to_vertical(db, brand_id, vertical_id)
+    validate_date_range(start_date, end_date)
+
     query = db.query(DailyMetrics).filter(
         DailyMetrics.vertical_id == vertical_id,
         DailyMetrics.brand_id == brand_id,
