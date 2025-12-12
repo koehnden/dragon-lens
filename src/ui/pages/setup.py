@@ -4,6 +4,7 @@ import httpx
 import streamlit as st
 
 from config import settings
+from ui.prompt_parser import parse_prompt_entries
 
 
 def show():
@@ -23,83 +24,65 @@ def show():
         placeholder="Brief description of this vertical",
     )
 
-    st.header("2. Brands to Track")
-    st.write("Add the brands you want to track, including your own brand and competitors.")
+    st.header("2. Primary Brand")
+    st.write("Track a single primary brand and let the system discover competitors automatically.")
 
-    num_brands = st.number_input("Number of brands", min_value=1, max_value=20, value=3)
+    brand_name = st.text_input(
+        "Brand Display Name",
+        key="brand_name_primary",
+        placeholder="e.g., 大众",
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        zh_aliases = st.text_area(
+            "Chinese Aliases (one per line)",
+            key="brand_zh_primary",
+            placeholder="上汽大众\n一汽大众",
+            help="Chinese names and variations for this brand",
+        )
+    with col2:
+        en_aliases = st.text_area(
+            "English Aliases (one per line)",
+            key="brand_en_primary",
+            placeholder="Volkswagen\nVW",
+            help="English names and variations for this brand",
+        )
+
+    zh_list = [a.strip() for a in zh_aliases.split("\n") if a.strip()]
+    en_list = [a.strip() for a in en_aliases.split("\n") if a.strip()]
 
     brands = []
-    for i in range(num_brands):
-        with st.expander(f"Brand {i + 1}", expanded=(i == 0)):
-            brand_name = st.text_input(
-                "Brand Display Name",
-                key=f"brand_name_{i}",
-                placeholder="e.g., Tesla Model Y",
-            )
-
-            col1, col2 = st.columns(2)
-            with col1:
-                zh_aliases = st.text_area(
-                    "Chinese Aliases (one per line)",
-                    key=f"brand_zh_{i}",
-                    placeholder="特斯拉Model Y\n特斯拉Y\nTesla Y",
-                    help="Chinese names and variations for this brand",
-                )
-            with col2:
-                en_aliases = st.text_area(
-                    "English Aliases (one per line)",
-                    key=f"brand_en_{i}",
-                    placeholder="Tesla Model Y\nModel Y\nTesla Y",
-                    help="English names and variations for this brand",
-                )
-
-            zh_list = [a.strip() for a in zh_aliases.split("\n") if a.strip()]
-            en_list = [a.strip() for a in en_aliases.split("\n") if a.strip()]
-
-            if brand_name:
-                brands.append({
-                    "display_name": brand_name,
-                    "aliases": {
-                        "zh": zh_list,
-                        "en": en_list,
-                    }
-                })
+    if brand_name:
+        brands.append(
+            {
+                "display_name": brand_name,
+                "aliases": {
+                    "zh": zh_list,
+                    "en": en_list,
+                },
+            }
+        )
 
     st.header("3. Prompts")
-    st.write("Add prompts to ask the LLMs. You can use English or Chinese.")
+    st.write("Paste prompts separated by new lines to add multiple at once.")
 
-    num_prompts = st.number_input("Number of prompts", min_value=1, max_value=20, value=2)
+    prompt_language = st.radio(
+        "Prompt Language",
+        ["Chinese (中文)", "English"],
+        key="prompt_language",
+        horizontal=True,
+    )
 
-    prompts = []
-    for i in range(num_prompts):
-        with st.expander(f"Prompt {i + 1}", expanded=(i == 0)):
-            lang = st.radio(
-                "Language",
-                ["Chinese (中文)", "English"],
-                key=f"prompt_lang_{i}",
-                horizontal=True,
-            )
+    prompts_text = st.text_area(
+        "Prompts (one per line)",
+        key="prompts_text",
+        placeholder="推荐几款值得购买的SUV\n分享几款智能纯电车型\n比亚迪有哪些热门车型",
+        height=200,
+    )
 
-            prompt_text = st.text_area(
-                "Prompt Text",
-                key=f"prompt_text_{i}",
-                placeholder="e.g., 推荐几款值得购买的SUV (Recommend some SUVs worth buying)",
-                height=100,
-            )
-
-            if prompt_text:
-                if lang == "Chinese (中文)":
-                    prompts.append({
-                        "text_zh": prompt_text,
-                        "text_en": None,
-                        "language_original": "zh",
-                    })
-                else:
-                    prompts.append({
-                        "text_en": prompt_text,
-                        "text_zh": None,
-                        "language_original": "en",
-                    })
+    prompt_language_code = "zh" if prompt_language == "Chinese (中文)" else "en"
+    prompts = parse_prompt_entries(prompts_text, prompt_language_code)
 
     st.header("4. Model Selection")
     model_name = st.selectbox(
