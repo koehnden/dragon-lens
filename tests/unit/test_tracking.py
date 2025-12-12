@@ -207,3 +207,32 @@ def test_get_nonexistent_run(client: TestClient):
 
     assert response.status_code == 404
     assert "not found" in response.json()["detail"]
+
+
+def test_get_run_details_empty(client: TestClient):
+    job_response = client.post(
+        "/api/v1/tracking/jobs",
+        json={
+            "vertical_name": "SUV Cars",
+            "brands": [{"display_name": "VW"}],
+            "prompts": [{"text_en": "Test", "language_original": "en"}],
+            "model_name": "qwen",
+        },
+    )
+
+    run_id = job_response.json()["run_id"]
+    response = client.get(f"/api/v1/tracking/runs/{run_id}/details")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == run_id
+    assert data["model_name"] == "qwen"
+    assert data["vertical_name"] == "SUV Cars"
+    assert data["answers"] == []
+
+
+def test_get_run_details_nonexistent(client: TestClient):
+    response = client.get("/api/v1/tracking/runs/999/details")
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"]

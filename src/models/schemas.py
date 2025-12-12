@@ -97,3 +97,40 @@ class RunResponse(BaseModel):
     error_message: Optional[str]
 
     model_config = {"from_attributes": True}
+
+
+class BrandMentionResponse(BaseModel):
+    brand_id: int
+    brand_name: str
+    mentioned: bool
+    rank: Optional[int]
+    sentiment: str
+    evidence_snippets: Dict[str, List[str]]
+
+    model_config = {"from_attributes": True}
+
+
+class LLMAnswerResponse(BaseModel):
+    id: int
+    prompt_text_zh: Optional[str]
+    prompt_text_en: Optional[str]
+    raw_answer_zh: str
+    raw_answer_en: Optional[str]
+    mentions: List[BrandMentionResponse]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RunDetailedResponse(BaseModel):
+    id: int
+    vertical_id: int
+    vertical_name: str
+    model_name: str
+    status: str
+    run_time: datetime
+    completed_at: Optional[datetime]
+    error_message: Optional[str]
+    answers: List[LLMAnswerResponse]
+
+    model_config = {"from_attributes": True}

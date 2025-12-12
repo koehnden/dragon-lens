@@ -268,3 +268,93 @@ def test_tracking_job_minimal_data(client: TestClient):
     data = response.json()
     assert data["model_name"] == "qwen"  # Default model
     assert data["status"] == "pending"
+
+
+def test_get_run_details_with_answers(client: TestClient, db_session: Session):
+    """Test retrieving detailed run information with answers and mentions."""
+    from models import LLMAnswer, BrandMention
+    from models.domain import Sentiment
+
+    job_response = client.post(
+        "/api/v1/tracking/jobs",
+        json={
+            "vertical_name": "SUV Cars",
+            "brands": [
+                {"display_name": "Mercedes-Benz", "aliases": {"zh": ["奔驰"], "en": ["Mercedes"]}},
+                {"display_name": "BMW", "aliases": {"zh": ["宝马"], "en": []}},
+            ],
+            "prompts": [
+                {"text_en": "Best luxury SUVs?", "text_zh": "最好的豪华SUV?", "language_original": "en"},
+            ],
+            "model_name": "qwen",
+        },
+    )
+
+    run_id = job_response.json()["run_id"]
+    vertical_id = job_response.json()["vertical_id"]
+
+    vertical = db_session.query(Vertical).filter(Vertical.id == vertical_id).first()
+    brands = db_session.query(Brand).filter(Brand.vertical_id == vertical_id).all()
+    prompts = db_session.query(Prompt).filter(Prompt.vertical_id == vertical_id).all()
+    run = db_session.query(Run).filter(Run.id == run_id).first()
+
+    llm_answer = LLMAnswer(
+        run_id=run_id,
+        prompt_id=prompts[0].id,
+        raw_answer_zh="奔驰GLE和宝马X5都是非常好的豪华SUV选择。",
+        raw_answer_en="Mercedes-Benz GLE and BMW X5 are both excellent luxury SUV choices.",
+    )
+    db_session.add(llm_answer)
+    db_session.flush()
+
+    mention1 = BrandMention(
+        llm_answer_id=llm_answer.id,
+        brand_id=brands[0].id,
+        mentioned=True,
+        rank=1,
+        sentiment=Sentiment.POSITIVE,
+        evidence_snippets={"zh": ["奔驰GLE...非常好"], "en": ["Mercedes-Benz GLE...excellent"]},
+    )
+
+    mention2 = BrandMention(
+        llm_answer_id=llm_answer.id,
+        brand_id=brands[1].id,
+        mentioned=True,
+        rank=2,
+        sentiment=Sentiment.POSITIVE,
+        evidence_snippets={"zh": ["宝马X5...非常好"], "en": ["BMW X5...excellent"]},
+    )
+
+    db_session.add(mention1)
+    db_session.add(mention2)
+    db_session.commit()
+
+    response = client.get(f"/api/v1/tracking/runs/{run_id}/details")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["id"] == run_id
+    assert data["vertical_name"] == "SUV Cars"
+    assert data["model_name"] == "qwen"
+    assert len(data["answers"]) == 1
+
+    answer = data["answers"][0]
+    assert answer["prompt_text_zh"] == "最好的豪华SUV?"
+    assert answer["prompt_text_en"] == "Best luxury SUVs?"
+    assert answer["raw_answer_zh"] == "奔驰GLE和宝马X5都是非常好的豪华SUV选择。"
+    assert answer["raw_answer_en"] == "Mercedes-Benz GLE and BMW X5 are both excellent luxury SUV choices."
+
+    assert len(answer["mentions"]) == 2
+
+    mercedes_mention = next(m for m in answer["mentions"] if m["brand_name"] == "Mercedes-Benz")
+    assert mercedes_mention["mentioned"] is True
+    assert mercedes_mention["rank"] == 1
+    assert mercedes_mention["sentiment"] == "positive"
+    assert len(mercedes_mention["evidence_snippets"]["zh"]) == 1
+    assert len(mercedes_mention["evidence_snippets"]["en"]) == 1
+
+    bmw_mention = next(m for m in answer["mentions"] if m["brand_name"] == "BMW")
+    assert bmw_mention["mentioned"] is True
+    assert bmw_mention["rank"] == 2
+    assert bmw_mention["sentiment"] == "positive"
