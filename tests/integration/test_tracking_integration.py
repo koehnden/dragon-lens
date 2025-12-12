@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.models import Brand, Prompt, Run, Vertical
+from models import Brand, Prompt, Run, Vertical
 
 
 def test_tracking_job_creates_full_structure(client: TestClient, db_session: Session):

@@ -17,48 +17,64 @@ DragonLens is a brand visibility tracking system for Chinese LLMs. It helps you 
 
 ### Prerequisites
 
-- Python 3.11+
-- [Poetry](https://python-poetry.org/)
-- [Ollama](https://ollama.ai/) (for local Qwen models)
-- Redis (for Celery task queue)
+- **Docker** (for Redis)
+- **macOS** (for automatic Ollama installation via Homebrew)
+- Python 3.11+ will be managed by Poetry
 
-### Installation
+### One-Command Setup
 
 ```bash
-# 1. Install dependencies
-poetry install
+# Install everything (Poetry, Ollama, Qwen model, dependencies)
+make setup
+```
 
-# 2. Configure environment
+This will:
+- Install Poetry if not present
+- Install Ollama if not present (macOS only)
+- Install Python dependencies
+- Pull Qwen 2.5:7b model
+- Set up the environment
+
+### Configuration
+
+```bash
+# Copy environment template and configure (optional)
 cp .env.example .env
 # Edit .env if you need to use remote LLMs (DeepSeek, Kimi)
-
-# 3. Install and start Ollama
-brew install ollama
-ollama pull qwen2.5:7b
-
-# 4. Start Redis
-brew services start redis
-# Or: docker run -d -p 6379:6379 redis:alpine
 ```
 
-### Running
-
-Open 3 terminal windows:
+### Running All Services
 
 ```bash
-# Terminal 1: FastAPI Backend
-poetry run python -m src
-
-# Terminal 2: Celery Worker
-poetry run celery -A src.workers.celery_app worker --loglevel=info
-
-# Terminal 3: Streamlit UI
-poetry run streamlit run src/ui/app.py
+# Start Redis, Ollama, FastAPI, and Celery in background
+make run
 ```
 
-Then open your browser to:
-- **UI**: http://localhost:8501
+This will start:
+- **Redis**: Docker container on port 6379
+- **Ollama**: Local LLM service
+- **FastAPI**: REST API on http://localhost:8000
+- **Celery**: Background task worker
+
+Access the application:
+- **API**: http://localhost:8000
 - **API Docs**: http://localhost:8000/docs
+
+### Stopping Services
+
+```bash
+# Stop all services
+make stop
+```
+
+### Development Mode (with auto-reload)
+
+```bash
+# Start services with FastAPI auto-reload
+make dev
+```
+
+This starts Redis and Ollama, then runs FastAPI with auto-reload enabled. Keep this running and start Celery in another terminal if needed.
 
 ## Usage
 
@@ -97,10 +113,24 @@ tests/
 
 ## Development
 
-```bash
-# Run tests
-poetry run pytest
+### Testing
 
+```bash
+# Run all tests (unit + integration + smoke)
+make test
+
+# Run specific test suites
+make test-unit          # Unit tests only
+make test-integration   # Integration tests only
+make test-smoke         # Smoke tests only
+
+# Run tests with coverage report
+make test-coverage
+```
+
+### Code Quality
+
+```bash
 # Format code
 poetry run black src/ tests/
 
@@ -111,13 +141,55 @@ poetry run ruff check src/
 poetry run mypy src/
 ```
 
+### Service Management
+
+```bash
+# Check status of all services
+make status
+
+# View logs
+make logs
+
+# Clean up temporary files and logs
+make clean
+```
+
+## Available Make Commands
+
+| Command | Description |
+|---------|-------------|
+| `make help` | Show all available commands |
+| `make setup` | Complete setup - install all dependencies and models |
+| `make check-deps` | Check if all dependencies are installed |
+| `make install-poetry` | Install Poetry if not already installed |
+| `make install-ollama` | Install Ollama if not already installed (macOS only) |
+| `make install-deps` | Install Python dependencies with Poetry |
+| `make pull-qwen` | Pull Qwen model for Ollama |
+| `make run` | Start all services (Redis, Ollama, API, Celery) |
+| `make dev` | Start services in development mode (with auto-reload) |
+| `make stop` | Stop all services |
+| `make start-redis` | Start Redis using Docker Compose |
+| `make stop-redis` | Stop Redis |
+| `make start-ollama` | Start Ollama service |
+| `make start-api` | Start FastAPI server |
+| `make start-celery` | Start Celery worker |
+| `make test` | Run all tests (unit + integration + smoke) |
+| `make test-unit` | Run unit tests only |
+| `make test-integration` | Run integration tests only |
+| `make test-smoke` | Run smoke tests only |
+| `make test-coverage` | Run tests with coverage report |
+| `make status` | Show status of all services |
+| `make logs` | Tail all logs |
+| `make clean` | Clean up temporary files and logs |
+
 ## Architecture
 
 - **Backend**: FastAPI for REST API
-- **Task Queue**: Celery + Redis for async processing
+- **Task Queue**: Celery + Redis (via Docker Compose) for async processing
 - **Database**: SQLAlchemy (SQLite default, Postgres ready)
 - **Frontend**: Streamlit for UI
 - **LLMs**: Ollama (local Qwen) + Remote APIs (DeepSeek, Kimi)
+- **Orchestration**: Make for build automation, Docker Compose for Redis
 
 ## Roadmap
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.config import Settings
+from config import Settings
 
 
 def test_default_settings():

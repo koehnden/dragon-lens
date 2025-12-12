@@ -4,8 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.models import Brand, BrandMention, LLMAnswer, Prompt, Run
-from src.models.domain import RunStatus, Sentiment
+from models import Brand, BrandMention, LLMAnswer, Prompt, Run
+from models.domain import RunStatus, Sentiment
 
 
 def test_complete_tracking_workflow(client: TestClient, db_session: Session):

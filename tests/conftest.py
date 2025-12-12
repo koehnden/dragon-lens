@@ -10,8 +10,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.api.routers import metrics, tracking, verticals
-from src.models import Base, get_db
+from api.routers import metrics, tracking, verticals
+from models import Base, get_db
 
 
 @pytest.fixture(scope="function")
