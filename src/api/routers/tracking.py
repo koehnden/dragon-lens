@@ -5,9 +5,16 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from models import Brand, Prompt, Run, Vertical, get_db
+from models import Brand, BrandMention, LLMAnswer, Prompt, Run, Vertical, get_db
 from models.domain import PromptLanguage, RunStatus
-from models.schemas import RunResponse, TrackingJobCreate, TrackingJobResponse
+from models.schemas import (
+    BrandMentionResponse,
+    LLMAnswerResponse,
+    RunDetailedResponse,
+    RunResponse,
+    TrackingJobCreate,
+    TrackingJobResponse,
+)
 
 router = APIRouter()
 
@@ -132,3 +139,70 @@ async def get_run(
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
     return run
+
+
+@router.get("/runs/{run_id}/details", response_model=RunDetailedResponse)
+async def get_run_details(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> RunDetailedResponse:
+    """
+    Get detailed information about a run including answers and mentions.
+
+    Args:
+        run_id: Run ID
+        db: Database session
+
+    Returns:
+        Detailed run information with all answers and brand mentions
+
+    Raises:
+        HTTPException: If run not found
+    """
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+    vertical = db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
+    answers_data = []
+
+    for llm_answer in run.answers:
+        prompt = db.query(Prompt).filter(Prompt.id == llm_answer.prompt_id).first()
+        mentions_data = []
+
+        for mention in llm_answer.mentions:
+            brand = db.query(Brand).filter(Brand.id == mention.brand_id).first()
+            mentions_data.append(
+                BrandMentionResponse(
+                    brand_id=mention.brand_id,
+                    brand_name=brand.display_name if brand else "Unknown",
+                    mentioned=mention.mentioned,
+                    rank=mention.rank,
+                    sentiment=mention.sentiment.value,
+                    evidence_snippets=mention.evidence_snippets,
+                )
+            )
+
+        answers_data.append(
+            LLMAnswerResponse(
+                id=llm_answer.id,
+                prompt_text_zh=prompt.text_zh if prompt else None,
+                prompt_text_en=prompt.text_en if prompt else None,
+                raw_answer_zh=llm_answer.raw_answer_zh,
+                raw_answer_en=llm_answer.raw_answer_en,
+                mentions=mentions_data,
+                created_at=llm_answer.created_at,
+            )
+        )
+
+    return RunDetailedResponse(
+        id=run.id,
+        vertical_id=run.vertical_id,
+        vertical_name=vertical.name if vertical else "Unknown",
+        model_name=run.model_name,
+        status=run.status.value,
+        run_time=run.run_time,
+        completed_at=run.completed_at,
+        error_message=run.error_message,
+        answers=answers_data,
+    )

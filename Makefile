@@ -11,6 +11,9 @@ API_PORT := 8000
 CELERY_LOG := celery.log
 API_LOG := api.log
 
+# Detect Docker Compose command (docker compose vs docker-compose)
+DOCKER_COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; elif command -v docker-compose >/dev/null 2>&1; then echo "docker-compose"; fi)
+
 # Colors for output
 RED := \033[0;31m
 GREEN := \033[0;32m
@@ -27,6 +30,15 @@ check-deps: ## Check if all dependencies are installed
 	@echo "$(YELLOW)Checking dependencies...$(NC)"
 	@command -v docker >/dev/null 2>&1 || { echo "$(RED)Error: Docker is not installed. Please install Docker first.$(NC)"; exit 1; }
 	@echo "$(GREEN)✓ Docker found$(NC)"
+	@if ! (docker compose version >/dev/null 2>&1 || docker-compose --version >/dev/null 2>&1); then \
+		echo "$(RED)Error: Docker Compose is not installed.$(NC)"; \
+		echo "$(YELLOW)Install it with:$(NC)"; \
+		echo "  brew install docker-compose"; \
+		echo "  OR"; \
+		echo "  pip install docker-compose"; \
+		exit 1; \
+	fi
+	@echo "$(GREEN)✓ Docker Compose found$(NC)"
 	@command -v poetry >/dev/null 2>&1 || { echo "$(RED)Error: Poetry is not installed. Run 'make install-poetry' first.$(NC)"; exit 1; }
 	@echo "$(GREEN)✓ Poetry found$(NC)"
 	@command -v ollama >/dev/null 2>&1 || { echo "$(RED)Error: Ollama is not installed. Run 'make install-ollama' first.$(NC)"; exit 1; }
@@ -94,12 +106,12 @@ start-redis: ## Start Redis using Docker Compose
 		echo "$(RED)Error: docker-compose.yml not found$(NC)"; \
 		exit 1; \
 	fi
-	@docker-compose up -d redis
+	@$(DOCKER_COMPOSE) up -d redis
 	@echo "$(GREEN)✓ Redis started$(NC)"
 
 stop-redis: ## Stop Redis
 	@echo "$(YELLOW)Stopping Redis...$(NC)"
-	@docker-compose down
+	@$(DOCKER_COMPOSE) down
 	@echo "$(GREEN)✓ Redis stopped$(NC)"
 
 start-ollama: ## Start Ollama service (macOS with Homebrew)
@@ -225,7 +237,7 @@ status: ## Show status of all services
 	@echo "$(YELLOW)Service Status:$(NC)"
 	@echo ""
 	@echo -n "Redis:    "
-	@if docker-compose ps | grep -q "redis.*Up"; then \
+	@if $(DOCKER_COMPOSE) ps 2>/dev/null | grep -q "redis.*Up"; then \
 		echo "$(GREEN)Running$(NC)"; \
 	else \
 		echo "$(RED)Stopped$(NC)"; \
