@@ -4,6 +4,7 @@ import httpx
 import streamlit as st
 
 from config import settings
+from ui.prompt_parser import parse_prompt_entries
 
 
 def show():
@@ -64,40 +65,24 @@ def show():
         )
 
     st.header("3. Prompts")
-    st.write("Add prompts to ask the LLMs. You can use English or Chinese.")
+    st.write("Paste prompts separated by new lines to add multiple at once.")
 
-    num_prompts = st.number_input("Number of prompts", min_value=1, max_value=20, value=2)
+    prompt_language = st.radio(
+        "Prompt Language",
+        ["Chinese (中文)", "English"],
+        key="prompt_language",
+        horizontal=True,
+    )
 
-    prompts = []
-    for i in range(num_prompts):
-        with st.expander(f"Prompt {i + 1}", expanded=(i == 0)):
-            lang = st.radio(
-                "Language",
-                ["Chinese (中文)", "English"],
-                key=f"prompt_lang_{i}",
-                horizontal=True,
-            )
+    prompts_text = st.text_area(
+        "Prompts (one per line)",
+        key="prompts_text",
+        placeholder="推荐几款值得购买的SUV\n分享几款智能纯电车型\n比亚迪有哪些热门车型",
+        height=200,
+    )
 
-            prompt_text = st.text_area(
-                "Prompt Text",
-                key=f"prompt_text_{i}",
-                placeholder="e.g., 推荐几款值得购买的SUV (Recommend some SUVs worth buying)",
-                height=100,
-            )
-
-            if prompt_text:
-                if lang == "Chinese (中文)":
-                    prompts.append({
-                        "text_zh": prompt_text,
-                        "text_en": None,
-                        "language_original": "zh",
-                    })
-                else:
-                    prompts.append({
-                        "text_en": prompt_text,
-                        "text_zh": None,
-                        "language_original": "en",
-                    })
+    prompt_language_code = "zh" if prompt_language == "Chinese (中文)" else "en"
+    prompts = parse_prompt_entries(prompts_text, prompt_language_code)
 
     st.header("4. Model Selection")
     model_name = st.selectbox(
