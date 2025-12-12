@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from src.models import Brand, BrandMention, DailyMetrics, LLMAnswer, Run, Vertical, get_db
-from src.models.schemas import BrandMetrics, MetricsResponse
+from models import Brand, BrandMention, DailyMetrics, LLMAnswer, Run, Vertical, get_db
+from models.schemas import BrandMetrics, MetricsResponse
 
 router = APIRouter()
 

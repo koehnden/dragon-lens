@@ -4,8 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.models import Brand, BrandMention, DailyMetrics, LLMAnswer, Prompt, Run, Vertical
-from src.models.domain import PromptLanguage, RunStatus, Sentiment
+from models import Brand, BrandMention, DailyMetrics, LLMAnswer, Prompt, Run, Vertical
+from models.domain import PromptLanguage, RunStatus, Sentiment
 
 
 @pytest.fixture

@@ -5,9 +5,9 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from src.models import Brand, Prompt, Run, Vertical, get_db
-from src.models.domain import PromptLanguage, RunStatus
-from src.models.schemas import RunResponse, TrackingJobCreate, TrackingJobResponse
+from models import Brand, Prompt, Run, Vertical, get_db
+from models.domain import PromptLanguage, RunStatus
+from models.schemas import RunResponse, TrackingJobCreate, TrackingJobResponse
 
 router = APIRouter()
 

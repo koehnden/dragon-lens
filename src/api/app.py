@@ -4,9 +4,9 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routers import metrics, tracking, verticals
-from src.config import settings
-from src.models import init_db
+from api.routers import metrics, tracking, verticals
+from config import settings
+from models import init_db
 
 
 @asynccontextmanager

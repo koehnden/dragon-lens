@@ -3,7 +3,7 @@ from typing import Optional
 
 import httpx
 
-from src.config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class KimiService:
 
 class LLMRouter:
     def __init__(self):
-        from src.services.ollama import OllamaService
+        from services.ollama import OllamaService
 
         self.ollama = OllamaService()
         self.deepseek = DeepSeekService()

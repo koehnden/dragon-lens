@@ -3,7 +3,7 @@ import json
 import httpx
 import streamlit as st
 
-from src.config import settings
+from config import settings
 
 
 def show():

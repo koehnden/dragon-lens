@@ -5,7 +5,7 @@ from typing import List
 from celery import Task
 from sqlalchemy.orm import Session
 
-from src.models import (
+from models import (
     Brand,
     BrandMention,
     LLMAnswer,
@@ -13,9 +13,9 @@ from src.models import (
     Run,
     Vertical,
 )
-from src.models.database import SessionLocal
-from src.models.domain import PromptLanguage, RunStatus, Sentiment
-from src.workers.celery_app import celery_app
+from models.database import SessionLocal
+from models.domain import PromptLanguage, RunStatus, Sentiment
+from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 

@@ -182,7 +182,7 @@ def test_api_smoke_workflow(client: TestClient, db_session):
     # Step 8: Get Daily Metrics
     print("[SMOKE] Step 8: Getting daily metrics...")
     # Get the brand IDs from database to test daily metrics
-    from src.models import Brand
+    from models import Brand
     brands = db_session.query(Brand).filter(Brand.vertical_id == vertical_id).all()
 
     if brands:

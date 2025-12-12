@@ -1,5 +1,5 @@
 """API routers."""
 
-from src.api.routers import metrics, tracking, verticals
+from api.routers import metrics, tracking, verticals
 
 __all__ = ["verticals", "tracking", "metrics"]
