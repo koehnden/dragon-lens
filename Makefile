@@ -8,8 +8,10 @@ OLLAMA_MODEL := qwen2.5:7b
 PYTHON_VERSION := 3.11
 REDIS_PORT := 6379
 API_PORT := 8000
+STREAMLIT_PORT := 8501
 CELERY_LOG := celery.log
 API_LOG := api.log
+STREAMLIT_LOG := streamlit.log
 
 # Detect Docker Compose command (docker compose vs docker-compose)
 DOCKER_COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; elif command -v docker-compose >/dev/null 2>&1; then echo "docker-compose"; fi)
@@ -162,30 +164,62 @@ start-celery: check-deps start-redis ## Start Celery worker
 		exit 1; \
 	fi
 
-run: check-deps ## Start all services (Redis, Ollama, API, Celery)
+start-streamlit: check-deps ## Start Streamlit UI
+	@echo "$(YELLOW)Starting Streamlit UI...$(NC)"
+	@echo "$(YELLOW)Checking port $(STREAMLIT_PORT)...$(NC)"
+	@if lsof -ti:$(STREAMLIT_PORT) > /dev/null 2>&1; then \
+		echo "$(YELLOW)Port $(STREAMLIT_PORT) is in use, killing existing process...$(NC)"; \
+		kill -9 $$(lsof -ti:$(STREAMLIT_PORT)) 2>/dev/null || true; \
+		sleep 1; \
+	fi
+	@poetry run streamlit run src/ui/app.py --server.port $(STREAMLIT_PORT) --server.headless true > $(STREAMLIT_LOG) 2>&1 & echo $$! > .streamlit.pid
+	@sleep 3
+	@if [ -f .streamlit.pid ] && kill -0 $$(cat .streamlit.pid) 2>/dev/null; then \
+		echo "$(GREEN)✓ Streamlit UI started on http://localhost:$(STREAMLIT_PORT)$(NC)"; \
+		echo "  Logs: tail -f $(STREAMLIT_LOG)"; \
+	else \
+		echo "$(RED)✗ Failed to start Streamlit UI$(NC)"; \
+		cat $(STREAMLIT_LOG); \
+		exit 1; \
+	fi
+
+run: check-deps ## Start all services (Redis, Ollama, API, Celery, Streamlit)
 	@echo "$(GREEN)Starting DragonLens services...$(NC)"
 	@echo ""
 	@$(MAKE) start-redis
 	@$(MAKE) start-ollama
 	@$(MAKE) start-api
 	@$(MAKE) start-celery
+	@$(MAKE) start-streamlit
 	@echo ""
 	@echo "$(GREEN)✓ All services started!$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Services running:$(NC)"
-	@echo "  FastAPI:  http://localhost:$(API_PORT)"
-	@echo "  API Docs: http://localhost:$(API_PORT)/docs"
-	@echo "  Redis:    localhost:$(REDIS_PORT)"
+	@echo "  Streamlit UI: http://localhost:$(STREAMLIT_PORT) $(GREEN)← Open this in your browser!$(NC)"
+	@echo "  FastAPI:      http://localhost:$(API_PORT)"
+	@echo "  API Docs:     http://localhost:$(API_PORT)/docs"
+	@echo "  Redis:        localhost:$(REDIS_PORT)"
 	@echo ""
-	@echo "$(YELLOW)Logs:$(NC)"
-	@echo "  API:    tail -f $(API_LOG)"
-	@echo "  Celery: tail -f $(CELERY_LOG)"
+	@echo "$(YELLOW)View logs:$(NC)"
+	@echo "  Live monitor:  make watch           $(GREEN)# Watch status + recent logs$(NC)"
+	@echo "  All logs:      make logs            $(GREEN)# Tail all service logs$(NC)"
+	@echo "  Streamlit:     make logs-streamlit  $(GREEN)# Tail Streamlit logs$(NC)"
+	@echo "  API only:      make logs-api        $(GREEN)# Tail FastAPI logs$(NC)"
+	@echo "  Celery only:   make logs-celery     $(GREEN)# Tail Celery logs$(NC)"
+	@echo "  Redis only:    make logs-redis      $(GREEN)# Tail Redis logs$(NC)"
 	@echo ""
-	@echo "$(YELLOW)To stop:$(NC) make stop"
+	@echo "$(YELLOW)Other commands:$(NC)"
+	@echo "  Check status: make status       $(GREEN)# Check service status$(NC)"
+	@echo "  Stop all:     make stop         $(GREEN)# Stop all services$(NC)"
 	@echo ""
 
 stop: ## Stop all services
 	@echo "$(YELLOW)Stopping all services...$(NC)"
+	@if [ -f .streamlit.pid ]; then \
+		kill $$(cat .streamlit.pid) 2>/dev/null || true; \
+		rm .streamlit.pid; \
+		echo "$(GREEN)✓ Streamlit stopped$(NC)"; \
+	fi
 	@if [ -f .api.pid ]; then \
 		kill $$(cat .api.pid) 2>/dev/null || true; \
 		rm .api.pid; \
@@ -224,8 +258,8 @@ test-coverage: check-deps ## Run tests with coverage report
 
 clean: ## Clean up temporary files and logs
 	@echo "$(YELLOW)Cleaning up...$(NC)"
-	@rm -f $(API_LOG) $(CELERY_LOG)
-	@rm -f .api.pid .celery.pid
+	@rm -f $(API_LOG) $(CELERY_LOG) $(STREAMLIT_LOG)
+	@rm -f .api.pid .celery.pid .streamlit.pid
 	@rm -rf .pytest_cache
 	@rm -rf htmlcov
 	@rm -rf .coverage
@@ -236,34 +270,87 @@ clean: ## Clean up temporary files and logs
 status: ## Show status of all services
 	@echo "$(YELLOW)Service Status:$(NC)"
 	@echo ""
-	@echo -n "Redis:    "
+	@echo -n "Redis:     "
 	@if $(DOCKER_COMPOSE) ps 2>/dev/null | grep -q "redis.*Up"; then \
 		echo "$(GREEN)Running$(NC)"; \
 	else \
 		echo "$(RED)Stopped$(NC)"; \
 	fi
-	@echo -n "Ollama:   "
+	@echo -n "Ollama:    "
 	@if pgrep -x "ollama" > /dev/null; then \
 		echo "$(GREEN)Running$(NC)"; \
 	else \
 		echo "$(RED)Stopped$(NC)"; \
 	fi
-	@echo -n "FastAPI:  "
+	@echo -n "FastAPI:   "
 	@if [ -f .api.pid ] && kill -0 $$(cat .api.pid) 2>/dev/null; then \
 		echo "$(GREEN)Running$(NC) (http://localhost:$(API_PORT))"; \
 	else \
 		echo "$(RED)Stopped$(NC)"; \
 	fi
-	@echo -n "Celery:   "
+	@echo -n "Celery:    "
 	@if [ -f .celery.pid ] && kill -0 $$(cat .celery.pid) 2>/dev/null; then \
 		echo "$(GREEN)Running$(NC)"; \
 	else \
 		echo "$(RED)Stopped$(NC)"; \
 	fi
+	@echo -n "Streamlit: "
+	@if [ -f .streamlit.pid ] && kill -0 $$(cat .streamlit.pid) 2>/dev/null; then \
+		echo "$(GREEN)Running$(NC) (http://localhost:$(STREAMLIT_PORT))"; \
+	else \
+		echo "$(RED)Stopped$(NC)"; \
+	fi
 
-logs: ## Tail all logs
-	@echo "$(YELLOW)Tailing logs (Ctrl+C to stop)...$(NC)"
-	@tail -f $(API_LOG) $(CELERY_LOG)
+logs: ## Tail all logs (Streamlit, API, Celery, Redis)
+	@echo "$(YELLOW)Tailing all logs (Ctrl+C to stop)...$(NC)"
+	@echo "$(GREEN)Streamlit logs:$(NC) $(STREAMLIT_LOG)"
+	@echo "$(GREEN)API logs:$(NC) $(API_LOG)"
+	@echo "$(GREEN)Celery logs:$(NC) $(CELERY_LOG)"
+	@echo "$(GREEN)Redis logs:$(NC) docker compose logs redis"
+	@echo ""
+	@($(DOCKER_COMPOSE) logs -f redis 2>/dev/null & tail -f $(STREAMLIT_LOG) $(API_LOG) $(CELERY_LOG) 2>/dev/null) || tail -f $(STREAMLIT_LOG) $(API_LOG) $(CELERY_LOG) 2>/dev/null
+
+logs-streamlit: ## Tail Streamlit logs only
+	@echo "$(YELLOW)Tailing Streamlit logs (Ctrl+C to stop)...$(NC)"
+	@tail -f $(STREAMLIT_LOG)
+
+logs-api: ## Tail FastAPI logs only
+	@echo "$(YELLOW)Tailing FastAPI logs (Ctrl+C to stop)...$(NC)"
+	@tail -f $(API_LOG)
+
+logs-celery: ## Tail Celery logs only
+	@echo "$(YELLOW)Tailing Celery logs (Ctrl+C to stop)...$(NC)"
+	@tail -f $(CELERY_LOG)
+
+logs-redis: ## Tail Redis logs only
+	@echo "$(YELLOW)Tailing Redis logs (Ctrl+C to stop)...$(NC)"
+	@$(DOCKER_COMPOSE) logs -f redis
+
+watch: ## Watch service status and recent logs (refreshes every 2s)
+	@echo "$(YELLOW)Watching DragonLens services (Ctrl+C to stop)...$(NC)"
+	@echo ""
+	@while true; do \
+		clear; \
+		echo "$(GREEN)═══════════════════════════════════════════════════════$(NC)"; \
+		echo "$(GREEN)         DragonLens - Live Service Monitor$(NC)"; \
+		echo "$(GREEN)═══════════════════════════════════════════════════════$(NC)"; \
+		echo ""; \
+		$(MAKE) --no-print-directory status; \
+		echo ""; \
+		echo "$(YELLOW)Recent Streamlit logs (last 3 lines):$(NC)"; \
+		tail -n 3 $(STREAMLIT_LOG) 2>/dev/null || echo "  $(RED)No Streamlit logs yet$(NC)"; \
+		echo ""; \
+		echo "$(YELLOW)Recent API logs (last 3 lines):$(NC)"; \
+		tail -n 3 $(API_LOG) 2>/dev/null || echo "  $(RED)No API logs yet$(NC)"; \
+		echo ""; \
+		echo "$(YELLOW)Recent Celery logs (last 3 lines):$(NC)"; \
+		tail -n 3 $(CELERY_LOG) 2>/dev/null || echo "  $(RED)No Celery logs yet$(NC)"; \
+		echo ""; \
+		echo "$(GREEN)═══════════════════════════════════════════════════════$(NC)"; \
+		echo "$(YELLOW)View logs: make logs-streamlit | make logs-api | make logs-celery$(NC)"; \
+		echo "$(GREEN)═══════════════════════════════════════════════════════$(NC)"; \
+		sleep 2; \
+	done
 
 dev: ## Start services in development mode (with auto-reload)
 	@echo "$(YELLOW)Starting development environment...$(NC)"

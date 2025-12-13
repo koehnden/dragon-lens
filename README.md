@@ -147,8 +147,16 @@ poetry run mypy src/
 # Check status of all services
 make status
 
-# View logs
+# Watch live service status and recent logs (refreshes every 2s)
+make watch
+
+# View all logs (API + Celery + Redis)
 make logs
+
+# View individual service logs
+make logs-api      # FastAPI logs only
+make logs-celery   # Celery worker logs only
+make logs-redis    # Redis logs only
 
 # Clean up temporary files and logs
 make clean
@@ -179,7 +187,11 @@ make clean
 | `make test-smoke` | Run smoke tests only |
 | `make test-coverage` | Run tests with coverage report |
 | `make status` | Show status of all services |
-| `make logs` | Tail all logs |
+| `make watch` | Watch live service status and recent logs |
+| `make logs` | Tail all logs (API + Celery + Redis) |
+| `make logs-api` | Tail FastAPI logs only |
+| `make logs-celery` | Tail Celery worker logs only |
+| `make logs-redis` | Tail Redis logs only |
 | `make clean` | Clean up temporary files and logs |
 
 ## Architecture
