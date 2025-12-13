@@ -2,7 +2,7 @@ import httpx
 import pandas as pd
 import streamlit as st
 
-from src.config import settings
+from config import settings
 
 
 def show():

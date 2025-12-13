@@ -4,7 +4,14 @@ version = "0.1.0"
 description = "Track brand visibility in Chinese LLMs"
 authors = ["DragonLens Team"]
 readme = "README.md"
-packages = [{include = "src"}]
+packages = [
+    {include = "api", from = "src"},
+    {include = "models", from = "src"},
+    {include = "services", from = "src"},
+    {include = "workers", from = "src"},
+    {include = "ui", from = "src"},
+    {include = "config.py", from = "src"},
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -28,6 +35,7 @@ pytest-cov = "^7.0.0"
 black = "^25.12.0"
 ruff = "^0.14.8"
 mypy = "^1.19.0"
+pyyaml = "^6.0.3"
 
 [build-system]
 requires = ["poetry-core"]

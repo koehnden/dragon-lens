@@ -12,11 +12,11 @@ page = st.sidebar.radio(
 )
 
 if page == "Setup & Start":
-    from src.ui.pages import setup
+    from ui.pages import setup
     setup.show()
 elif page == "View Results":
-    from src.ui.pages import results
+    from ui.pages import results
     results.show()
 elif page == "Runs History":
-    from src.ui.pages import history
+    from ui.pages import history
     history.show()
