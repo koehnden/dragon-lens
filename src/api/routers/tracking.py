@@ -75,6 +75,9 @@ async def create_tracking_job(
     db.commit()
     db.refresh(run)
 
+    from workers.tasks import run_vertical_analysis
+    run_vertical_analysis.delay(vertical.id, job.model_name, run.id)
+
     return TrackingJobResponse(
         run_id=run.id,
         vertical_id=vertical.id,
