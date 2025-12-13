@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 from typing import List
@@ -5,7 +6,7 @@ from typing import List
 from celery import Task
 from sqlalchemy.orm import Session
 
-from src.models import (
+from models import (
     Brand,
     BrandMention,
     LLMAnswer,
@@ -13,9 +14,11 @@ from src.models import (
     Run,
     Vertical,
 )
-from src.models.database import SessionLocal
-from src.models.domain import PromptLanguage, RunStatus, Sentiment
-from src.workers.celery_app import celery_app
+from models.database import SessionLocal
+from models.domain import PromptLanguage, RunStatus, Sentiment
+from services.brand_recognition import extract_entities
+from services.ollama import OllamaService
+from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -59,23 +62,40 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
         if not brands:
             raise ValueError(f"No brands found for vertical {vertical_id}")
 
+        ollama_service = OllamaService()
+
         for prompt in prompts:
             logger.info(f"Processing prompt {prompt.id}")
 
-            prompt_text_zh = prompt.text_zh or prompt.text_en
+            prompt_text_zh = prompt.text_zh
+            prompt_text_en = prompt.text_en
+
+            if not prompt_text_zh and prompt_text_en:
+                logger.info(f"Translating English prompt to Chinese: {prompt_text_en[:50]}...")
+                prompt_text_zh = asyncio.run(ollama_service.translate_to_chinese(prompt_text_en))
+                logger.info(f"Translated to Chinese: {prompt_text_zh[:50]}...")
+
             if not prompt_text_zh:
                 logger.warning(f"Prompt {prompt.id} has no text, skipping")
                 continue
 
-            answer_zh = "[TODO: LLM answer will be here]"
-            tokens_in = 0
-            tokens_out = 0
+            logger.info(f"Querying Qwen with prompt: {prompt_text_zh[:100]}...")
+            answer_zh, tokens_in, tokens_out = asyncio.run(
+                ollama_service.query_main_model(prompt_text_zh)
+            )
+            logger.info(f"Received answer: {answer_zh[:100]}...")
+
+            answer_en = None
+            if answer_zh:
+                logger.info("Translating answer to English...")
+                answer_en = asyncio.run(ollama_service.translate_to_english(answer_zh))
+                logger.info(f"Translated answer: {answer_en[:100]}...")
 
             llm_answer = LLMAnswer(
                 run_id=run_id,
                 prompt_id=prompt.id,
                 raw_answer_zh=answer_zh,
-                raw_answer_en=None,  # TODO: translate
+                raw_answer_en=answer_en,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
                 cost_estimate=0.0,
@@ -83,14 +103,42 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
             self.db.add(llm_answer)
             self.db.flush()
 
-            for brand in brands:
+            brand_names = [b.display_name for b in brands]
+            brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in brands]
+
+            logger.info(f"Extracting brand mentions for {len(brands)} brands...")
+            mentions = asyncio.run(
+                ollama_service.extract_brands(answer_zh, brand_names, brand_aliases)
+            )
+
+            for mention_data in mentions:
+                if not mention_data["mentioned"]:
+                    continue
+
+                brand = brands[mention_data["brand_index"]]
+
+                sentiment_str = "neutral"
+                if mention_data["snippets"]:
+                    snippet = mention_data["snippets"][0]
+                    sentiment_str = asyncio.run(ollama_service.classify_sentiment(snippet))
+                    logger.info(f"Brand {brand.display_name} sentiment: {sentiment_str}")
+
+                sentiment = Sentiment.POSITIVE if sentiment_str == "positive" else (
+                    Sentiment.NEGATIVE if sentiment_str == "negative" else Sentiment.NEUTRAL
+                )
+
+                en_snippets = []
+                for snippet in mention_data["snippets"]:
+                    en_snippet = asyncio.run(ollama_service.translate_to_english(snippet))
+                    en_snippets.append(en_snippet)
+
                 mention = BrandMention(
                     llm_answer_id=llm_answer.id,
                     brand_id=brand.id,
-                    mentioned=False,  # TODO: detect actual mention
-                    rank=None,
-                    sentiment=Sentiment.NEUTRAL,
-                    evidence_snippets={"zh": [], "en": []},
+                    mentioned=True,
+                    rank=mention_data["rank"],
+                    sentiment=sentiment,
+                    evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
                 )
                 self.db.add(mention)
 
@@ -124,10 +172,42 @@ def translate_text(text: str, source_lang: str, target_lang: str) -> str:
 @celery_app.task
 def extract_brand_mentions(answer_text: str, brands: List[dict]) -> List[dict]:
     logger.info("Extracting brand mentions")
-    return []
+    if not brands:
+        return []
+    primary = brands[0]
+    aliases = primary.get("aliases") or {"zh": [], "en": []}
+    canonical = extract_entities(answer_text, primary.get("display_name", ""), aliases)
+    mentions = []
+    for name, surfaces in canonical.items():
+        mentions.append({"canonical": name, "mentions": surfaces})
+    return mentions
 
 
 @celery_app.task
 def classify_sentiment(text: str) -> str:
     logger.info("Classifying sentiment")
     return "neutral"
+
+
+def _detect_mentions(answer_text: str, brands: List[Brand]) -> dict[int, List[str]]:
+    if not brands:
+        return {}
+    primary = brands[0]
+    canonical = extract_entities(answer_text, primary.display_name, primary.aliases)
+    mention_map: dict[int, List[str]] = {}
+    for canonical_name, surfaces in canonical.items():
+        brand = _ensure_brand(primary.vertical_id, canonical_name, primary.aliases)
+        mention_map[brand.id] = surfaces
+    return mention_map
+
+
+def _ensure_brand(vertical_id: int, canonical_name: str, aliases: dict) -> Brand:
+    session = SessionLocal()
+    brand = session.query(Brand).filter(Brand.vertical_id == vertical_id, Brand.display_name == canonical_name).first()
+    brand = brand or Brand(vertical_id=vertical_id, display_name=canonical_name, aliases=aliases or {"zh": [], "en": []})
+    if brand.id is None:
+        session.add(brand)
+        session.commit()
+        session.refresh(brand)
+    session.close()
+    return brand

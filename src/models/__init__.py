@@ -1,5 +1,5 @@
-from src.models.database import Base, get_db, init_db
-from src.models.domain import (
+from models.database import Base, get_db, init_db
+from models.domain import (
     Brand,
     BrandMention,
     DailyMetrics,
