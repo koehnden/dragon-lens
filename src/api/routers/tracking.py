@@ -1,5 +1,6 @@
 """API router for tracking job management."""
 
+import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,6 +16,8 @@ from models.schemas import (
     TrackingJobCreate,
     TrackingJobResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -76,14 +79,27 @@ async def create_tracking_job(
     db.refresh(run)
 
     from workers.tasks import run_vertical_analysis
-    run_vertical_analysis.delay(vertical.id, job.model_name, run.id)
+
+    enqueue_message = "Tracking job created successfully. Processing will start shortly."
+    try:
+        run_vertical_analysis.delay(vertical.id, job.model_name, run.id)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning(
+            "Failed to enqueue vertical analysis for run %s: %s", run.id, exc
+        )
+        run.error_message = str(exc)
+        db.commit()
+        enqueue_message = (
+            "Tracking job created, but background processing could not be enqueued. "
+            "Please ensure the Celery worker and broker are available."
+        )
 
     return TrackingJobResponse(
         run_id=run.id,
         vertical_id=vertical.id,
         model_name=job.model_name,
         status=run.status.value,
-        message="Tracking job created successfully. Processing will start shortly.",
+        message=enqueue_message,
     )
 
 
