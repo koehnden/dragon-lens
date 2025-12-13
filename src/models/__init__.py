@@ -6,6 +6,7 @@ from models.domain import (
     LLMAnswer,
     Prompt,
     Run,
+    RunMetrics,
     Vertical,
 )
 
@@ -20,4 +21,5 @@ __all__ = [
     "LLMAnswer",
     "BrandMention",
     "DailyMetrics",
+    "RunMetrics",
 ]
