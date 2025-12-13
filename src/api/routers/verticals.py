@@ -5,8 +5,8 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from src.models import Vertical, get_db
-from src.models.schemas import VerticalCreate, VerticalResponse
+from models import Vertical, get_db
+from models.schemas import VerticalCreate, VerticalResponse
 
 router = APIRouter()
 

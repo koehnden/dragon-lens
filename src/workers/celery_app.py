@@ -1,12 +1,12 @@
 from celery import Celery
 
-from src.config import settings
+from config import settings
 
 celery_app = Celery(
     "dragonlens",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["src.workers.tasks"],
+    include=["workers.tasks"],
 )
 
 celery_app.conf.update(
