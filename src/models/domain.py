@@ -30,6 +30,7 @@ class Brand(Base):
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     aliases: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)  # {"zh": [...], "en": [...]}
+    is_user_input: Mapped[bool] = mapped_column(nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -145,6 +146,25 @@ class DailyMetrics(Base):
     sentiment_pos: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     sentiment_neu: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     sentiment_neg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class RunMetrics(Base):
+    __tablename__ = "run_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
+    brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
+    asov_coverage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    asov_relative: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    prominence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    top_spot_share: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    sentiment_index: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    positive_share: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    opportunity_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    dragon_visibility_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

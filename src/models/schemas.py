@@ -31,6 +31,7 @@ class BrandResponse(BaseModel):
     vertical_id: int
     display_name: str
     aliases: Dict[str, List[str]]
+    is_user_input: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -132,5 +133,32 @@ class RunDetailedResponse(BaseModel):
     completed_at: Optional[datetime]
     error_message: Optional[str]
     answers: List[LLMAnswerResponse]
+
+    model_config = {"from_attributes": True}
+
+
+class RunMetricsResponse(BaseModel):
+    brand_id: int
+    brand_name: str
+    is_user_input: bool
+    asov_coverage: float
+    asov_relative: float
+    prominence_score: float
+    top_spot_share: float
+    sentiment_index: float
+    positive_share: float
+    opportunity_rate: float
+    dragon_visibility_score: float
+
+    model_config = {"from_attributes": True}
+
+
+class AllRunMetricsResponse(BaseModel):
+    run_id: int
+    vertical_id: int
+    vertical_name: str
+    model_name: str
+    run_time: datetime
+    metrics: List[RunMetricsResponse]
 
     model_config = {"from_attributes": True}

@@ -111,6 +111,118 @@ def show():
                 st.bar_chart(rank_chart)
 
             st.markdown("---")
+            st.markdown("## 🎯 Visibility Metrics")
+            st.caption("Comprehensive brand visibility metrics from the latest run")
+
+            try:
+                metrics_response = httpx.get(
+                    f"http://localhost:{settings.api_port}/api/v1/metrics/run/{latest_run_id}",
+                    timeout=10.0,
+                )
+                metrics_response.raise_for_status()
+                run_metrics = metrics_response.json()
+
+                if run_metrics["metrics"]:
+                    metrics_df = pd.DataFrame(run_metrics["metrics"])
+
+                    user_brands_df = metrics_df[metrics_df["is_user_input"] == True].copy()
+                    discovered_brands_df = metrics_df[metrics_df["is_user_input"] == False].copy()
+
+                    if not user_brands_df.empty:
+                        st.markdown("#### Your Brands (User Input)")
+                        display_user_df = user_brands_df.copy()
+                        display_user_df["ASoV Coverage"] = (display_user_df["asov_coverage"] * 100).round(1).astype(str) + "%"
+                        display_user_df["ASoV Relative"] = (display_user_df["asov_relative"] * 100).round(1).astype(str) + "%"
+                        display_user_df["Prominence"] = display_user_df["prominence_score"].round(3)
+                        display_user_df["Top Spot Share"] = (display_user_df["top_spot_share"] * 100).round(1).astype(str) + "%"
+                        display_user_df["Sentiment"] = display_user_df["sentiment_index"].round(3)
+                        display_user_df["Positive %"] = (display_user_df["positive_share"] * 100).round(1).astype(str) + "%"
+                        display_user_df["Opportunity"] = (display_user_df["opportunity_rate"] * 100).round(1).astype(str) + "%"
+                        display_user_df["DVS"] = display_user_df["dragon_visibility_score"].round(1)
+
+                        st.dataframe(
+                            display_user_df[[
+                                "brand_name",
+                                "ASoV Coverage",
+                                "ASoV Relative",
+                                "Prominence",
+                                "Top Spot Share",
+                                "Sentiment",
+                                "Positive %",
+                                "Opportunity",
+                                "DVS",
+                            ]].rename(columns={"brand_name": "Brand"}),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                    if not discovered_brands_df.empty:
+                        st.markdown("#### Competitor Brands (Discovered in Responses)")
+                        display_discovered_df = discovered_brands_df.copy()
+                        display_discovered_df["ASoV Coverage"] = (display_discovered_df["asov_coverage"] * 100).round(1).astype(str) + "%"
+                        display_discovered_df["ASoV Relative"] = (display_discovered_df["asov_relative"] * 100).round(1).astype(str) + "%"
+                        display_discovered_df["Prominence"] = display_discovered_df["prominence_score"].round(3)
+                        display_discovered_df["Top Spot Share"] = (display_discovered_df["top_spot_share"] * 100).round(1).astype(str) + "%"
+                        display_discovered_df["Sentiment"] = display_discovered_df["sentiment_index"].round(3)
+                        display_discovered_df["Positive %"] = (display_discovered_df["positive_share"] * 100).round(1).astype(str) + "%"
+                        display_discovered_df["Opportunity"] = (display_discovered_df["opportunity_rate"] * 100).round(1).astype(str) + "%"
+                        display_discovered_df["DVS"] = display_discovered_df["dragon_visibility_score"].round(1)
+
+                        st.dataframe(
+                            display_discovered_df[[
+                                "brand_name",
+                                "ASoV Coverage",
+                                "ASoV Relative",
+                                "Prominence",
+                                "Top Spot Share",
+                                "Sentiment",
+                                "Positive %",
+                                "Opportunity",
+                                "DVS",
+                            ]].rename(columns={"brand_name": "Brand"}),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.markdown("### Dragon Visibility Score (DVS)")
+                        dvs_chart = metrics_df[["brand_name", "dragon_visibility_score"]].copy()
+                        dvs_chart = dvs_chart.set_index("brand_name")
+                        st.bar_chart(dvs_chart)
+
+                    with col2:
+                        st.markdown("### Prominence Score")
+                        prom_chart = metrics_df[["brand_name", "prominence_score"]].copy()
+                        prom_chart = prom_chart.set_index("brand_name")
+                        st.bar_chart(prom_chart)
+
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.markdown("### ASoV Coverage vs Relative")
+                        asov_chart = metrics_df[["brand_name", "asov_coverage", "asov_relative"]].copy()
+                        asov_chart["asov_coverage"] = asov_chart["asov_coverage"] * 100
+                        asov_chart["asov_relative"] = asov_chart["asov_relative"] * 100
+                        asov_chart = asov_chart.set_index("brand_name")
+                        st.bar_chart(asov_chart)
+
+                    with col2:
+                        st.markdown("### Sentiment Index")
+                        sent_chart = metrics_df[["brand_name", "sentiment_index"]].copy()
+                        sent_chart = sent_chart.set_index("brand_name")
+                        st.bar_chart(sent_chart)
+
+                else:
+                    st.info("ℹ️ No metrics available for this run yet.")
+
+            except httpx.HTTPError as e:
+                st.warning(f"⚠️ Could not load visibility metrics: {e}")
+            except Exception as e:
+                st.error(f"❌ Error loading visibility metrics: {e}")
+
+            st.markdown("---")
             st.markdown("## 🔍 Last Run Inspector")
             st.caption("View raw answers and extracted brand mentions from the most recent run")
 
