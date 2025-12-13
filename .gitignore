@@ -131,6 +131,10 @@ __pypackages__/
 celerybeat-schedule
 celerybeat.pid
 
+# DragonLens runtime files
+*.pid
+dragonlens.db
+
 # SageMath parsed files
 *.sage.py
 

@@ -28,10 +28,10 @@ class Settings(BaseSettings):
     kimi_api_base: str = "https://api.moonshot.cn/v1"
 
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model_translation: str = "qwen2.5:7b"
-    ollama_model_sentiment: str = "qwen2.5:7b"
-    ollama_model_ner: str = "qwen2.5:7b"
-    ollama_model_main: str = "qwen2.5:7b"
+    ollama_model_translation: str = "qwen2.5:7b-instruct-q4_0"
+    ollama_model_sentiment: str = "qwen2.5:7b-instruct-q4_0"
+    ollama_model_ner: str = "qwen2.5:7b-instruct-q4_0"
+    ollama_model_main: str = "qwen2.5:7b-instruct-q4_0"
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
