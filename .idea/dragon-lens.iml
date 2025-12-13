@@ -8,4 +8,11 @@
     <orderEntry type="jdk" jdkName="Python 3.11 virtualenv at ~/Library/Caches/pypoetry/virtualenvs/dragonlens-jMPIaC1x-py3.11" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
+  <component name="PyDocumentationSettings">
+    <option name="format" value="GOOGLE" />
+    <option name="myDocStringFormat" value="Google" />
+  </component>
+  <component name="TestRunnerService">
+    <option name="PROJECT_TEST_RUNNER" value="py.test" />
+  </component>
 </module>

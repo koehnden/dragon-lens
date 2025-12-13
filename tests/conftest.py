@@ -9,10 +9,21 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
+import sys
+from pathlib import Path
 
 from api.routers import metrics, tracking, verticals
 from models import Base, get_db
 
+
+def ensure_src_on_path() -> None:
+    root = Path(__file__).resolve().parent.parent
+    src_path = root / "src"
+    if str(src_path) not in sys.path:
+        sys.path.append(str(src_path))
+
+
+ensure_src_on_path()
 
 @pytest.fixture(scope="function")
 def db_engine():
