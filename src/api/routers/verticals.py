@@ -143,6 +143,7 @@ async def delete_vertical(
         )
 
     total_runs = db.query(Run).filter(Run.vertical_id == vertical_id).count()
+    vertical_name = vertical.name
 
     db.query(DailyMetrics).filter(DailyMetrics.vertical_id == vertical_id).delete()
     db.query(RunMetrics).filter(
@@ -158,5 +159,5 @@ async def delete_vertical(
         vertical_id=vertical_id,
         deleted=True,
         deleted_runs_count=total_runs,
-        message=f"Vertical '{vertical.name}' and {total_runs} associated runs have been deleted",
+        message=f"Vertical '{vertical_name}' and {total_runs} associated runs have been deleted",
     )
