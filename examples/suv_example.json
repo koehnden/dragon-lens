@@ -1,0 +1,35 @@
+{
+  "vertical_name": "SUV Cars",
+  "vertical_description": "Family SUV market in China",
+  "model_name": "qwen",
+  "brands": [
+    {
+      "display_name": "VW",
+      "aliases": {
+        "zh": ["大众汽车", "一汽-大众", "上汽大众"],
+        "en": ["VW", "Volkswagen"]
+      }
+    }
+  ],
+  "prompts": [
+    {"text_zh": "在中国市场，家庭用SUV首选有哪些？请给出TOP10，并说明每款的理由。", "language_original": "zh"},
+    {"text_zh": "如果预算20万人民币左右，适合一家三口的SUV怎么选？请排名并给出优缺点。", "language_original": "zh"},
+    {"text_zh": "在\"安全性\"维度，中国消费者最认可的SUV有哪些？请给出排名和证据点。", "language_original": "zh"},
+    {"text_zh": "从\"空间/后排舒适/后备箱\"角度，哪些SUV最适合家庭出行？请列TOP10。", "language_original": "zh"},
+    {"text_zh": "在中国，适合长途自驾的SUV推荐（舒适、油耗/能耗、可靠性）并排名。", "language_original": "zh"},
+    {"text_zh": "请对比大众（VW）在华主流SUV与比亚迪同价位SUV：各自优势是什么？", "language_original": "zh"},
+    {"text_zh": "如果我更重视\"保值率\"，中国市场哪些SUV更保值？请给出排名与原因。", "language_original": "zh"},
+    {"text_zh": "在中国市场，合资品牌SUV vs 自主品牌SUV：消费者更推荐哪类？请举例并排名。", "language_original": "zh"},
+    {"text_zh": "请推荐10款适合城市通勤的SUV（操控、停车便利、能耗、智能驾驶），并说明理由。", "language_original": "zh"},
+    {"text_zh": "从\"智能座舱/车机体验\"角度，哪些SUV口碑最好？请排名并给证据点。", "language_original": "zh"},
+    {"text_zh": "大众VW在中国SUV市场的品牌形象是什么？消费者通常如何评价它？", "language_original": "zh"},
+    {"text_zh": "请列出大众（VW）SUV常被提到的优点与缺点，并按重要性排序。", "language_original": "zh"},
+    {"text_zh": "如果我要买一台\"家庭SUV\"，大众VW会被推荐吗？为什么？请引用你判断的关键依据。", "language_original": "zh"},
+    {"text_zh": "在\"同价位\"里，大众VW SUV与日系SUV相比（丰田/本田/日产），哪边更推荐？请排名。", "language_original": "zh"},
+    {"text_zh": "在中国，最值得买的合资SUV TOP10有哪些？大众VW能排第几？为什么？", "language_original": "zh"},
+    {"text_zh": "从\"可靠性/故障率/维修便利\"维度，哪些SUV更值得买？请给出TOP10和理由。", "language_original": "zh"},
+    {"text_zh": "请基于中国消费者偏好，给出一份\"家用SUV购买决策清单\"，并举例说明VW适配哪些条目。", "language_original": "zh"},
+    {"text_zh": "如果我在意\"二胎家庭/儿童座椅/后排空间\"，哪些SUV最合适？请排名并说明。", "language_original": "zh"},
+    {"text_zh": "在中国市场，适合\"第一次买车\"的SUV推荐：请给TOP10，并说明VW是否适合新手", "language_original": "zh"}
+  ]
+}
