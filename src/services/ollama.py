@@ -37,7 +37,14 @@ class OllamaService:
         if system_prompt:
             payload["system"] = system_prompt
 
-        async with httpx.AsyncClient(timeout=300.0) as client:
+        timeout = httpx.Timeout(
+            connect=10.0,
+            read=600.0,
+            write=10.0,
+            pool=10.0
+        )
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
             try:
                 response = await client.post(url, json=payload)
                 response.raise_for_status()

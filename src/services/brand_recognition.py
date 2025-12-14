@@ -15,13 +15,14 @@ class EntityCandidate:
 def generate_candidates(text: str, primary_brand: str, aliases: Dict[str, List[str]]) -> List[EntityCandidate]:
     seeds = _seed_primary(primary_brand, aliases)
     alias_hits = _alias_hits(text, _default_alias_table())
-    hanlp_entities = _extract_with_hanlp(text)
-    ltp_entities = _extract_with_ltp(text)
+    hanlp_entities = _filter_ner_candidates(_extract_with_hanlp(text))
+    ltp_entities = _filter_ner_candidates(_extract_with_ltp(text))
     regex_hits = _regex_candidates(text)
     quoted_hits = _quoted_candidates(text)
     names = seeds | alias_hits | hanlp_entities | ltp_entities | regex_hits | quoted_hits
     names |= _expand_subtokens(names)
-    return [EntityCandidate(name=n, source=_candidate_source(n, seeds, hanlp_entities, ltp_entities, regex_hits, quoted_hits)) for n in names]
+    filtered_names = _filter_candidates(names, seeds)
+    return [EntityCandidate(name=n, source=_candidate_source(n, seeds, hanlp_entities, ltp_entities, regex_hits, quoted_hits)) for n in filtered_names]
 
 
 def canonicalize_entities(candidates: List[EntityCandidate], primary_brand: str, aliases: Dict[str, List[str]], alias_table: Dict[str, str] | None = None) -> Dict[str, List[str]]:
@@ -77,20 +78,24 @@ def _extract_with_ltp(text: str) -> Set[str]:
 
 
 def _regex_candidates(text: str) -> Set[str]:
-    latin_models = re.findall(r"[A-Za-z]{1,10}\s?[A-Za-z]?\d[\w.\-]*", text)
-    model_words = re.findall(r"Model\s?[A-Za-z0-9]+", text)
-    chinese_suffix = re.findall(r"[\u4e00-\u9fff]{1,6}[A-Za-z]*\d{0,3}(?:PLUS|Plus|Pro|Max|DM-i|DM-I)?", text)
-    mixed_names = re.findall(r"[\u4e00-\u9fff]{1,4}[A-Za-z]{2,}\s?[A-Za-z0-9\-\.]{0,5}", text)
-    combo = re.findall(r"[A-Za-z\u4e00-\u9fff]{2,}[\-·•]{0,1}[A-Za-z\u4e00-\u9fff\d]{1,}", text)
-    hits = latin_models + model_words + chinese_suffix + mixed_names + combo
-    return {n.strip() for n in hits if n.strip()}
+    latin_models = re.findall(r"\b([A-Z][A-Za-z]{0,9}\s?[A-Za-z]?\d[\w.\-]*)\b", text)
+    model_words = re.findall(r"\b(Model\s?[A-Z0-9]+)\b", text)
+    id_models = re.findall(r"\b(ID\.\d+)\b", text)
+    chinese_suffix = re.findall(r"\b([\u4e00-\u9fff]{2,4}(?:PLUS|Plus|Pro|Max|DM-i|DM-I))\b", text)
+    chinese_digits = re.findall(r"\b([\u4e00-\u9fff]{2,4}[A-Z]?\d{1,2})\b", text)
+    hits = latin_models + model_words + id_models + chinese_suffix + chinese_digits
+    return {n.strip() for n in hits if n.strip() and len(n.strip()) >= 2}
 
 
 def _quoted_candidates(text: str) -> Set[str]:
-    quoted = re.findall(r"[\"\'“”‘’《》【】\(\[]([^\"\'“”‘’《》【】\)\]]{2,20})[\"\'“”‘’》】\)\]]", text)
-    rows = re.findall(r"(?:^|\n)[\-•·]?\s*([\u4e00-\u9fffA-Za-z0-9][^\n]{1,20})", text)
-    hits = {q.strip() for q in quoted + rows if q.strip()}
-    return {h for h in hits if len(h) <= 30}
+    quoted = re.findall(r'["\'"《》【】([]([^"\'"《》【】)\]]{2,15})["\'"》】)\]]', text)
+    hits = set()
+    for q in quoted:
+        q_stripped = q.strip()
+        if 2 <= len(q_stripped) <= 15:
+            if not re.search(r"[、，。！？：；]", q_stripped):
+                hits.add(q_stripped)
+    return hits
 
 
 def _candidate_source(name: str, seeds: Set[str], hanlp: Set[str], ltp: Set[str], regex_hits: Set[str], quoted_hits: Set[str]) -> str:
@@ -209,3 +214,121 @@ def _load_optional_model(module_name: str, attr: str):
         return None
     module_obj = importlib.import_module(module_name)
     return getattr(module_obj, attr, None)
+
+
+def _filter_ner_candidates(candidates: Set[str]) -> Set[str]:
+    filtered = set()
+    for candidate in candidates:
+        if _is_valid_brand_candidate(candidate):
+            filtered.add(candidate)
+    return filtered
+
+
+def _filter_candidates(candidates: Set[str], seeds: Set[str]) -> Set[str]:
+    filtered = set()
+    for candidate in candidates:
+        if candidate in seeds:
+            filtered.add(candidate)
+        elif _is_valid_brand_candidate(candidate):
+            filtered.add(candidate)
+    return filtered
+
+
+def _is_valid_brand_candidate(name: str) -> bool:
+    if len(name) < 2 or len(name) > 30:
+        return False
+
+    blacklist_patterns = [
+        r"等$",
+        r"^等",
+        r"配置",
+        r"功能",
+        r"系统",
+        r"技术",
+        r"性能",
+        r"价格",
+        r"方面",
+        r"维度",
+        r"角度",
+        r"优点",
+        r"缺点",
+        r"优势",
+        r"劣势",
+        r"特点",
+        r"特色",
+        r"丰富",
+        r"高端",
+        r"顶级",
+        r"中端",
+        r"入门",
+        r"全景",
+        r"天窗",
+        r"座椅",
+        r"仪表",
+        r"屏幕",
+        r"车机",
+        r"智能",
+        r"舒适",
+        r"空间",
+        r"后排",
+        r"后备箱",
+        r"油耗",
+        r"能耗",
+        r"液晶",
+        r"仪表盘",
+        r"座舱",
+        r"内饰",
+        r"外观",
+        r"动力",
+        r"操控",
+        r"驾驶",
+        r"辅助",
+        r"主动",
+        r"被动",
+        r"刹车",
+        r"制动",
+    ]
+
+    for pattern in blacklist_patterns:
+        if re.search(pattern, name):
+            return False
+
+    stop_words = {
+        "最好", "推荐", "性能", "价格", "质量", "选择",
+        "车型", "品牌", "汽车", "SUV", "轿车", "MPV",
+        "合资", "自主", "国产", "进口", "豪华",
+        "安全性", "保值率", "可靠性", "故障率",
+    }
+    if name in stop_words:
+        return False
+
+    if re.search(r"[、，。！？：；]", name):
+        return False
+
+    valid_patterns = [
+        r"^[A-Z]{2,}$",
+        r"[A-Za-z]+\d+",
+        r"\d+[A-Za-z]+",
+        r"[\u4e00-\u9fff]{1,4}PLUS",
+        r"[\u4e00-\u9fff]{1,4}Plus",
+        r"[\u4e00-\u9fff]{1,4}Pro",
+        r"[\u4e00-\u9fff]{1,4}Max",
+        r"[\u4e00-\u9fff]{1,4}DM-i",
+        r"Model\s?[A-Z0-9]",
+        r"ID\.",
+    ]
+
+    for pattern in valid_patterns:
+        if re.search(pattern, name):
+            return True
+
+    chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", name))
+    latin_chars = len(re.findall(r"[A-Za-z]", name))
+
+    if 2 <= chinese_chars <= 6 and latin_chars == 0:
+        return True
+
+    if latin_chars >= 2 and chinese_chars == 0:
+        return True
+
+    return False
