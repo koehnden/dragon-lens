@@ -43,75 +43,50 @@ def _is_brand_like(canonical_name: str, surface_forms: List[str]) -> bool:
     if len(canonical_name) > 30:
         return False
 
-    non_brand_patterns = [
+    feature_descriptor_patterns = [
         r"等$",
-        r"^等",
-        r"配置",
-        r"功能",
-        r"系统",
-        r"技术",
-        r"性能",
-        r"价格",
-        r"方面",
-        r"维度",
-        r"角度",
-        r"优点",
-        r"缺点",
-        r"优势",
-        r"劣势",
-        r"特点",
-        r"丰富",
-        r"高端",
-        r"顶级",
-        r"中端",
-        r"入门",
-        r"全景",
-        r"天窗",
-        r"座椅",
-        r"仪表",
-        r"屏幕",
-        r"车机",
-        r"智能",
-        r"舒适",
-        r"空间",
-        r"后排",
-        r"后备箱",
-        r"油耗",
-        r"能耗",
+        r"[\u4e00-\u9fff]+度$",
+        r"[\u4e00-\u9fff]+性$",
+        r"[\u4e00-\u9fff]+率$",
+        r"[\u4e00-\u9fff]+感$",
+        r"[\u4e00-\u9fff]+力$",
+        r"(效果|功能|特点|优点|缺点|成分|配置|体验|表现|质地|口感|触感)",
+        r"(空间|时间|速度|距离|重量|容量|尺寸)",
+        r"(良好|优秀|出色|卓越|强劲|轻薄|厚重|柔软|坚固)",
+        r"^[\u4e00-\u9fff]{5,}$",
     ]
 
-    for pattern in non_brand_patterns:
+    for pattern in feature_descriptor_patterns:
         if re.search(pattern, canonical_name):
             return False
 
-    common_words = {
+    generic_stop_words = {
         "最好", "推荐", "性能", "价格", "质量", "选择",
-        "车型", "品牌", "汽车", "SUV", "轿车", "MPV",
-        "合资", "自主", "国产", "进口", "豪华",
+        "品牌", "产品", "类型", "种类", "系列",
+        "国产", "进口", "豪华", "高端", "入门",
+        "安全性", "可靠性", "舒适性", "性价比",
     }
-    if canonical_name in common_words:
+    if canonical_name in generic_stop_words:
         return False
 
-    brand_patterns = [
-        r"[A-Z]{2,}",
+    if re.search(r"[、，。！？：；]", canonical_name):
+        return False
+
+    brand_product_patterns = [
+        r"^[A-Z]{2,}[\-]?[A-Z0-9]*$",
         r"[A-Za-z]+\d+",
         r"\d+[A-Za-z]+",
-        r"[\u4e00-\u9fff]{1,4}PLUS",
-        r"[\u4e00-\u9fff]{1,4}Plus",
-        r"[\u4e00-\u9fff]{1,4}Pro",
-        r"[\u4e00-\u9fff]{1,4}Max",
-        r"[\u4e00-\u9fff]{1,4}DM-i",
-        r"Model\s?[A-Z0-9]",
+        r"Model\s?[A-ZX0-9]",
         r"ID\.",
+        r"[\u4e00-\u9fff]{1,6}(PLUS|Plus|Pro|Max|Ultra|Mini)",
+        r"[\u4e00-\u9fff]{2,6}[A-Z]\d{1,2}",
+        r"^[\u4e00-\u9fff]{2,6}$",
+        r"^[A-Za-z]{2,}$",
     ]
 
-    for pattern in brand_patterns:
+    for pattern in brand_product_patterns:
         if re.search(pattern, canonical_name):
             return True
-
-    chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", canonical_name))
-    if 2 <= chinese_chars <= 6 and not re.search(r"[、，。！？：；]", canonical_name):
-        return True
 
     return False
 
