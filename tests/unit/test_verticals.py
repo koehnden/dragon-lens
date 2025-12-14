@@ -172,9 +172,10 @@ def test_delete_vertical_with_in_progress_runs(client: TestClient, db_session):
 
     assert response.status_code == 409
     data = response.json()
-    assert "error" in data
-    assert "DELETE_CONFLICT" in data["error"]["code"]
-    assert "in progress" in data["error"]["message"].lower()
+    assert "detail" in data
+    assert "error" in data["detail"]
+    assert "DELETE_CONFLICT" in data["detail"]["error"]["code"]
+    assert "in progress" in data["detail"]["error"]["message"].lower()
 
 
 def test_delete_nonexistent_vertical(client: TestClient):
@@ -182,8 +183,9 @@ def test_delete_nonexistent_vertical(client: TestClient):
 
     assert response.status_code == 404
     data = response.json()
-    assert "error" in data
-    assert "VERTICAL_NOT_FOUND" in data["error"]["code"]
+    assert "detail" in data
+    assert "error" in data["detail"]
+    assert "VERTICAL_NOT_FOUND" in data["detail"]["error"]["code"]
 
 
 def test_delete_vertical_cascades_brands(client: TestClient, db_session):
