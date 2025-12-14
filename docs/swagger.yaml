@@ -100,6 +100,72 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+        - Verticals
+      summary: Delete a vertical
+      description: |
+        Permanently deletes a vertical and **all associated data**, including:
+        - All runs created for this vertical
+        - All LLM responses from those runs
+        - All computed metrics and evidence snippets
+        
+        **Warning:** This action is irreversible and can result in significant 
+        data loss if the vertical has many associated runs.
+        
+        Consider using `GET /v1/runs?vertical={vertical_id}` first to review 
+        what will be deleted.
+      operationId: delete_vertical
+      parameters:
+        - name: vertical_id
+          in: path
+          required: true
+          description: Unique identifier for the vertical (slug or UUID)
+          schema:
+            type: string
+          examples:
+            slug:
+              summary: Slug identifier
+              value: "suv"
+            uuid:
+              summary: UUID identifier
+              value: "f1e2d3c4-b5a6-7890-abcd-ef1234567890"
+      responses:
+        '200':
+          description: Vertical and all associated data deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteVerticalResponse'
+              example:
+                vertical_id: "suv"
+                deleted: true
+                deleted_runs_count: 15
+                message: "Vertical 'SUV' and 15 associated runs have been deleted"
+        '404':
+          description: Vertical not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "VERTICAL_NOT_FOUND"
+                  message: "No vertical found with ID 'invalid-id'"
+        '409':
+          description: Vertical cannot be deleted (e.g., has runs currently processing)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "DELETE_CONFLICT"
+                  message: "Cannot delete vertical with 2 runs still in progress. Wait for completion or delete those runs first."
+                  details:
+                    running_run_ids:
+                      - "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                      - "b2c3d4e5-f6a7-8901-bcde-f23456789012"
   /api/v1/tracking/jobs:
     post:
       tags:

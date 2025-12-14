@@ -162,3 +162,10 @@ class AllRunMetricsResponse(BaseModel):
     metrics: List[RunMetricsResponse]
 
     model_config = {"from_attributes": True}
+
+
+class DeleteVerticalResponse(BaseModel):
+    vertical_id: int
+    deleted: bool
+    deleted_runs_count: int
+    message: str
