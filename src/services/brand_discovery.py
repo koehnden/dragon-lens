@@ -36,14 +36,84 @@ def discover_all_brands(
 
 
 def _is_brand_like(canonical_name: str, surface_forms: List[str]) -> bool:
+    import re
+
     if len(canonical_name) < 2:
         return False
-    if len(canonical_name) > 50:
+    if len(canonical_name) > 30:
         return False
-    common_words = {"最好", "推荐", "性能", "价格", "质量", "选择"}
+
+    non_brand_patterns = [
+        r"等$",
+        r"^等",
+        r"配置",
+        r"功能",
+        r"系统",
+        r"技术",
+        r"性能",
+        r"价格",
+        r"方面",
+        r"维度",
+        r"角度",
+        r"优点",
+        r"缺点",
+        r"优势",
+        r"劣势",
+        r"特点",
+        r"丰富",
+        r"高端",
+        r"顶级",
+        r"中端",
+        r"入门",
+        r"全景",
+        r"天窗",
+        r"座椅",
+        r"仪表",
+        r"屏幕",
+        r"车机",
+        r"智能",
+        r"舒适",
+        r"空间",
+        r"后排",
+        r"后备箱",
+        r"油耗",
+        r"能耗",
+    ]
+
+    for pattern in non_brand_patterns:
+        if re.search(pattern, canonical_name):
+            return False
+
+    common_words = {
+        "最好", "推荐", "性能", "价格", "质量", "选择",
+        "车型", "品牌", "汽车", "SUV", "轿车", "MPV",
+        "合资", "自主", "国产", "进口", "豪华",
+    }
     if canonical_name in common_words:
         return False
-    return True
+
+    brand_patterns = [
+        r"[A-Z]{2,}",
+        r"[A-Za-z]+\d+",
+        r"\d+[A-Za-z]+",
+        r"[\u4e00-\u9fff]{1,4}PLUS",
+        r"[\u4e00-\u9fff]{1,4}Plus",
+        r"[\u4e00-\u9fff]{1,4}Pro",
+        r"[\u4e00-\u9fff]{1,4}Max",
+        r"[\u4e00-\u9fff]{1,4}DM-i",
+        r"Model\s?[A-Z0-9]",
+        r"ID\.",
+    ]
+
+    for pattern in brand_patterns:
+        if re.search(pattern, canonical_name):
+            return True
+
+    chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", canonical_name))
+    if 2 <= chinese_chars <= 6 and not re.search(r"[、，。！？：；]", canonical_name):
+        return True
+
+    return False
 
 
 def _get_or_create_discovered_brand(
