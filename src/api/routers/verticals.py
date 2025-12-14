@@ -5,8 +5,8 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from models import Vertical, get_db
-from models.schemas import VerticalCreate, VerticalResponse
+from models import DailyMetrics, Run, RunMetrics, RunStatus, Vertical, get_db
+from models.schemas import DeleteVerticalResponse, VerticalCreate, VerticalResponse
 
 router = APIRouter()
 
@@ -88,3 +88,75 @@ async def get_vertical(
         raise HTTPException(status_code=404, detail=f"Vertical {vertical_id} not found")
 
     return vertical
+
+
+@router.delete("/{vertical_id}", response_model=DeleteVerticalResponse)
+async def delete_vertical(
+    vertical_id: int,
+    db: Session = Depends(get_db),
+) -> DeleteVerticalResponse:
+    """
+    Delete a vertical and all associated data.
+
+    Args:
+        vertical_id: Vertical ID
+        db: Database session
+
+    Returns:
+        Deletion confirmation with count of deleted runs
+
+    Raises:
+        HTTPException: If vertical not found or has running jobs
+    """
+    vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+    if not vertical:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "VERTICAL_NOT_FOUND",
+                    "message": f"No vertical found with ID '{vertical_id}'",
+                }
+            },
+        )
+
+    active_runs = (
+        db.query(Run)
+        .filter(
+            Run.vertical_id == vertical_id,
+            Run.status.in_([RunStatus.PENDING, RunStatus.IN_PROGRESS]),
+        )
+        .all()
+    )
+
+    if active_runs:
+        active_run_ids = [run.id for run in active_runs]
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": {
+                    "code": "DELETE_CONFLICT",
+                    "message": f"Cannot delete vertical with {len(active_runs)} runs still in progress. Wait for completion or delete those runs first.",
+                    "details": {"running_run_ids": active_run_ids},
+                }
+            },
+        )
+
+    total_runs = db.query(Run).filter(Run.vertical_id == vertical_id).count()
+
+    db.query(DailyMetrics).filter(DailyMetrics.vertical_id == vertical_id).delete()
+    db.query(RunMetrics).filter(
+        RunMetrics.run_id.in_(
+            db.query(Run.id).filter(Run.vertical_id == vertical_id)
+        )
+    ).delete(synchronize_session=False)
+
+    db.delete(vertical)
+    db.commit()
+
+    return DeleteVerticalResponse(
+        vertical_id=vertical_id,
+        deleted=True,
+        deleted_runs_count=total_runs,
+        message=f"Vertical '{vertical.name}' and {total_runs} associated runs have been deleted",
+    )
