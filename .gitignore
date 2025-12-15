@@ -135,6 +135,9 @@ celerybeat.pid
 *.pid
 dragonlens.db
 
+# Claude Code
+CLAUDE.md
+
 # SageMath parsed files
 *.sage.py
 
