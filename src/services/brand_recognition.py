@@ -12,13 +12,9 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 ENABLE_QWEN_FILTERING = os.getenv("ENABLE_QWEN_FILTERING", "true").lower() == "true"
-ENABLE_EMBEDDING_CLUSTERING = os.getenv("ENABLE_EMBEDDING_CLUSTERING", "true").lower() == "true"
-ENABLE_LLM_CLUSTERING = os.getenv("ENABLE_LLM_CLUSTERING", "true").lower() == "true"
-EMBEDDING_MODEL_NAME = os.getenv(
-    "EMBEDDING_MODEL_NAME",
-    "BAAI/bge-m3"
-)
-EMBEDDING_MODEL_LOAD_TIMEOUT = int(os.getenv("EMBEDDING_MODEL_LOAD_TIMEOUT", "10"))
+ENABLE_EMBEDDING_CLUSTERING = os.getenv("ENABLE_EMBEDDING_CLUSTERING", "false").lower() == "true"
+ENABLE_LLM_CLUSTERING = os.getenv("ENABLE_LLM_CLUSTERING", "false").lower() == "true"
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-small-zh-v1.5")
 
 
 @dataclass
@@ -428,16 +424,10 @@ def _parse_json_response(response: str) -> Dict | None:
     return None
 
 
-def _load_embedding_model_sync(model_name: str):
+def _get_embeddings_sync(texts: List[str], model_name: str):
     from sentence_transformers import SentenceTransformer
-
-    return SentenceTransformer(model_name)
-
-
-async def _load_embedding_model(model_name: str, timeout_seconds: int):
-    loop = asyncio.get_running_loop()
-    loader = loop.run_in_executor(None, _load_embedding_model_sync, model_name)
-    return await asyncio.wait_for(loader, timeout_seconds)
+    model = SentenceTransformer(model_name)
+    return model.encode(texts, normalize_embeddings=True)
 
 
 async def _cluster_with_embeddings(candidates: List[EntityCandidate]) -> Dict[str, List[EntityCandidate]]:
@@ -445,13 +435,9 @@ async def _cluster_with_embeddings(candidates: List[EntityCandidate]) -> Dict[st
         return {}
 
     try:
-        model = await _load_embedding_model(
-            EMBEDDING_MODEL_NAME,
-            EMBEDDING_MODEL_LOAD_TIMEOUT
-        )
-
         names = [c.name for c in candidates]
-        embeddings = model.encode(names, normalize_embeddings=True)
+        loop = asyncio.get_running_loop()
+        embeddings = await loop.run_in_executor(None, _get_embeddings_sync, names, EMBEDDING_MODEL_NAME)
 
         similarity_threshold = 0.85
         clusters = {}
