@@ -195,7 +195,6 @@ def complete_test_data(db_session: Session):
 
 
 def test_latest_metrics_calculation(client: TestClient, complete_test_data):
-    """Test that latest metrics are calculated correctly."""
     vertical_id = complete_test_data["vertical_id"]
 
     response = client.get(f"/api/v1/metrics/latest?vertical_id={vertical_id}&model_name=qwen")
@@ -208,27 +207,26 @@ def test_latest_metrics_calculation(client: TestClient, complete_test_data):
     assert data["model_name"] == "qwen"
     assert len(data["brands"]) == 3
 
-    # Mercedes: mentioned in all 3 answers, ranks: [1, 2, 2], sentiment: all positive
-    # The fixture creates 3 answers, Mercedes is mentioned in all 3
     merc = next(b for b in data["brands"] if b["brand_name"] == "Mercedes-Benz")
-    assert merc["mention_rate"] == pytest.approx(1.0, rel=1e-2)  # 3/3 = 1.0
-    assert merc["avg_rank"] == pytest.approx((1 + 2 + 2) / 3, rel=1e-2)  # 1.67
-    assert merc["sentiment_positive"] == 1.0
-    assert merc["sentiment_neutral"] == 0.0
-    assert merc["sentiment_negative"] == 0.0
+    assert merc["mention_rate"] == pytest.approx(1.0, rel=1e-2)
+    assert merc["share_of_voice"] == pytest.approx(0.47, rel=1e-2)
+    assert merc["top_spot_share"] == pytest.approx(1 / 3, rel=1e-2)
+    assert merc["sentiment_index"] == pytest.approx(1.0, rel=1e-2)
+    assert merc["dragon_lens_visibility"] == pytest.approx(0.55, rel=1e-2)
 
-    # BMW: mentioned in 2 of 3 answers (answer2 and answer3), ranks: [1, 1], sentiment: all positive
     bmw = next(b for b in data["brands"] if b["brand_name"] == "BMW")
-    assert bmw["mention_rate"] == pytest.approx(2 / 3, rel=1e-2)  # 2/3 = 0.667
-    assert bmw["avg_rank"] == pytest.approx(1.0, rel=1e-2)  # (1+1)/2 = 1.0
-    assert bmw["sentiment_positive"] == 1.0
+    assert bmw["mention_rate"] == pytest.approx(2 / 3, rel=1e-2)
+    assert bmw["share_of_voice"] == pytest.approx(0.42, rel=1e-2)
+    assert bmw["top_spot_share"] == pytest.approx(2 / 3, rel=1e-2)
+    assert bmw["sentiment_index"] == pytest.approx(1.0, rel=1e-2)
+    assert bmw["dragon_lens_visibility"] == pytest.approx(0.59, rel=1e-2)
 
-    # Audi: mentioned in 1 of 3 answers (answer3), rank: [3], sentiment: negative
     audi = next(b for b in data["brands"] if b["brand_name"] == "Audi")
-    assert audi["mention_rate"] == pytest.approx(1 / 3, rel=1e-2)  # 1/3 = 0.333
-    assert audi["avg_rank"] == pytest.approx(3.0, rel=1e-2)
-    assert audi["sentiment_positive"] == 0.0
-    assert audi["sentiment_negative"] == 1.0
+    assert audi["mention_rate"] == pytest.approx(1 / 3, rel=1e-2)
+    assert audi["share_of_voice"] == pytest.approx(0.1, rel=1e-2)
+    assert audi["top_spot_share"] == 0.0
+    assert audi["sentiment_index"] == 0.0
+    assert audi["dragon_lens_visibility"] == pytest.approx(0.06, rel=1e-2)
 
 
 def test_latest_metrics_with_multiple_runs(client: TestClient, db_session: Session, complete_test_data):
@@ -277,15 +275,12 @@ def test_latest_metrics_no_runs(client: TestClient):
 
 
 def test_daily_metrics_with_data(client: TestClient, db_session: Session, complete_test_data):
-    """Test daily metrics time series."""
     vertical_id = complete_test_data["vertical_id"]
     brand_id = complete_test_data["brand1_id"]
 
-    # Get the run timestamp
     run = db_session.query(Run).filter(Run.id == complete_test_data["run_id"]).first()
     prompt = db_session.query(Prompt).filter(Prompt.vertical_id == vertical_id).first()
 
-    # Create some daily metrics
     base_date = datetime.now()
     for i in range(5):
         metric = DailyMetrics(
@@ -295,10 +290,10 @@ def test_daily_metrics_with_data(client: TestClient, db_session: Session, comple
             prompt_id=prompt.id,
             brand_id=brand_id,
             mention_rate=0.5 + i * 0.1,
-            avg_rank=1.0 + i * 0.2,
-            sentiment_pos=0.7 - i * 0.05,
-            sentiment_neu=0.2 + i * 0.03,
-            sentiment_neg=0.1 + i * 0.02,
+            share_of_voice=0.3 + i * 0.05,
+            top_spot_share=0.2 + i * 0.05,
+            sentiment_index=0.6 - i * 0.05,
+            dragon_lens_visibility=0.4 + i * 0.04,
         )
         db_session.add(metric)
     db_session.commit()
@@ -316,18 +311,15 @@ def test_daily_metrics_with_data(client: TestClient, db_session: Session, comple
     assert data["model_name"] == "qwen"
     assert len(data["data"]) == 5
 
-    # Check ordering (should be by date ascending)
     dates = [d["date"] for d in data["data"]]
     assert dates == sorted(dates)
 
 
 def test_daily_metrics_date_filtering(client: TestClient, db_session: Session, complete_test_data):
-    """Test daily metrics with date range filtering."""
     vertical_id = complete_test_data["vertical_id"]
     brand_id = complete_test_data["brand1_id"]
     prompt = db_session.query(Prompt).filter(Prompt.vertical_id == vertical_id).first()
 
-    # Create metrics over a 10-day period
     base_date = datetime.now()
     for i in range(10):
         metric = DailyMetrics(
@@ -337,10 +329,10 @@ def test_daily_metrics_date_filtering(client: TestClient, db_session: Session, c
             prompt_id=prompt.id,
             brand_id=brand_id,
             mention_rate=0.5,
-            avg_rank=1.0,
-            sentiment_pos=0.7,
-            sentiment_neu=0.2,
-            sentiment_neg=0.1,
+            share_of_voice=0.4,
+            top_spot_share=0.3,
+            sentiment_index=0.6,
+            dragon_lens_visibility=0.5,
         )
         db_session.add(metric)
     db_session.commit()
@@ -358,10 +350,8 @@ def test_daily_metrics_date_filtering(client: TestClient, db_session: Session, c
 
 
 def test_metrics_across_different_models(client: TestClient, db_session: Session, complete_test_data):
-    """Test that metrics are properly separated by model."""
     vertical_id = complete_test_data["vertical_id"]
 
-    # Create another run with different model
     run2 = Run(
         vertical_id=vertical_id,
         model_name="deepseek",
@@ -370,12 +360,10 @@ def test_metrics_across_different_models(client: TestClient, db_session: Session
     db_session.add(run2)
     db_session.commit()
 
-    # Get metrics for qwen
     qwen_metrics = client.get(
         f"/api/v1/metrics/latest?vertical_id={vertical_id}&model_name=qwen"
     )
 
-    # Get metrics for deepseek
     deepseek_metrics = client.get(
         f"/api/v1/metrics/latest?vertical_id={vertical_id}&model_name=deepseek"
     )
@@ -383,11 +371,9 @@ def test_metrics_across_different_models(client: TestClient, db_session: Session
     assert qwen_metrics.status_code == 200
     assert deepseek_metrics.status_code == 200
 
-    # Qwen should have brand mentions (from complete_test_data)
     qwen_brands = qwen_metrics.json()["brands"]
     assert any(b["mention_rate"] > 0 for b in qwen_brands)
 
-    # DeepSeek should have no mentions (no answers created)
     deepseek_brands = deepseek_metrics.json()["brands"]
     assert all(b["mention_rate"] == 0 for b in deepseek_brands)
 
@@ -402,11 +388,11 @@ def test_calculate_and_save_metrics_service(db_session: Session, complete_test_d
     assert len(run_metrics) == 3
 
     merc_metrics = next(m for m in run_metrics if m.brand_id == complete_test_data["brand1_id"])
-    assert merc_metrics.asov_coverage == pytest.approx(1.0, rel=1e-2)
-    assert merc_metrics.asov_relative == pytest.approx(3 / 6, rel=1e-2)
+    assert merc_metrics.mention_rate == pytest.approx(1.0, rel=1e-2)
+    assert merc_metrics.share_of_voice == pytest.approx(0.47, rel=1e-2)
     assert merc_metrics.top_spot_share == pytest.approx(1 / 3, rel=1e-2)
-    assert merc_metrics.positive_share == 1.0
-    assert merc_metrics.dragon_visibility_score > 0
+    assert merc_metrics.sentiment_index == pytest.approx(1.0, rel=1e-2)
+    assert merc_metrics.dragon_lens_visibility > 0
 
 
 def test_run_metrics_endpoint(client: TestClient, db_session: Session, complete_test_data):
@@ -425,10 +411,9 @@ def test_run_metrics_endpoint(client: TestClient, db_session: Session, complete_
     assert len(data["metrics"]) == 3
 
     merc = next(m for m in data["metrics"] if m["brand_name"] == "Mercedes-Benz")
-    assert merc["asov_coverage"] == pytest.approx(1.0, rel=1e-2)
-    assert merc["positive_share"] == 1.0
-    assert "dragon_visibility_score" in merc
-    assert merc["dragon_visibility_score"] > 0
+    assert merc["mention_rate"] == pytest.approx(1.0, rel=1e-2)
+    assert merc["share_of_voice"] == pytest.approx(0.47, rel=1e-2)
+    assert merc["dragon_lens_visibility"] > 0
 
 
 def test_run_metrics_endpoint_nonexistent_run(client: TestClient):

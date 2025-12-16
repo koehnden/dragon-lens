@@ -100,7 +100,7 @@ def test_minimal_tracking_pipeline(client: TestClient):
         print(
             f"  {brand_metrics['brand_name']}: "
             f"mention_rate={brand_metrics['mention_rate']:.2%}, "
-            f"sentiment_positive={brand_metrics['sentiment_positive']}"
+            f"sentiment_index={brand_metrics['sentiment_index']}"
         )
 
     print("\n✓ Complete pipeline test passed!")

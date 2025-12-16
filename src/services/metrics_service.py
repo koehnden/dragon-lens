@@ -49,14 +49,11 @@ def calculate_and_save_metrics(db: Session, run_id: int) -> None:
         run_metrics = RunMetrics(
             run_id=run_id,
             brand_id=brand.id,
-            asov_coverage=metrics["ASoV_coverage"],
-            asov_relative=metrics["ASoV_relative"],
-            prominence_score=metrics["Prominence Score"],
-            top_spot_share=metrics["Top-Spot Share"],
-            sentiment_index=metrics["Sentiment Index"],
-            positive_share=metrics["Positive Share"],
-            opportunity_rate=metrics["Opportunity Rate"],
-            dragon_visibility_score=metrics["Dragon Visibility Score"],
+            mention_rate=metrics["mention_rate"],
+            share_of_voice=metrics["share_of_voice"],
+            top_spot_share=metrics["top_spot_share"],
+            sentiment_index=metrics["sentiment_index"],
+            dragon_lens_visibility=metrics["dragon_lens_visibility"],
         )
         db.add(run_metrics)
 
