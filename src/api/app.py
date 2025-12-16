@@ -7,11 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routers import metrics, tracking, verticals
 from config import settings
 from models import init_db
+from services.brand_recognition import EMBEDDING_MODEL_NAME
+from services.model_cache import ensure_embedding_model_available
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     init_db()
+    ensure_embedding_model_available(EMBEDDING_MODEL_NAME)
     yield
 
 app = FastAPI(

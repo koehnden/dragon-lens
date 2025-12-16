@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 ENABLE_QWEN_FILTERING = os.getenv("ENABLE_QWEN_FILTERING", "true").lower() == "true"
 ENABLE_EMBEDDING_CLUSTERING = os.getenv("ENABLE_EMBEDDING_CLUSTERING", "true").lower() == "true"
 ENABLE_LLM_CLUSTERING = os.getenv("ENABLE_LLM_CLUSTERING", "true").lower() == "true"
+EMBEDDING_MODEL_NAME = os.getenv(
+    "EMBEDDING_MODEL_NAME",
+    "BAAI/bge-m3"
+)
+EMBEDDING_MODEL_LOAD_TIMEOUT = int(os.getenv("EMBEDDING_MODEL_LOAD_TIMEOUT", "10"))
 
 
 @dataclass
@@ -147,6 +152,25 @@ def _filter_candidates_simple(candidates: List[EntityCandidate]) -> List[EntityC
     return filtered
 
 
+def _contains_feature_keywords(name: str) -> bool:
+    keywords = [
+        "动力",
+        "天窗",
+        "后备箱",
+        "品牌口碑",
+        "舒适",
+        "空间",
+        "配置",
+        "自动驾驶",
+        "主动安全",
+        "车机系统",
+        "发动机",
+        "变速箱",
+        "维修"
+    ]
+    return any(keyword in name for keyword in keywords)
+
+
 def _is_valid_brand_candidate(name: str) -> bool:
     if len(name) < 2 or len(name) > 30:
         return False
@@ -173,6 +197,9 @@ def _is_valid_brand_candidate(name: str) -> bool:
     for pattern in feature_descriptor_patterns:
         if re.search(pattern, name):
             return False
+
+    if _contains_feature_keywords(name):
+        return False
 
     generic_stop_words = {
         "最好", "推荐", "性能", "价格", "质量", "选择",
@@ -401,14 +428,27 @@ def _parse_json_response(response: str) -> Dict | None:
     return None
 
 
+def _load_embedding_model_sync(model_name: str):
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(model_name)
+
+
+async def _load_embedding_model(model_name: str, timeout_seconds: int):
+    loop = asyncio.get_running_loop()
+    loader = loop.run_in_executor(None, _load_embedding_model_sync, model_name)
+    return await asyncio.wait_for(loader, timeout_seconds)
+
+
 async def _cluster_with_embeddings(candidates: List[EntityCandidate]) -> Dict[str, List[EntityCandidate]]:
     if not candidates:
         return {}
 
     try:
-        from sentence_transformers import SentenceTransformer
-
-        model = SentenceTransformer('BAAI/bge-m3')
+        model = await _load_embedding_model(
+            EMBEDDING_MODEL_NAME,
+            EMBEDDING_MODEL_LOAD_TIMEOUT
+        )
 
         names = [c.name for c in candidates]
         embeddings = model.encode(names, normalize_embeddings=True)
