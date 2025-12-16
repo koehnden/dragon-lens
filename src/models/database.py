@@ -40,5 +40,17 @@ def init_db() -> None:
                         "ALTER TABLE brands ADD COLUMN is_user_input BOOLEAN NOT NULL DEFAULT 1"
                     )
                 )
+            if "original_name" not in brand_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE brands ADD COLUMN original_name VARCHAR(255) NOT NULL DEFAULT ''"
+                    )
+                )
+            if "translated_name" not in brand_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE brands ADD COLUMN translated_name VARCHAR(255)"
+                    )
+                )
 
     Base.metadata.create_all(bind=engine)
