@@ -199,6 +199,8 @@ def test_delete_vertical_cascades_brands(client: TestClient, db_session):
     brand = Brand(
         vertical_id=vertical.id,
         display_name="Tesla",
+        original_name="Tesla",
+        translated_name="Tesla",
         aliases={"zh": ["特斯拉"], "en": ["Tesla"]},
     )
     db_session.add(brand)

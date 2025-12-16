@@ -29,6 +29,8 @@ class Brand(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    translated_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     aliases: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)  # {"zh": [...], "en": [...]}
     is_user_input: Mapped[bool] = mapped_column(nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -38,6 +40,18 @@ class Brand(Base):
     vertical: Mapped["Vertical"] = relationship("Vertical", back_populates="brands")
     mentions: Mapped[List["BrandMention"]] = relationship(
         "BrandMention", back_populates="brand", cascade="all, delete-orphan"
+    )
+
+
+class Product(Base):
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    brand_id: Mapped[Optional[int]] = mapped_column(ForeignKey("brands.id"), nullable=True)
+    original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    translated_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 

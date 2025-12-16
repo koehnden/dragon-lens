@@ -22,16 +22,22 @@ def complete_test_data(db_session: Session):
     brand1 = Brand(
         vertical_id=vertical.id,
         display_name="Mercedes-Benz",
+        original_name="Mercedes-Benz",
+        translated_name="Mercedes-Benz",
         aliases={"zh": ["奔驰"], "en": ["Mercedes"]},
     )
     brand2 = Brand(
         vertical_id=vertical.id,
         display_name="BMW",
+        original_name="BMW",
+        translated_name="BMW",
         aliases={"zh": ["宝马"], "en": []},
     )
     brand3 = Brand(
         vertical_id=vertical.id,
         display_name="Audi",
+        original_name="Audi",
+        translated_name="Audi",
         aliases={"zh": ["奥迪"], "en": []},
     )
     db_session.add_all([brand1, brand2, brand3])

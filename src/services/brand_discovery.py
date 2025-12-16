@@ -111,6 +111,8 @@ def _get_or_create_discovered_brand(
     brand = Brand(
         vertical_id=vertical_id,
         display_name=brand_name,
+        original_name=brand_name,
+        translated_name=None,
         aliases={"zh": [], "en": []},
         is_user_input=False,
     )
