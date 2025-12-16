@@ -164,23 +164,29 @@ async def delete_tracking_jobs(
 
     query = db.query(Run)
 
+    filters = []
+
     if id:
-        query = query.filter(Run.id == id)
-    elif status:
+        filters.append(Run.id == id)
+
+    if status:
         try:
             run_status = RunStatus(status)
-            query = query.filter(Run.status == run_status)
+            filters.append(Run.status == run_status)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
-    elif latest:
-        query = query.order_by(Run.run_time.desc(), Run.id.desc()).limit(1)
-    elif all:
-        pass
-    elif vertical_name:
+
+    if vertical_name:
         vertical = db.query(Vertical).filter(Vertical.name == vertical_name).first()
         if not vertical:
             return DeleteJobsResponse(deleted_count=0, vertical_ids=[])
-        query = query.filter(Run.vertical_id == vertical.id)
+        filters.append(Run.vertical_id == vertical.id)
+
+    for run_filter in filters:
+        query = query.filter(run_filter)
+
+    if latest:
+        query = query.order_by(Run.run_time.desc(), Run.id.desc()).limit(1)
 
     runs_to_delete = query.all()
 
