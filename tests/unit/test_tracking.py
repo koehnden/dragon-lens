@@ -236,3 +236,15 @@ def test_get_run_details_nonexistent(client: TestClient):
 
     assert response.status_code == 404
     assert "not found" in response.json()["detail"]
+
+
+def test_delete_tracking_jobs_multiple_filters_returns_error(client: TestClient):
+    response = client.delete(
+        "/api/v1/tracking/jobs?status=pending&vertical_name=SUV Cars"
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["detail"]
+        == "Only one filter parameter allow. You passed these status, vertical_name! Please stick to one parameter only!"
+    )

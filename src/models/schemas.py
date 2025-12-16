@@ -169,3 +169,8 @@ class DeleteVerticalResponse(BaseModel):
     deleted: bool
     deleted_runs_count: int
     message: str
+
+
+class DeleteJobsResponse(BaseModel):
+    deleted_count: int
+    vertical_ids: List[int]
