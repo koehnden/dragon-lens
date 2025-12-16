@@ -4,10 +4,20 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from models import Brand, BrandMention, DailyMetrics, LLMAnswer, Run, RunMetrics, Vertical, get_db
+from models import (
+    Brand,
+    BrandMention,
+    DailyMetrics,
+    LLMAnswer,
+    Prompt,
+    Run,
+    RunMetrics,
+    Vertical,
+    get_db,
+)
+from metrics.metrics import AnswerMetrics, visibility_metrics
 from models.schemas import AllRunMetricsResponse, BrandMetrics, MetricsResponse, RunMetricsResponse
 from services.translater import format_entity_label
 
@@ -89,60 +99,46 @@ async def get_latest_metrics(
             detail=f"No runs found for vertical {vertical_id} and model {model_name}",
         )
 
+    prompts = db.query(Prompt).filter(Prompt.vertical_id == vertical_id).all()
+    prompt_ids = [p.id for p in prompts]
     brands = db.query(Brand).filter(Brand.vertical_id == vertical_id).all()
+    mentions = (
+        db.query(BrandMention)
+        .join(LLMAnswer, LLMAnswer.id == BrandMention.llm_answer_id)
+        .filter(LLMAnswer.run_id == latest_run.id)
+        .all()
+    )
+    answer_metrics = [
+        AnswerMetrics(
+            prompt_id=m.llm_answer.prompt_id,
+            brand=m.brand.display_name,
+            rank=m.rank,
+            sentiment=m.sentiment.value,
+        )
+        for m in mentions
+        if m.mentioned
+    ]
 
     brand_metrics = []
+    brand_names = [b.display_name for b in brands]
     for brand in brands:
-        mentions = (
-            db.query(BrandMention)
-            .join(LLMAnswer, LLMAnswer.id == BrandMention.llm_answer_id)
-            .filter(
-                LLMAnswer.run_id == latest_run.id,
-                BrandMention.brand_id == brand.id,
-            )
-            .all()
+        competitors = [name for name in brand_names if name != brand.display_name]
+        metrics = visibility_metrics(
+            prompt_ids=prompt_ids,
+            mentions=answer_metrics,
+            brand=brand.display_name,
+            competitor_brands=competitors,
         )
-
-        if not mentions:
-            brand_metrics.append(
-                BrandMetrics(
-                    brand_id=brand.id,
-                    brand_name=format_entity_label(brand.original_name, brand.translated_name),
-                    mention_rate=0.0,
-                    avg_rank=None,
-                    sentiment_positive=0.0,
-                    sentiment_neutral=0.0,
-                    sentiment_negative=0.0,
-                )
-            )
-            continue
-
-        total_mentions = len(mentions)
-        mentioned_count = sum(1 for m in mentions if m.mentioned)
-        mention_rate = mentioned_count / total_mentions if total_mentions > 0 else 0.0
-
-        ranks = [m.rank for m in mentions if m.mentioned and m.rank is not None]
-        avg_rank = sum(ranks) / len(ranks) if ranks else None
-
-        sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0}
-        for m in mentions:
-            if m.mentioned:
-                sentiment_counts[m.sentiment.value] += 1
-
-        mentioned = mentioned_count if mentioned_count > 0 else 1
-        sentiment_pos = sentiment_counts["positive"] / mentioned
-        sentiment_neu = sentiment_counts["neutral"] / mentioned
-        sentiment_neg = sentiment_counts["negative"] / mentioned
 
         brand_metrics.append(
             BrandMetrics(
                 brand_id=brand.id,
                 brand_name=format_entity_label(brand.original_name, brand.translated_name),
-                mention_rate=mention_rate,
-                avg_rank=avg_rank,
-                sentiment_positive=sentiment_pos,
-                sentiment_neutral=sentiment_neu,
-                sentiment_negative=sentiment_neg,
+                mention_rate=metrics["mention_rate"],
+                share_of_voice=metrics["share_of_voice"],
+                top_spot_share=metrics["top_spot_share"],
+                sentiment_index=metrics["sentiment_index"],
+                dragon_lens_visibility=metrics["dragon_lens_visibility"],
             )
         )
 
@@ -203,10 +199,10 @@ async def get_daily_metrics(
             {
                 "date": m.date,
                 "mention_rate": m.mention_rate,
-                "avg_rank": m.avg_rank,
-                "sentiment_positive": m.sentiment_pos,
-                "sentiment_neutral": m.sentiment_neu,
-                "sentiment_negative": m.sentiment_neg,
+                "share_of_voice": m.share_of_voice,
+                "top_spot_share": m.top_spot_share,
+                "sentiment_index": m.sentiment_index,
+                "dragon_lens_visibility": m.dragon_lens_visibility,
             }
             for m in metrics
         ],
@@ -239,14 +235,11 @@ async def get_run_metrics(
                 brand_id=metric.brand_id,
                 brand_name=format_entity_label(brand.original_name, brand.translated_name),
                 is_user_input=brand.is_user_input,
-                asov_coverage=metric.asov_coverage,
-                asov_relative=metric.asov_relative,
-                prominence_score=metric.prominence_score,
                 top_spot_share=metric.top_spot_share,
                 sentiment_index=metric.sentiment_index,
-                positive_share=metric.positive_share,
-                opportunity_rate=metric.opportunity_rate,
-                dragon_visibility_score=metric.dragon_visibility_score,
+                mention_rate=metric.mention_rate,
+                share_of_voice=metric.share_of_voice,
+                dragon_lens_visibility=metric.dragon_lens_visibility,
             )
         )
 

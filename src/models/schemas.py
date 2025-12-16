@@ -76,10 +76,10 @@ class BrandMetrics(BaseModel):
     brand_id: int
     brand_name: str
     mention_rate: float
-    avg_rank: Optional[float]
-    sentiment_positive: float
-    sentiment_neutral: float
-    sentiment_negative: float
+    share_of_voice: float
+    top_spot_share: float
+    sentiment_index: float
+    dragon_lens_visibility: float
 
 
 class MetricsResponse(BaseModel):
@@ -143,14 +143,11 @@ class RunMetricsResponse(BaseModel):
     brand_id: int
     brand_name: str
     is_user_input: bool
-    asov_coverage: float
-    asov_relative: float
-    prominence_score: float
     top_spot_share: float
     sentiment_index: float
-    positive_share: float
-    opportunity_rate: float
-    dragon_visibility_score: float
+    mention_rate: float
+    share_of_voice: float
+    dragon_lens_visibility: float
 
     model_config = {"from_attributes": True}
 
