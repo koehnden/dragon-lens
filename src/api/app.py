@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -14,7 +15,8 @@ from services.model_cache import ensure_embedding_model_available
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     init_db()
-    ensure_embedding_model_available(EMBEDDING_MODEL_NAME)
+    cache_dir = os.getenv("EMBEDDING_CACHE_DIR")
+    ensure_embedding_model_available(EMBEDDING_MODEL_NAME, cache_dir, True)
     yield
 
 app = FastAPI(
