@@ -5,8 +5,9 @@ from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from models import Brand, BrandMention, DailyMetrics, LLMAnswer, Prompt, Run, Vertical
+from models import Brand, BrandMention, DailyMetrics, LLMAnswer, Prompt, Run, RunMetrics, Vertical
 from models.domain import PromptLanguage, RunStatus, Sentiment
+from services.metrics_service import calculate_and_save_metrics
 
 
 @pytest.fixture
@@ -383,3 +384,67 @@ def test_metrics_across_different_models(client: TestClient, db_session: Session
     # DeepSeek should have no mentions (no answers created)
     deepseek_brands = deepseek_metrics.json()["brands"]
     assert all(b["mention_rate"] == 0 for b in deepseek_brands)
+
+
+def test_calculate_and_save_metrics_service(db_session: Session, complete_test_data):
+    run_id = complete_test_data["run_id"]
+
+    calculate_and_save_metrics(db_session, run_id)
+
+    run_metrics = db_session.query(RunMetrics).filter(RunMetrics.run_id == run_id).all()
+
+    assert len(run_metrics) == 3
+
+    merc_metrics = next(m for m in run_metrics if m.brand_id == complete_test_data["brand1_id"])
+    assert merc_metrics.asov_coverage == pytest.approx(1.0, rel=1e-2)
+    assert merc_metrics.asov_relative == pytest.approx(3 / 6, rel=1e-2)
+    assert merc_metrics.top_spot_share == pytest.approx(1 / 3, rel=1e-2)
+    assert merc_metrics.positive_share == 1.0
+    assert merc_metrics.dragon_visibility_score > 0
+
+
+def test_run_metrics_endpoint(client: TestClient, db_session: Session, complete_test_data):
+    run_id = complete_test_data["run_id"]
+
+    calculate_and_save_metrics(db_session, run_id)
+
+    response = client.get(f"/api/v1/metrics/run/{run_id}")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["run_id"] == run_id
+    assert data["vertical_name"] == "Luxury Cars"
+    assert data["model_name"] == "qwen"
+    assert len(data["metrics"]) == 3
+
+    merc = next(m for m in data["metrics"] if m["brand_name"] == "Mercedes-Benz")
+    assert merc["asov_coverage"] == pytest.approx(1.0, rel=1e-2)
+    assert merc["positive_share"] == 1.0
+    assert "dragon_visibility_score" in merc
+    assert merc["dragon_visibility_score"] > 0
+
+
+def test_run_metrics_endpoint_nonexistent_run(client: TestClient):
+    response = client.get("/api/v1/metrics/run/99999")
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_run_metrics_endpoint_no_metrics_calculated(client: TestClient, db_session: Session, complete_test_data):
+    vertical_id = complete_test_data["vertical_id"]
+
+    new_run = Run(
+        vertical_id=vertical_id,
+        model_name="qwen",
+        status=RunStatus.COMPLETED,
+    )
+    db_session.add(new_run)
+    db_session.commit()
+
+    response = client.get(f"/api/v1/metrics/run/{new_run.id}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["metrics"]) == 0

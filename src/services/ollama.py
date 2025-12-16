@@ -37,7 +37,14 @@ class OllamaService:
         if system_prompt:
             payload["system"] = system_prompt
 
-        async with httpx.AsyncClient(timeout=300.0) as client:
+        timeout = httpx.Timeout(
+            connect=10.0,
+            read=600.0,
+            write=10.0,
+            pool=10.0
+        )
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
             try:
                 response = await client.post(url, json=payload)
                 response.raise_for_status()
@@ -152,6 +159,26 @@ class OllamaService:
             })
 
         return mentions
+
+    async def get_embeddings(self, texts: list[str], model: str = "bge-small-zh-v1.5") -> list[list[float]]:
+        url = f"{self.base_url}/api/embeddings"
+
+        embeddings = []
+        timeout = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0)
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            for text in texts:
+                payload = {"model": model, "prompt": text}
+                try:
+                    response = await client.post(url, json=payload)
+                    response.raise_for_status()
+                    result = response.json()
+                    embeddings.append(result.get("embedding", []))
+                except httpx.HTTPError as e:
+                    logger.error(f"Ollama embeddings API error for text '{text[:50]}': {e}")
+                    raise
+
+        return embeddings
 
     async def check_health(self) -> bool:
         try:

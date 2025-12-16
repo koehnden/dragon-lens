@@ -1,4 +1,4 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean example
 
 # Default target
 .DEFAULT_GOAL := help
@@ -75,7 +75,11 @@ install-ollama: ## Install Ollama if not already installed (macOS only)
 install-deps: check-deps ## Install Python dependencies with Poetry
 	@echo "$(YELLOW)Installing Python dependencies...$(NC)"
 	@poetry install
+	@$(MAKE) download-embeddings
 	@echo "$(GREEN)✓ Python dependencies installed$(NC)"
+
+download-embeddings:
+	@poetry run python -m scripts.prefetch_embedding_model
 
 pull-qwen: ## Pull Qwen model for Ollama (if not already pulled)
 	@echo "$(YELLOW)Checking if Qwen model is already pulled...$(NC)"
@@ -351,6 +355,46 @@ watch: ## Watch service status and recent logs (refreshes every 2s)
 		echo "$(GREEN)═══════════════════════════════════════════════════════$(NC)"; \
 		sleep 2; \
 	done
+
+example: ## Run an example SUV tracking job with VW brand
+	@echo "$(YELLOW)Running example SUV tracking job...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Step 1: Checking if 'SUV Cars' vertical exists...$(NC)"
+	@VERTICAL_ID=$$(curl -s http://localhost:$(API_PORT)/api/v1/verticals | jq -r '.[] | select(.name=="SUV Cars") | .id' 2>/dev/null); \
+	if [ -n "$$VERTICAL_ID" ]; then \
+		echo "$(YELLOW)Found existing vertical (ID: $$VERTICAL_ID), deleting...$(NC)"; \
+		DELETE_RESPONSE=$$(curl -s -X DELETE http://localhost:$(API_PORT)/api/v1/verticals/$$VERTICAL_ID); \
+		if echo "$$DELETE_RESPONSE" | jq -e '.deleted' > /dev/null 2>&1; then \
+			echo "$(GREEN)✓ Deleted existing vertical$(NC)"; \
+		else \
+			echo "$(RED)✗ Could not delete vertical (may have active runs)$(NC)"; \
+			echo "$(YELLOW)  Continuing anyway - will reuse existing vertical$(NC)"; \
+		fi; \
+	else \
+		echo "$(GREEN)✓ No existing vertical found$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(YELLOW)Step 2: Creating new tracking job for 'SUV Cars' with VW brand...$(NC)"
+	@RESPONSE=$$(curl -s -w "\n%{http_code}" -X POST http://localhost:$(API_PORT)/api/v1/tracking/jobs \
+		-H "Content-Type: application/json" \
+		-d @examples/suv_example.json); \
+	HTTP_CODE=$$(echo "$$RESPONSE" | tail -n1); \
+	BODY=$$(echo "$$RESPONSE" | sed '$$d'); \
+	if [ "$$HTTP_CODE" = "201" ]; then \
+		echo "$$BODY" | jq .; \
+		echo ""; \
+		echo "$(GREEN)✓ Example tracking job created!$(NC)"; \
+	else \
+		echo "$(RED)✗ Failed to create tracking job (HTTP $$HTTP_CODE)$(NC)"; \
+		echo "$$BODY"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "$(YELLOW)Next steps:$(NC)"
+	@echo "  View runs:    curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
+	@echo "  Check status: curl http://localhost:$(API_PORT)/api/v1/tracking/runs/1 | jq"
+	@echo "  View in UI:   http://localhost:$(STREAMLIT_PORT)"
+	@echo ""
 
 dev: ## Start services in development mode (with auto-reload)
 	@echo "$(YELLOW)Starting development environment...$(NC)"

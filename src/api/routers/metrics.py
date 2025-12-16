@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from models import Brand, BrandMention, DailyMetrics, LLMAnswer, Run, Vertical, get_db
-from models.schemas import BrandMetrics, MetricsResponse
+from models import Brand, BrandMention, DailyMetrics, LLMAnswer, Run, RunMetrics, Vertical, get_db
+from models.schemas import AllRunMetricsResponse, BrandMetrics, MetricsResponse, RunMetricsResponse
 
 router = APIRouter()
 
@@ -210,3 +210,50 @@ async def get_daily_metrics(
             for m in metrics
         ],
     }
+
+
+@router.get("/run/{run_id}", response_model=AllRunMetricsResponse)
+async def get_run_metrics(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> AllRunMetricsResponse:
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+    vertical = db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
+    if not vertical:
+        raise HTTPException(status_code=404, detail=f"Vertical {run.vertical_id} not found")
+
+    run_metrics = db.query(RunMetrics).filter(RunMetrics.run_id == run_id).all()
+
+    metrics_responses = []
+    for metric in run_metrics:
+        brand = db.query(Brand).filter(Brand.id == metric.brand_id).first()
+        if not brand:
+            continue
+
+        metrics_responses.append(
+            RunMetricsResponse(
+                brand_id=metric.brand_id,
+                brand_name=brand.display_name,
+                is_user_input=brand.is_user_input,
+                asov_coverage=metric.asov_coverage,
+                asov_relative=metric.asov_relative,
+                prominence_score=metric.prominence_score,
+                top_spot_share=metric.top_spot_share,
+                sentiment_index=metric.sentiment_index,
+                positive_share=metric.positive_share,
+                opportunity_rate=metric.opportunity_rate,
+                dragon_visibility_score=metric.dragon_visibility_score,
+            )
+        )
+
+    return AllRunMetricsResponse(
+        run_id=run.id,
+        vertical_id=run.vertical_id,
+        vertical_name=vertical.name,
+        model_name=run.model_name,
+        run_time=run.run_time,
+        metrics=metrics_responses,
+    )
