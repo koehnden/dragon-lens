@@ -121,20 +121,157 @@ def generate_candidates(text: str, primary_brand: str, aliases: Dict[str, List[s
 async def _filter_candidates_with_qwen(candidates: List[EntityCandidate], text: str) -> List[EntityCandidate]:
     from services.ollama import OllamaService
 
-    ollama = OllamaService()
     filtered = []
+    needs_qwen_verification = []
 
     for candidate in candidates:
         if candidate.source == "seed":
             filtered.append(candidate)
-            continue
-
-        verification = await _verify_entity_with_qwen(ollama, candidate.name, text)
-        if verification and verification.get("type") in ["brand", "product"]:
+        elif _is_valid_brand_candidate(candidate.name):
             filtered.append(candidate)
+        elif _might_be_brand_needs_verification(candidate.name):
+            needs_qwen_verification.append(candidate)
+
+    if needs_qwen_verification:
+        ollama = OllamaService()
+        batch_results = await _batch_verify_entities_with_qwen(ollama, needs_qwen_verification, text)
+        for candidate in needs_qwen_verification:
+            if batch_results.get(candidate.name) in ["brand", "product"]:
+                filtered.append(candidate)
 
     logger.info(f"Qwen filtering: {len(candidates)} -> {len(filtered)} candidates")
     return filtered
+
+
+def _might_be_brand_needs_verification(name: str) -> bool:
+    if len(name) < 2 or len(name) > 30:
+        return False
+
+    if _contains_feature_keywords(name):
+        return False
+
+    if re.search(r"[、，。！？：；]", name):
+        return False
+
+    if re.search(r"[\u4e00-\u9fff]{2,}", name):
+        return True
+
+    if re.search(r"[A-Za-z]{2,}", name):
+        return True
+
+    return False
+
+
+async def _batch_verify_entities_with_qwen(
+    ollama,
+    candidates: List[EntityCandidate],
+    text: str,
+    batch_size: int = 30
+) -> Dict[str, str]:
+    results: Dict[str, str] = {}
+
+    for i in range(0, len(candidates), batch_size):
+        batch = candidates[i:i + batch_size]
+        batch_results = await _verify_batch_with_qwen(ollama, batch, text)
+        results.update(batch_results)
+
+    return results
+
+
+async def _verify_batch_with_qwen(
+    ollama,
+    batch: List[EntityCandidate],
+    text: str
+) -> Dict[str, str]:
+    import json
+
+    candidate_names = [c.name for c in batch]
+    candidates_json = json.dumps(candidate_names, ensure_ascii=False)
+
+    system_prompt = """You are a brand/product recognition expert. Classify each candidate entity based on the source text.
+
+CRITICAL RULES:
+1. Base your classification ONLY on the provided text context
+2. Output ONLY valid JSON array with the exact format specified
+3. Each entry must have "name" and "type" fields
+
+Classify each entity as:
+- "brand": A brand/company name (e.g., 比亚迪, Tesla, Loreal)
+- "product": A specific product/model name (e.g., 宋PLUS, iPhone14, Mate50)
+- "other": Feature descriptions, quality descriptors, generic terms
+
+Output format (JSON array only, no additional text):
+[{"name": "entity1", "type": "brand"}, {"name": "entity2", "type": "other"}, ...]"""
+
+    text_snippet = text[:1500] if len(text) > 1500 else text
+
+    prompt = f"""Source text:
+{text_snippet}
+
+Candidates to classify:
+{candidates_json}
+
+Classify each candidate. Output JSON array only:"""
+
+    try:
+        response = await ollama._call_ollama(
+            model=ollama.ner_model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.1,
+        )
+
+        parsed = _parse_batch_json_response(response)
+        if not parsed:
+            logger.warning(f"Failed to parse batch response, falling back to 'other'")
+            return {name: "other" for name in candidate_names}
+
+        result_map = {}
+        for item in parsed:
+            if isinstance(item, dict) and "name" in item and "type" in item:
+                result_map[item["name"]] = item["type"]
+
+        for name in candidate_names:
+            if name not in result_map:
+                result_map[name] = "other"
+
+        return result_map
+
+    except Exception as e:
+        logger.warning(f"Batch verification failed: {e}")
+        return {name: "other" for name in candidate_names}
+
+
+def _parse_batch_json_response(response: str) -> List[Dict] | None:
+    import json
+
+    response = response.strip()
+
+    if response.startswith("```json"):
+        response = response[7:]
+    if response.startswith("```"):
+        response = response[3:]
+    if response.endswith("```"):
+        response = response[:-3]
+    response = response.strip()
+
+    try:
+        result = json.loads(response)
+        if isinstance(result, list):
+            return result
+    except json.JSONDecodeError:
+        pass
+
+    array_match = re.search(r'\[[\s\S]*\]', response)
+    if array_match:
+        try:
+            result = json.loads(array_match.group(0))
+            if isinstance(result, list):
+                return result
+        except json.JSONDecodeError:
+            pass
+
+    return None
 
 
 def _filter_candidates_simple(candidates: List[EntityCandidate]) -> List[EntityCandidate]:

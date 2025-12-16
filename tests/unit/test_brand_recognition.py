@@ -43,11 +43,11 @@ def test_extract_entities_unifies_primary_and_competitors():
     assert "特斯拉" in canonical[tesla_key] or "Tesla" in canonical[tesla_key]
 
 
-def test_cluster_with_embeddings_falls_back_on_timeout(monkeypatch):
-    async def timeout_loader(*args, **kwargs):
-        raise asyncio.TimeoutError()
+def test_cluster_with_embeddings_falls_back_on_error(monkeypatch):
+    def error_embeddings(*args, **kwargs):
+        raise RuntimeError("Embedding model unavailable")
 
-    monkeypatch.setattr("services.brand_recognition._load_embedding_model", timeout_loader)
+    monkeypatch.setattr("services.brand_recognition._get_embeddings_sync", error_embeddings)
 
     candidates = [
         EntityCandidate(name="Alpha", source="seed"),
