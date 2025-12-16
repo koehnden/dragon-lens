@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from models import Brand, BrandMention, DailyMetrics, LLMAnswer, Run, RunMetrics, Vertical, get_db
 from models.schemas import AllRunMetricsResponse, BrandMetrics, MetricsResponse, RunMetricsResponse
+from services.translater import format_entity_label
 
 router = APIRouter()
 
@@ -106,7 +107,7 @@ async def get_latest_metrics(
             brand_metrics.append(
                 BrandMetrics(
                     brand_id=brand.id,
-                    brand_name=brand.display_name,
+                    brand_name=format_entity_label(brand.original_name, brand.translated_name),
                     mention_rate=0.0,
                     avg_rank=None,
                     sentiment_positive=0.0,
@@ -136,7 +137,7 @@ async def get_latest_metrics(
         brand_metrics.append(
             BrandMetrics(
                 brand_id=brand.id,
-                brand_name=brand.display_name,
+                brand_name=format_entity_label(brand.original_name, brand.translated_name),
                 mention_rate=mention_rate,
                 avg_rank=avg_rank,
                 sentiment_positive=sentiment_pos,
@@ -236,7 +237,7 @@ async def get_run_metrics(
         metrics_responses.append(
             RunMetricsResponse(
                 brand_id=metric.brand_id,
-                brand_name=brand.display_name,
+                brand_name=format_entity_label(brand.original_name, brand.translated_name),
                 is_user_input=brand.is_user_input,
                 asov_coverage=metric.asov_coverage,
                 asov_relative=metric.asov_relative,

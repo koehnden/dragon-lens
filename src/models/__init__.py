@@ -4,6 +4,7 @@ from models.domain import (
     BrandMention,
     DailyMetrics,
     LLMAnswer,
+    Product,
     Prompt,
     PromptLanguage,
     Run,
@@ -26,6 +27,7 @@ __all__ = [
     "LLMAnswer",
     "BrandMention",
     "DailyMetrics",
+    "Product",
     "RunMetrics",
     "Sentiment",
 ]

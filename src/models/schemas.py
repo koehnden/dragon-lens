@@ -30,6 +30,8 @@ class BrandResponse(BaseModel):
     id: int
     vertical_id: int
     display_name: str
+    original_name: str
+    translated_name: Optional[str]
     aliases: Dict[str, List[str]]
     is_user_input: bool
     created_at: datetime

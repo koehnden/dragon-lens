@@ -19,6 +19,7 @@ from models.schemas import (
     TrackingJobCreate,
     TrackingJobResponse,
 )
+from services.translater import TranslaterService, format_entity_label
 from services.metrics_service import calculate_and_save_metrics
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ async def create_tracking_job(
     Returns:
         Tracking job response with run ID
     """
+    translator = TranslaterService()
     vertical = db.query(Vertical).filter(Vertical.name == job.vertical_name).first()
     if not vertical:
         vertical = Vertical(
@@ -59,9 +61,12 @@ async def create_tracking_job(
         db.flush()
 
     for brand_data in job.brands:
+        translated_name = await translator.translate_entity(brand_data.display_name)
         brand = Brand(
             vertical_id=vertical.id,
             display_name=brand_data.display_name,
+            original_name=brand_data.display_name,
+            translated_name=translated_name,
             aliases=brand_data.aliases,
         )
         db.add(brand)
@@ -208,10 +213,15 @@ async def get_run_details(
 
         for mention in llm_answer.mentions:
             brand = db.query(Brand).filter(Brand.id == mention.brand_id).first()
+            brand_label = (
+                format_entity_label(brand.original_name, brand.translated_name)
+                if brand
+                else "Unknown"
+            )
             mentions_data.append(
                 BrandMentionResponse(
                     brand_id=mention.brand_id,
-                    brand_name=brand.display_name if brand else "Unknown",
+                    brand_name=brand_label,
                     mentioned=mention.mentioned,
                     rank=mention.rank,
                     sentiment=mention.sentiment.value,
