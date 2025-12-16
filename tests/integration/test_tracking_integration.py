@@ -358,3 +358,200 @@ def test_get_run_details_with_answers(client: TestClient, db_session: Session):
     assert bmw_mention["mentioned"] is True
     assert bmw_mention["rank"] == 2
     assert bmw_mention["sentiment"] == "positive"
+
+
+def test_delete_jobs_by_vertical_name(client: TestClient, db_session: Session):
+    """Test deleting jobs by vertical name."""
+    # Create multiple jobs with the same vertical name
+    job1 = client.post(
+        "/api/v1/tracking/jobs",
+        json={
+            "vertical_name": "SUV Cars",
+            "brands": [{"display_name": "VW"}],
+            "prompts": [{"text_en": "Test 1", "language_original": "en"}],
+        },
+    )
+    assert job1.status_code == 201
+    vertical_id = job1.json()["vertical_id"]
+    run_id_1 = job1.json()["run_id"]
+
+    job2 = client.post(
+        "/api/v1/tracking/jobs",
+        json={
+            "vertical_name": "SUV Cars",
+            "brands": [{"display_name": "BMW"}],
+            "prompts": [{"text_en": "Test 2", "language_original": "en"}],
+        },
+    )
+    assert job2.status_code == 201
+    run_id_2 = job2.json()["run_id"]
+
+    # Create a different vertical to verify it's not deleted
+    job3 = client.post(
+        "/api/v1/tracking/jobs",
+        json={
+            "vertical_name": "Sedans",
+            "brands": [{"display_name": "Audi"}],
+            "prompts": [{"text_en": "Test 3", "language_original": "en"}],
+        },
+    )
+    assert job3.status_code == 201
+    run_id_3 = job3.json()["run_id"]
+
+    # Verify 3 runs exist
+    all_runs_before = client.get("/api/v1/tracking/runs")
+    assert len(all_runs_before.json()) == 3
+
+    # Delete jobs by vertical name
+    response = client.delete("/api/v1/tracking/jobs?vertical_name=SUV Cars")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["deleted_count"] == 2
+    assert vertical_id in data["vertical_ids"]
+
+    # Verify runs were deleted
+    run1_after = client.get(f"/api/v1/tracking/runs/{run_id_1}")
+    assert run1_after.status_code == 404
+
+    run2_after = client.get(f"/api/v1/tracking/runs/{run_id_2}")
+    assert run2_after.status_code == 404
+
+    # Verify other vertical's run still exists
+    run3_after = client.get(f"/api/v1/tracking/runs/{run_id_3}")
+    assert run3_after.status_code == 200
+
+    # Now we can delete the vertical successfully
+    delete_vertical = client.delete(f"/api/v1/verticals/{vertical_id}")
+    assert delete_vertical.status_code == 200
+
+
+def test_delete_jobs_by_id(client: TestClient, db_session: Session):
+    """Test deleting a specific job by ID."""
+    job1 = client.post(
+        "/api/v1/tracking/jobs",
+        json={
+            "vertical_name": "Test",
+            "brands": [{"display_name": "Brand"}],
+            "prompts": [{"text_en": "Test", "language_original": "en"}],
+        },
+    )
+    run_id = job1.json()["run_id"]
+
+    # Delete specific job
+    response = client.delete(f"/api/v1/tracking/jobs?id={run_id}")
+    assert response.status_code == 200
+    assert response.json()["deleted_count"] == 1
+
+    # Verify job was deleted
+    get_run = client.get(f"/api/v1/tracking/runs/{run_id}")
+    assert get_run.status_code == 404
+
+
+def test_delete_jobs_by_status(client: TestClient, db_session: Session):
+    """Test deleting jobs by status."""
+    from models.domain import RunStatus
+
+    # Create jobs
+    job1 = client.post(
+        "/api/v1/tracking/jobs",
+        json={
+            "vertical_name": "Test1",
+            "brands": [{"display_name": "Brand1"}],
+            "prompts": [{"text_en": "Test", "language_original": "en"}],
+        },
+    )
+    run_id_1 = job1.json()["run_id"]
+
+    job2 = client.post(
+        "/api/v1/tracking/jobs",
+        json={
+            "vertical_name": "Test2",
+            "brands": [{"display_name": "Brand2"}],
+            "prompts": [{"text_en": "Test", "language_original": "en"}],
+        },
+    )
+    run_id_2 = job2.json()["run_id"]
+
+    # Mark one as completed
+    run = db_session.query(Run).filter(Run.id == run_id_1).first()
+    run.status = RunStatus.COMPLETED
+    db_session.commit()
+
+    # Delete only pending jobs
+    response = client.delete("/api/v1/tracking/jobs?status=pending")
+    assert response.status_code == 200
+    assert response.json()["deleted_count"] == 1
+
+    # Verify pending job was deleted
+    get_run2 = client.get(f"/api/v1/tracking/runs/{run_id_2}")
+    assert get_run2.status_code == 404
+
+    # Verify completed job still exists
+    get_run1 = client.get(f"/api/v1/tracking/runs/{run_id_1}")
+    assert get_run1.status_code == 200
+
+
+def test_delete_jobs_latest(client: TestClient, db_session: Session):
+    """Test deleting the latest job."""
+    # Create multiple jobs
+    job1 = client.post(
+        "/api/v1/tracking/jobs",
+        json={
+            "vertical_name": "Test1",
+            "brands": [{"display_name": "Brand1"}],
+            "prompts": [{"text_en": "Test", "language_original": "en"}],
+        },
+    )
+
+    job2 = client.post(
+        "/api/v1/tracking/jobs",
+        json={
+            "vertical_name": "Test2",
+            "brands": [{"display_name": "Brand2"}],
+            "prompts": [{"text_en": "Test", "language_original": "en"}],
+        },
+    )
+    run_id_2 = job2.json()["run_id"]
+
+    # Delete latest job
+    response = client.delete("/api/v1/tracking/jobs?latest=true")
+    assert response.status_code == 200
+    assert response.json()["deleted_count"] == 1
+
+    # Verify latest job was deleted
+    get_run = client.get(f"/api/v1/tracking/runs/{run_id_2}")
+    assert get_run.status_code == 404
+
+
+def test_delete_all_jobs(client: TestClient, db_session: Session):
+    """Test deleting all jobs."""
+    # Create multiple jobs
+    for i in range(3):
+        client.post(
+            "/api/v1/tracking/jobs",
+            json={
+                "vertical_name": f"Test{i}",
+                "brands": [{"display_name": f"Brand{i}"}],
+                "prompts": [{"text_en": "Test", "language_original": "en"}],
+            },
+        )
+
+    # Verify jobs exist
+    all_runs = client.get("/api/v1/tracking/runs")
+    assert len(all_runs.json()) == 3
+
+    # Delete all jobs
+    response = client.delete("/api/v1/tracking/jobs?all=true")
+    assert response.status_code == 200
+    assert response.json()["deleted_count"] == 3
+
+    # Verify all jobs were deleted
+    all_runs_after = client.get("/api/v1/tracking/runs")
+    assert len(all_runs_after.json()) == 0
+
+
+def test_delete_jobs_requires_parameter(client: TestClient):
+    """Test that delete jobs requires at least one parameter."""
+    response = client.delete("/api/v1/tracking/jobs")
+    assert response.status_code == 400
+    assert "At least one parameter" in response.json()["detail"]

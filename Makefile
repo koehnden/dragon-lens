@@ -359,19 +359,22 @@ watch: ## Watch service status and recent logs (refreshes every 2s)
 example: ## Run an example SUV tracking job with VW brand
 	@echo "$(YELLOW)Running example SUV tracking job...$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Step 1: Checking if 'SUV Cars' vertical exists...$(NC)"
-	@VERTICAL_ID=$$(curl -s http://localhost:$(API_PORT)/api/v1/verticals | jq -r '.[] | select(.name=="SUV Cars") | .id' 2>/dev/null); \
-	if [ -n "$$VERTICAL_ID" ]; then \
-		echo "$(YELLOW)Found existing vertical (ID: $$VERTICAL_ID), deleting...$(NC)"; \
-		DELETE_RESPONSE=$$(curl -s -X DELETE http://localhost:$(API_PORT)/api/v1/verticals/$$VERTICAL_ID); \
-		if echo "$$DELETE_RESPONSE" | jq -e '.deleted' > /dev/null 2>&1; then \
-			echo "$(GREEN)✓ Deleted existing vertical$(NC)"; \
-		else \
-			echo "$(RED)✗ Could not delete vertical (may have active runs)$(NC)"; \
-			echo "$(YELLOW)  Continuing anyway - will reuse existing vertical$(NC)"; \
-		fi; \
+	@echo "$(YELLOW)Step 1: Cleaning up existing 'SUV Cars' jobs and vertical...$(NC)"
+	@DELETE_JOBS_RESPONSE=$$(curl -s -X DELETE "http://localhost:$(API_PORT)/api/v1/tracking/jobs?vertical_name=SUV%20Cars"); \
+	DELETED_COUNT=$$(echo "$$DELETE_JOBS_RESPONSE" | jq -r '.deleted_count // 0' 2>/dev/null || echo "0"); \
+	if [ "$$DELETED_COUNT" -gt 0 ]; then \
+		echo "$(GREEN)✓ Deleted $$DELETED_COUNT existing job(s)$(NC)"; \
+		VERTICAL_IDS=$$(echo "$$DELETE_JOBS_RESPONSE" | jq -r '.vertical_ids[]?' 2>/dev/null); \
+		for VID in $$VERTICAL_IDS; do \
+			DELETE_V_RESPONSE=$$(curl -s -X DELETE http://localhost:$(API_PORT)/api/v1/verticals/$$VID); \
+			if echo "$$DELETE_V_RESPONSE" | jq -e '.deleted' > /dev/null 2>&1; then \
+				echo "$(GREEN)✓ Deleted vertical (ID: $$VID)$(NC)"; \
+			else \
+				echo "$(YELLOW)  Could not delete vertical $$VID (may have other data)$(NC)"; \
+			fi; \
+		done; \
 	else \
-		echo "$(GREEN)✓ No existing vertical found$(NC)"; \
+		echo "$(GREEN)✓ No existing jobs found$(NC)"; \
 	fi
 	@echo ""
 	@echo "$(YELLOW)Step 2: Creating new tracking job for 'SUV Cars' with VW brand...$(NC)"
