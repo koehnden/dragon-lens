@@ -29,6 +29,26 @@ router = APIRouter()
 RUN_TASKS_INLINE = os.getenv("RUN_TASKS_INLINE", "false").lower() == "true"
 
 
+def _provided_filters(
+    id: int | None,
+    status: str | None,
+    latest: bool | None,
+    all: bool | None,
+    vertical_name: str | None,
+) -> list[str]:
+    return [
+        name
+        for name, value in [
+            ("id", id),
+            ("status", status),
+            ("latest", latest),
+            ("all", all),
+            ("vertical_name", vertical_name),
+        ]
+        if value
+    ]
+
+
 @router.post("/jobs", response_model=TrackingJobResponse, status_code=201)
 async def create_tracking_job(
     job: TrackingJobCreate,
@@ -133,7 +153,7 @@ async def delete_tracking_jobs(
     """
     Delete tracking jobs (runs) based on specified criteria.
 
-    At least one of the following parameters must be provided:
+    Exactly one of the following parameters must be provided:
     - id: Delete a specific job by run ID
     - status: Delete all jobs with a specific status (pending, in_progress, completed, failed)
     - latest: Delete the most recently created job
@@ -154,13 +174,22 @@ async def delete_tracking_jobs(
         DeleteJobsResponse with count and affected vertical IDs
 
     Raises:
-        HTTPException: If no parameters provided or invalid parameters
+        HTTPException: If no parameters provided, multiple parameters provided, or invalid parameters
     """
-    if not any([id, status, latest, all, vertical_name]):
+    provided_filters = _provided_filters(id, status, latest, all, vertical_name)
+    if not provided_filters:
         raise HTTPException(
             status_code=400,
             detail="At least one parameter (id, status, latest, all, vertical_name) must be provided"
         )
+
+    if len(provided_filters) > 1:
+        provided = ", ".join(provided_filters)
+        detail = (
+            "Only one filter parameter allow. You passed these "
+            f"{provided}! Please stick to one parameter only!"
+        )
+        raise HTTPException(status_code=400, detail=detail)
 
     query = db.query(Run)
 
