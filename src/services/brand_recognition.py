@@ -75,6 +75,53 @@ def normalize_text_for_ner(text: str) -> str:
     return normalized
 
 
+LIST_PATTERNS = [
+    r'^\s*\d+[.\)]\s+',
+    r'^\s*\d+、',
+    r'^\s*[-*]\s+',
+    r'^\s*[・○→]\s*',
+]
+
+COMPILED_LIST_PATTERNS = [re.compile(p, re.MULTILINE) for p in LIST_PATTERNS]
+
+
+def is_list_format(text: str) -> bool:
+    for pattern in COMPILED_LIST_PATTERNS:
+        matches = pattern.findall(text)
+        if len(matches) >= 2:
+            return True
+    return False
+
+
+def split_into_list_items(text: str) -> List[str]:
+    if not is_list_format(text):
+        return []
+
+    combined_pattern = r'(?:^\s*\d+[.\)]|^\s*\d+、|^\s*[-*]|^\s*[・○→])\s*'
+    parts = re.split(combined_pattern, text, flags=re.MULTILINE)
+    items = [p.strip() for p in parts if p and p.strip()]
+
+    first_item_idx = _find_first_list_item_index(text)
+    if first_item_idx > 0 and items:
+        items = items[1:] if _is_intro_paragraph(items[0], text) else items
+
+    return items
+
+
+def _find_first_list_item_index(text: str) -> int:
+    combined_pattern = r'(?:^\s*\d+[.\)]|^\s*\d+、|^\s*[-*]|^\s*[・○→])'
+    match = re.search(combined_pattern, text, flags=re.MULTILINE)
+    return match.start() if match else 0
+
+
+def _is_intro_paragraph(candidate: str, full_text: str) -> bool:
+    first_marker_idx = _find_first_list_item_index(full_text)
+    if first_marker_idx == 0:
+        return False
+    intro_part = full_text[:first_marker_idx].strip()
+    return candidate.strip() == intro_part
+
+
 def extract_entities(text: str, primary_brand: str, aliases: Dict[str, List[str]]) -> Dict[str, List[str]]:
     normalized_text = normalize_text_for_ner(text)
     candidates = generate_candidates(normalized_text, primary_brand, aliases)
@@ -83,6 +130,8 @@ def extract_entities(text: str, primary_brand: str, aliases: Dict[str, List[str]
         filtered_candidates = _run_async(_filter_candidates_with_qwen(candidates, normalized_text))
     else:
         filtered_candidates = _filter_candidates_simple(candidates)
+
+    filtered_candidates = _filter_by_list_position(filtered_candidates, text)
 
     if ENABLE_EMBEDDING_CLUSTERING:
         embedding_clusters = _run_async(_cluster_with_embeddings(filtered_candidates))
@@ -95,6 +144,76 @@ def extract_entities(text: str, primary_brand: str, aliases: Dict[str, List[str]
         final_clusters = _simple_clustering(embedding_clusters, primary_brand, aliases)
 
     return final_clusters
+
+
+COMPARISON_MARKERS = [
+    "similar to", "comparable to", "like ", "better than", "worse than",
+    "competing with", "compared to", "versus", " vs ", " vs.",
+    "outperforming", "ahead of", "behind ",
+    "类似于", "相比于", "胜过", "不如", "优于", "竞争对手",
+    "，比", "，和", "，与", "，类似", "，相比",
+]
+
+CLAUSE_SEPARATORS = [". ", ", ", "; ", "。", "，", "；", " - "]
+
+
+def _filter_by_list_position(candidates: List[EntityCandidate], text: str) -> List[EntityCandidate]:
+    if not is_list_format(text):
+        return candidates
+
+    list_items = split_into_list_items(text)
+    if not list_items:
+        return candidates
+
+    allowed_entities: Set[str] = set()
+
+    intro_text = _get_intro_text(text)
+    if intro_text:
+        intro_lower = intro_text.lower()
+        for candidate in candidates:
+            if candidate.name.lower() in intro_lower:
+                allowed_entities.add(candidate.name.lower())
+
+    for item in list_items:
+        item_lower = item.lower()
+        primary_region = _get_primary_region(item_lower)
+
+        for candidate in candidates:
+            name_lower = candidate.name.lower()
+            if name_lower in primary_region:
+                allowed_entities.add(name_lower)
+
+    filtered = [c for c in candidates if c.name.lower() in allowed_entities]
+    logger.info(f"List position filter: {len(candidates)} -> {len(filtered)} candidates")
+    return filtered
+
+
+def _get_intro_text(text: str) -> str | None:
+    first_marker_idx = _find_first_list_item_index(text)
+    if first_marker_idx > 0:
+        return text[:first_marker_idx].strip()
+    return None
+
+
+def _get_primary_region(item: str) -> str:
+    cutoff = _find_first_cutoff(item)
+    return item[:cutoff] if cutoff else item
+
+
+def _find_first_cutoff(item: str) -> int | None:
+    cutoff_positions = []
+
+    for marker in COMPARISON_MARKERS:
+        pos = item.find(marker)
+        if pos != -1:
+            cutoff_positions.append(pos)
+
+    for sep in CLAUSE_SEPARATORS:
+        pos = item.find(sep)
+        if pos != -1 and pos > 5:
+            cutoff_positions.append(pos)
+
+    return min(cutoff_positions) if cutoff_positions else None
 
 
 def generate_candidates(text: str, primary_brand: str, aliases: Dict[str, List[str]]) -> List[EntityCandidate]:
