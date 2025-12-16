@@ -9,12 +9,32 @@ def default_cache_dir() -> str:
     return str(Path.home() / ".cache" / "huggingface")
 
 
-def ensure_embedding_model_available(model_name: str, cache_dir: str | None = None) -> str:
-    target_dir = cache_dir or default_cache_dir()
-    return _download_snapshot(model_name, target_dir)
+def embedding_cache_dir(model_name: str, cache_dir: str | None = None) -> Path:
+    base_dir = Path(cache_dir or default_cache_dir())
+    return base_dir / "embeddings" / model_name.replace("/", "__")
 
 
-def _download_snapshot(model_name: str, target_dir: str) -> str:
+def ensure_embedding_model_available(model_name: str, cache_dir: str | None = None, offline_only: bool = False) -> str:
+    target_dir = embedding_cache_dir(model_name, cache_dir)
+    if _is_cached(target_dir):
+        return str(target_dir)
+    return _download_snapshot(model_name, target_dir, offline_only)
+
+
+def _is_cached(target_dir: Path) -> bool:
+    return (target_dir / ".downloaded").exists()
+
+
+def _download_snapshot(model_name: str, target_dir: Path, offline_only: bool) -> str:
+    target_dir.mkdir(parents=True, exist_ok=True)
     from huggingface_hub import snapshot_download
 
-    return snapshot_download(repo_id=model_name, local_dir=target_dir, local_dir_use_symlinks=False)
+    args = dict(
+        repo_id=model_name,
+        local_dir=target_dir,
+        local_dir_use_symlinks=False,
+        local_files_only=offline_only,
+    )
+    result = snapshot_download(**args)
+    (target_dir / ".downloaded").touch()
+    return result

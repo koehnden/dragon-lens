@@ -7,12 +7,12 @@ def test_lifespan_prefetches_embedding_model(monkeypatch):
     app_module = importlib.reload(importlib.import_module("api.app"))
     calls = []
 
-    def fake_ensure(model_name):
-        calls.append(model_name)
+    def fake_ensure(model_name, cache_dir=None, offline_only=False):
+        calls.append((model_name, cache_dir, offline_only))
 
     monkeypatch.setattr(app_module, "ensure_embedding_model_available", fake_ensure)
 
     with TestClient(app_module.app):
         pass
 
-    assert calls == [app_module.EMBEDDING_MODEL_NAME]
+    assert calls == [(app_module.EMBEDDING_MODEL_NAME, None, True)]
