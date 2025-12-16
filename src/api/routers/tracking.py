@@ -13,6 +13,7 @@ from models import Brand, BrandMention, LLMAnswer, Prompt, Run, Vertical, get_db
 from models.domain import PromptLanguage, RunStatus, Sentiment
 from models.schemas import (
     BrandMentionResponse,
+    DeleteJobsResponse,
     LLMAnswerResponse,
     RunDetailedResponse,
     RunResponse,
@@ -117,6 +118,82 @@ async def create_tracking_job(
         model_name=job.model_name,
         status=run.status.value,
         message=enqueue_message,
+    )
+
+
+@router.delete("/jobs", response_model=DeleteJobsResponse)
+async def delete_tracking_jobs(
+    id: int | None = None,
+    status: str | None = None,
+    latest: bool | None = None,
+    all: bool | None = None,
+    vertical_name: str | None = None,
+    db: Session = Depends(get_db),
+) -> DeleteJobsResponse:
+    """
+    Delete tracking jobs (runs) based on specified criteria.
+
+    At least one of the following parameters must be provided:
+    - id: Delete a specific job by run ID
+    - status: Delete all jobs with a specific status (pending, in_progress, completed, failed)
+    - latest: Delete the most recently created job
+    - all: Delete all jobs
+    - vertical_name: Delete all jobs associated with a specific vertical name
+
+    Returns the vertical IDs of deleted jobs so verticals can be cleaned up afterwards.
+
+    Args:
+        id: Specific run ID to delete
+        status: Status of runs to delete
+        latest: Whether to delete the latest run
+        all: Whether to delete all runs
+        vertical_name: Name of vertical whose runs should be deleted
+        db: Database session
+
+    Returns:
+        DeleteJobsResponse with count and affected vertical IDs
+
+    Raises:
+        HTTPException: If no parameters provided or invalid parameters
+    """
+    if not any([id, status, latest, all, vertical_name]):
+        raise HTTPException(
+            status_code=400,
+            detail="At least one parameter (id, status, latest, all, vertical_name) must be provided"
+        )
+
+    query = db.query(Run)
+
+    if id:
+        query = query.filter(Run.id == id)
+    elif status:
+        try:
+            run_status = RunStatus(status)
+            query = query.filter(Run.status == run_status)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    elif latest:
+        query = query.order_by(Run.run_time.desc(), Run.id.desc()).limit(1)
+    elif all:
+        pass
+    elif vertical_name:
+        vertical = db.query(Vertical).filter(Vertical.name == vertical_name).first()
+        if not vertical:
+            return DeleteJobsResponse(deleted_count=0, vertical_ids=[])
+        query = query.filter(Run.vertical_id == vertical.id)
+
+    runs_to_delete = query.all()
+
+    vertical_ids = list(set(run.vertical_id for run in runs_to_delete))
+
+    for run in runs_to_delete:
+        db.delete(run)
+
+    db.commit()
+
+    return DeleteJobsResponse(
+        deleted_count=len(runs_to_delete),
+        vertical_ids=vertical_ids
     )
 
 
