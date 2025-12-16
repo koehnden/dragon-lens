@@ -17,11 +17,11 @@ def test_ensure_embedding_model_uses_env_cache(monkeypatch, tmp_path):
     monkeypatch.setenv("HF_HOME", str(tmp_path))
     monkeypatch.setattr(model_cache, "_download_snapshot", fake_download)
 
-    result = model_cache.ensure_embedding_model_available("BAAI/bge-m3")
+    result = model_cache.ensure_embedding_model_available("BAAI/bge-small-zh-v1.5")
 
-    expected_dir = tmp_path / "embeddings" / "BAAI__bge-m3"
+    expected_dir = tmp_path / "embeddings" / "BAAI__bge-small-zh-v1.5"
     assert result == str(expected_dir / "model")
-    assert calls == [("BAAI/bge-m3", expected_dir, False)]
+    assert calls == [("BAAI/bge-small-zh-v1.5", expected_dir, False)]
 
 
 def test_ensure_embedding_model_prefers_explicit_cache(monkeypatch, tmp_path):
@@ -37,22 +37,22 @@ def test_ensure_embedding_model_prefers_explicit_cache(monkeypatch, tmp_path):
     monkeypatch.setattr(model_cache, "_download_snapshot", fake_download)
 
     cache_dir = tmp_path / "explicit"
-    result = model_cache.ensure_embedding_model_available("BAAI/bge-m3", str(cache_dir))
+    result = model_cache.ensure_embedding_model_available("BAAI/bge-small-zh-v1.5", str(cache_dir))
 
-    expected_dir = cache_dir / "embeddings" / "BAAI__bge-m3"
+    expected_dir = cache_dir / "embeddings" / "BAAI__bge-small-zh-v1.5"
     assert result == str(expected_dir / "model")
-    assert calls == [("BAAI/bge-m3", expected_dir, False)]
+    assert calls == [("BAAI/bge-small-zh-v1.5", expected_dir, False)]
 
 
 def test_ensure_embedding_model_skips_when_marker_present(monkeypatch, tmp_path):
-    target_dir = tmp_path / "embeddings" / "BAAI__bge-m3"
+    target_dir = tmp_path / "embeddings" / "BAAI__bge-small-zh-v1.5"
     target_dir.mkdir(parents=True)
     (target_dir / ".downloaded").touch()
 
     monkeypatch.setenv("HF_HOME", str(tmp_path))
     monkeypatch.setattr(model_cache, "_download_snapshot", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("should not run")))
 
-    result = model_cache.ensure_embedding_model_available("BAAI/bge-m3")
+    result = model_cache.ensure_embedding_model_available("BAAI/bge-small-zh-v1.5")
 
     assert result == str(target_dir)
 
@@ -69,7 +69,7 @@ def test_offline_download_falls_back_online(monkeypatch, tmp_path):
     monkeypatch.setenv("HF_HOME", str(tmp_path))
     monkeypatch.setattr(model_cache, "_download_snapshot", fake_download)
 
-    result = model_cache.ensure_embedding_model_available("BAAI/bge-m3", offline_only=True)
+    result = model_cache.ensure_embedding_model_available("BAAI/bge-small-zh-v1.5", offline_only=True)
 
-    assert result == str(tmp_path / "embeddings" / "BAAI__bge-m3")
+    assert result == str(tmp_path / "embeddings" / "BAAI__bge-small-zh-v1.5")
     assert calls == [False]
