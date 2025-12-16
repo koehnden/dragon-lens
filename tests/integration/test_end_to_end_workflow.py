@@ -115,7 +115,6 @@ def test_complete_tracking_workflow(client: TestClient, db_session: Session):
     updated_run = client.get(f"/api/v1/tracking/runs/{run_id}")
     assert updated_run.json()["status"] == "completed"
 
-    # Step 8: Get latest metrics
     metrics_response = client.get(
         f"/api/v1/metrics/latest?vertical_id={vertical_id}&model_name=qwen"
     )
@@ -125,13 +124,11 @@ def test_complete_tracking_workflow(client: TestClient, db_session: Session):
     assert metrics_data["vertical_name"] == "Electric Vehicles"
     assert len(metrics_data["brands"]) == 3
 
-    # Step 9: Verify Tesla has highest metrics
     tesla_metrics = next(b for b in metrics_data["brands"] if b["brand_name"] == "Tesla")
-    assert tesla_metrics["mention_rate"] == 1.0  # Mentioned in all prompts
-    assert tesla_metrics["avg_rank"] == 1.0  # Always ranked first
-    assert tesla_metrics["sentiment_positive"] == 1.0  # All positive sentiment
+    assert tesla_metrics["mention_rate"] == 1.0
+    assert tesla_metrics["top_spot_share"] == 1.0
+    assert tesla_metrics["sentiment_index"] == 1.0
 
-    # Step 10: Verify other brands have zero metrics
     byd_metrics = next(b for b in metrics_data["brands"] if b["brand_name"] == "BYD")
     assert byd_metrics["mention_rate"] == 0.0
 

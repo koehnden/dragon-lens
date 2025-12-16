@@ -155,11 +155,11 @@ class DailyMetrics(Base):
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
     prompt_id: Mapped[int] = mapped_column(ForeignKey("prompts.id"), nullable=False)
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
-    mention_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # 0.0 to 1.0
-    avg_rank: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    sentiment_pos: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    sentiment_neu: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    sentiment_neg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    mention_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    share_of_voice: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    top_spot_share: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    sentiment_index: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    dragon_lens_visibility: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -171,14 +171,11 @@ class RunMetrics(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
-    asov_coverage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    asov_relative: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    prominence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    mention_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    share_of_voice: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     top_spot_share: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     sentiment_index: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    positive_share: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    opportunity_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    dragon_visibility_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    dragon_lens_visibility: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
