@@ -1,3 +1,6 @@
+import asyncio
+
+from services import brand_recognition
 from services.brand_recognition import (
     EntityCandidate,
     canonicalize_entities,
@@ -38,3 +41,19 @@ def test_extract_entities_unifies_primary_and_competitors():
     assert "大众" in canonical
     tesla_key = next(key for key in canonical if "特斯拉" in key or "tesla" in key)
     assert "特斯拉" in canonical[tesla_key] or "Tesla" in canonical[tesla_key]
+
+
+def test_cluster_with_embeddings_falls_back_on_timeout(monkeypatch):
+    async def timeout_loader(*args, **kwargs):
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr("services.brand_recognition._load_embedding_model", timeout_loader)
+
+    candidates = [
+        EntityCandidate(name="Alpha", source="seed"),
+        EntityCandidate(name="Beta", source="regex"),
+    ]
+
+    clusters = asyncio.run(brand_recognition._cluster_with_embeddings(candidates))
+
+    assert clusters == {candidate.name: [candidate] for candidate in candidates}

@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -7,11 +8,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routers import metrics, tracking, verticals
 from config import settings
 from models import init_db
+from services.brand_recognition import EMBEDDING_MODEL_NAME, ENABLE_EMBEDDING_CLUSTERING
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     init_db()
+    if ENABLE_EMBEDDING_CLUSTERING:
+        logger.info(f"Embedding clustering enabled with model: {EMBEDDING_MODEL_NAME}")
+        logger.info("Model will be downloaded on first use if not cached")
     yield
 
 app = FastAPI(

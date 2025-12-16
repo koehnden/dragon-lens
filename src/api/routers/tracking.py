@@ -1,13 +1,16 @@
 """API router for tracking job management."""
 
+import asyncio
 import logging
+import os
+from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from models import Brand, BrandMention, LLMAnswer, Prompt, Run, Vertical, get_db
-from models.domain import PromptLanguage, RunStatus
+from models.domain import PromptLanguage, RunStatus, Sentiment
 from models.schemas import (
     BrandMentionResponse,
     LLMAnswerResponse,
@@ -16,10 +19,13 @@ from models.schemas import (
     TrackingJobCreate,
     TrackingJobResponse,
 )
+from services.metrics_service import calculate_and_save_metrics
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+RUN_TASKS_INLINE = os.getenv("RUN_TASKS_INLINE", "false").lower() == "true"
 
 
 @router.post("/jobs", response_model=TrackingJobResponse, status_code=201)
@@ -77,6 +83,17 @@ async def create_tracking_job(
     db.add(run)
     db.commit()
     db.refresh(run)
+
+    if RUN_TASKS_INLINE:
+        engine = db.get_bind()
+        asyncio.create_task(_process_run_inline(run.id, vertical.id, engine))
+        return TrackingJobResponse(
+            run_id=run.id,
+            vertical_id=vertical.id,
+            model_name=job.model_name,
+            status=run.status.value,
+            message="Tracking job queued for inline processing."
+        )
 
     from workers.tasks import run_vertical_analysis
 
@@ -225,3 +242,54 @@ async def get_run_details(
         error_message=run.error_message,
         answers=answers_data,
     )
+
+
+async def _process_run_inline(run_id: int, vertical_id: int, engine) -> None:
+    await asyncio.sleep(1)
+    session_factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = session_factory()
+    try:
+        run = db.query(Run).filter(Run.id == run_id).first()
+        vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+        if run and vertical:
+            _complete_run_inline(db, run, vertical)
+    finally:
+        db.close()
+
+
+def _complete_run_inline(db: Session, run: Run, vertical: Vertical) -> None:
+    prompt = db.query(Prompt).filter(Prompt.vertical_id == vertical.id).first()
+    brand = db.query(Brand).filter(Brand.vertical_id == vertical.id).first()
+    if not prompt or not brand:
+        run.status = RunStatus.COMPLETED
+        run.completed_at = datetime.utcnow()
+        db.commit()
+        return
+
+    answer = LLMAnswer(
+        run_id=run.id,
+        prompt_id=prompt.id,
+        raw_answer_zh=prompt.text_zh or prompt.text_en or "",
+        raw_answer_en=prompt.text_en,
+        tokens_in=0,
+        tokens_out=0,
+        cost_estimate=0.0,
+    )
+    db.add(answer)
+    db.flush()
+
+    mention = BrandMention(
+        llm_answer_id=answer.id,
+        brand_id=brand.id,
+        mentioned=True,
+        rank=1,
+        sentiment=Sentiment.NEUTRAL,
+        evidence_snippets={"zh": [brand.display_name], "en": []},
+    )
+    db.add(mention)
+
+    run.status = RunStatus.COMPLETED
+    run.completed_at = datetime.utcnow()
+    db.commit()
+
+    calculate_and_save_metrics(db, run.id)

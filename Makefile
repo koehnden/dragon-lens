@@ -1,4 +1,4 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean example
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean example
 
 # Default target
 .DEFAULT_GOAL := help
@@ -75,7 +75,11 @@ install-ollama: ## Install Ollama if not already installed (macOS only)
 install-deps: check-deps ## Install Python dependencies with Poetry
 	@echo "$(YELLOW)Installing Python dependencies...$(NC)"
 	@poetry install
+	@$(MAKE) download-embeddings
 	@echo "$(GREEN)✓ Python dependencies installed$(NC)"
+
+download-embeddings:
+	@poetry run python -m scripts.prefetch_embedding_model
 
 pull-qwen: ## Pull Qwen model for Ollama (if not already pulled)
 	@echo "$(YELLOW)Checking if Qwen model is already pulled...$(NC)"
