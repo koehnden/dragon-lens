@@ -13,6 +13,7 @@ from models import Brand, BrandMention, LLMAnswer, Prompt, Run, Vertical, get_db
 from models.domain import PromptLanguage, RunStatus, Sentiment
 from models.schemas import (
     BrandMentionResponse,
+    DeleteJobsResponse,
     LLMAnswerResponse,
     RunDetailedResponse,
     RunResponse,
@@ -26,6 +27,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 RUN_TASKS_INLINE = os.getenv("RUN_TASKS_INLINE", "false").lower() == "true"
+
+
+def _provided_filters(
+    id: int | None,
+    status: str | None,
+    latest: bool | None,
+    all: bool | None,
+    vertical_name: str | None,
+) -> list[str]:
+    return [
+        name
+        for name, value in [
+            ("id", id),
+            ("status", status),
+            ("latest", latest),
+            ("all", all),
+            ("vertical_name", vertical_name),
+        ]
+        if value
+    ]
 
 
 @router.post("/jobs", response_model=TrackingJobResponse, status_code=201)
@@ -117,6 +138,97 @@ async def create_tracking_job(
         model_name=job.model_name,
         status=run.status.value,
         message=enqueue_message,
+    )
+
+
+@router.delete("/jobs", response_model=DeleteJobsResponse)
+async def delete_tracking_jobs(
+    id: int | None = None,
+    status: str | None = None,
+    latest: bool | None = None,
+    all: bool | None = None,
+    vertical_name: str | None = None,
+    db: Session = Depends(get_db),
+) -> DeleteJobsResponse:
+    """
+    Delete tracking jobs (runs) based on specified criteria.
+
+    Exactly one of the following parameters must be provided:
+    - id: Delete a specific job by run ID
+    - status: Delete all jobs with a specific status (pending, in_progress, completed, failed)
+    - latest: Delete the most recently created job
+    - all: Delete all jobs
+    - vertical_name: Delete all jobs associated with a specific vertical name
+
+    Returns the vertical IDs of deleted jobs so verticals can be cleaned up afterwards.
+
+    Args:
+        id: Specific run ID to delete
+        status: Status of runs to delete
+        latest: Whether to delete the latest run
+        all: Whether to delete all runs
+        vertical_name: Name of vertical whose runs should be deleted
+        db: Database session
+
+    Returns:
+        DeleteJobsResponse with count and affected vertical IDs
+
+    Raises:
+        HTTPException: If no parameters provided, multiple parameters provided, or invalid parameters
+    """
+    provided_filters = _provided_filters(id, status, latest, all, vertical_name)
+    if not provided_filters:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one parameter (id, status, latest, all, vertical_name) must be provided"
+        )
+
+    if len(provided_filters) > 1:
+        provided = ", ".join(provided_filters)
+        detail = (
+            "Only one filter parameter allow. You passed these "
+            f"{provided}! Please stick to one parameter only!"
+        )
+        raise HTTPException(status_code=400, detail=detail)
+
+    query = db.query(Run)
+
+    filters = []
+
+    if id:
+        filters.append(Run.id == id)
+
+    if status:
+        try:
+            run_status = RunStatus(status)
+            filters.append(Run.status == run_status)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+
+    if vertical_name:
+        vertical = db.query(Vertical).filter(Vertical.name == vertical_name).first()
+        if not vertical:
+            return DeleteJobsResponse(deleted_count=0, vertical_ids=[])
+        filters.append(Run.vertical_id == vertical.id)
+
+    for run_filter in filters:
+        query = query.filter(run_filter)
+
+    if latest:
+        query = query.order_by(Run.run_time.desc(), Run.id.desc()).limit(1)
+
+    runs_to_delete = query.all()
+
+    vertical_ids = list(set(run.vertical_id for run in runs_to_delete))
+
+    for run in runs_to_delete:
+        db.delete(run)
+
+    db.commit()
+
+    return DeleteJobsResponse(
+        deleted_count=len(runs_to_delete),
+        vertical_ids=vertical_ids
     )
 
 

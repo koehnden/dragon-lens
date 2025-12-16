@@ -196,6 +196,86 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - tracking
+      summary: Delete Tracking Jobs
+      description: "Delete tracking jobs (runs) based on specified criteria.\n\nExactly\
+        \ one of the following parameters must be provided:\n- id: Delete a specific\
+        \ job by run ID\n- status: Delete all jobs with a specific status (pending,\
+        \ in_progress, completed, failed)\n- latest: Delete the most recently created\
+        \ job\n- all: Delete all jobs\n- vertical_name: Delete all jobs associated\
+        \ with a specific vertical name\n\nReturns the vertical IDs of deleted jobs\
+        \ so verticals can be cleaned up afterwards.\n\nArgs:\n    id: Specific run\
+        \ ID to delete\n    status: Status of runs to delete\n    latest: Whether\
+        \ to delete the latest run\n    all: Whether to delete all runs\n    vertical_name:\
+        \ Name of vertical whose runs should be deleted\n    db: Database session\n\
+        \nReturns:\n    DeleteJobsResponse with count and affected vertical IDs\n\n\
+        Raises:\n    HTTPException: If no parameters provided, multiple parameters provided,\
+        \ or invalid parameters"
+      operationId: delete_tracking_jobs_api_v1_tracking_jobs_delete
+      parameters:
+      - name: id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Run ID
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+      - name: latest
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Latest
+      - name: all
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: All
+      - name: vertical_name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Vertical Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteJobsResponse'
+        '400':
+          description: Bad Request - No parameters provided or multiple parameters provided
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: "Only one filter parameter allow. You passed these status, vertical_name! Please stick to one parameter only!"
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/tracking/runs:
     get:
       tags:
@@ -681,3 +761,43 @@ components:
       - description
       - created_at
       title: VerticalResponse
+    DeleteJobsResponse:
+      properties:
+        deleted_count:
+          type: integer
+          title: Deleted Count
+          description: Number of jobs deleted
+        vertical_ids:
+          type: array
+          items:
+            type: integer
+          title: Vertical IDs
+          description: IDs of verticals affected by deletion
+      type: object
+      required:
+      - deleted_count
+      - vertical_ids
+      title: DeleteJobsResponse
+    DeleteVerticalResponse:
+      properties:
+        vertical_id:
+          anyOf:
+          - type: integer
+          - type: string
+          title: Vertical ID
+        deleted:
+          type: boolean
+          title: Deleted
+        deleted_runs_count:
+          type: integer
+          title: Deleted Runs Count
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - vertical_id
+      - deleted
+      - deleted_runs_count
+      - message
+      title: DeleteVerticalResponse
