@@ -16,7 +16,9 @@ from models import (
 )
 from models.database import SessionLocal
 from models.domain import PromptLanguage, RunStatus, Sentiment
+from services.brand_discovery import discover_all_brands
 from services.brand_recognition import extract_entities
+from services.metrics_service import calculate_and_save_metrics
 from services.ollama import OllamaService
 from workers.celery_app import celery_app
 
@@ -103,10 +105,14 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
             self.db.add(llm_answer)
             self.db.flush()
 
-            brand_names = [b.display_name for b in brands]
-            brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in brands]
+            logger.info("Discovering all brands in response...")
+            all_brands = discover_all_brands(answer_zh, vertical_id, brands, self.db)
+            logger.info(f"Found {len(all_brands)} brands ({len(brands)} user-input, {len(all_brands) - len(brands)} discovered)")
 
-            logger.info(f"Extracting brand mentions for {len(brands)} brands...")
+            brand_names = [b.display_name for b in all_brands]
+            brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
+
+            logger.info(f"Extracting brand mentions for {len(all_brands)} brands...")
             mentions = asyncio.run(
                 ollama_service.extract_brands(answer_zh, brand_names, brand_aliases)
             )
@@ -115,7 +121,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
                 if not mention_data["mentioned"]:
                     continue
 
-                brand = brands[mention_data["brand_index"]]
+                brand = all_brands[mention_data["brand_index"]]
 
                 sentiment_str = "neutral"
                 if mention_data["snippets"]:
@@ -143,6 +149,10 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
                 self.db.add(mention)
 
             self.db.commit()
+
+        logger.info(f"Calculating metrics for run {run_id}...")
+        calculate_and_save_metrics(self.db, run_id)
+        logger.info(f"Metrics calculated and saved for run {run_id}")
 
         run.status = RunStatus.COMPLETED
         run.completed_at = datetime.utcnow()
