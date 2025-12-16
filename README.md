@@ -13,6 +13,14 @@ DragonLens is a brand visibility tracking system for Chinese LLMs. It helps you 
 - 🔄 **Background Processing**: Celery-powered async task execution
 - 💾 **Persistent Storage**: SQLite (or PostgreSQL) for all data
 
+## Metrics
+
+- **Mention rate**: Mentions per brand divided by the number of prompts in the set.
+- **Share of Voice (SoV)**: Ranking-weighted presence relative to competitors using a DCG discount `1 / log2(rank + 1)`.
+- **Top-spot share**: Portion of prompts where the brand is ranked first.
+- **Sentiment index**: Positive mentions divided by all mentions for the brand.
+- **Dragon Lens Visibility score**: Weighted blend `0.6 * SoV + 0.2 * Top-spot share + 0.2 * Sentiment index`.
+
 ## Quick Start
 
 ### Prerequisites
