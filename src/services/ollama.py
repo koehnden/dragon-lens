@@ -54,34 +54,6 @@ class OllamaService:
                 logger.error(f"Ollama API error: {e}")
                 raise
 
-    async def translate_to_chinese(self, text_en: str) -> str:
-        system_prompt = (
-            "You are a professional translator. Translate the following English text to Chinese. "
-            "Only output the Chinese translation, no explanations."
-        )
-        prompt = f"Translate to Chinese:\n{text_en}"
-
-        return await self._call_ollama(
-            model=self.translation_model,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            temperature=0.3,  # Lower temperature for more deterministic translation
-        )
-
-    async def translate_to_english(self, text_zh: str) -> str:
-        system_prompt = (
-            "You are a professional translator. Translate the following Chinese text to English. "
-            "Only output the English translation, no explanations."
-        )
-        prompt = f"Translate to English:\n{text_zh}"
-
-        return await self._call_ollama(
-            model=self.translation_model,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            temperature=0.3,
-        )
-
     async def classify_sentiment(self, text_zh: str) -> str:
         system_prompt = (
             "You are a sentiment classifier. Analyze the sentiment of the following Chinese text. "

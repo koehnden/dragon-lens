@@ -18,6 +18,7 @@ from models.database import SessionLocal
 from models.domain import PromptLanguage, RunStatus, Sentiment
 from services.brand_discovery import discover_all_brands
 from services.brand_recognition import extract_entities
+from services.translater import TranslaterService
 from services.metrics_service import calculate_and_save_metrics
 from services.ollama import OllamaService
 from workers.celery_app import celery_app
@@ -65,6 +66,8 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
             raise ValueError(f"No brands found for vertical {vertical_id}")
 
         ollama_service = OllamaService()
+        translator = TranslaterService(ollama_service)
+        _apply_brand_translations(brands, translator, self.db)
 
         for prompt in prompts:
             logger.info(f"Processing prompt {prompt.id}")
@@ -74,7 +77,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
 
             if not prompt_text_zh and prompt_text_en:
                 logger.info(f"Translating English prompt to Chinese: {prompt_text_en[:50]}...")
-                prompt_text_zh = asyncio.run(ollama_service.translate_to_chinese(prompt_text_en))
+                prompt_text_zh = translator.translate_text_sync(prompt_text_en, "English", "Chinese")
                 logger.info(f"Translated to Chinese: {prompt_text_zh[:50]}...")
 
             if not prompt_text_zh:
@@ -90,7 +93,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
             answer_en = None
             if answer_zh:
                 logger.info("Translating answer to English...")
-                answer_en = asyncio.run(ollama_service.translate_to_english(answer_zh))
+                answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English")
                 logger.info(f"Translated answer: {answer_en[:100]}...")
 
             llm_answer = LLMAnswer(
@@ -107,8 +110,11 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
 
             logger.info("Discovering all brands in response...")
             all_brands = discover_all_brands(answer_zh, vertical_id, brands, self.db)
-            logger.info(f"Found {len(all_brands)} brands ({len(brands)} user-input, {len(all_brands) - len(brands)} discovered)")
+            logger.info(
+                f"Found {len(all_brands)} brands ({len(brands)} user-input, {len(all_brands) - len(brands)} discovered)"
+            )
 
+            _apply_brand_translations(all_brands, translator, self.db)
             brand_names = [b.display_name for b in all_brands]
             brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
 
@@ -135,7 +141,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
 
                 en_snippets = []
                 for snippet in mention_data["snippets"]:
-                    en_snippet = asyncio.run(ollama_service.translate_to_english(snippet))
+                    en_snippet = translator.translate_text_sync(snippet, "Chinese", "English")
                     en_snippets.append(en_snippet)
 
                 mention = BrandMention(
@@ -199,6 +205,18 @@ def classify_sentiment(text: str) -> str:
     return "neutral"
 
 
+def _apply_brand_translations(brands: List[Brand], translator: TranslaterService, db: Session) -> None:
+    updated = False
+    for brand in brands:
+        if brand.translated_name:
+            continue
+        brand.original_name = brand.display_name
+        brand.translated_name = translator.translate_entity_sync(brand.display_name)
+        updated = True
+    if updated:
+        db.commit()
+
+
 def _detect_mentions(answer_text: str, brands: List[Brand]) -> dict[int, List[str]]:
     if not brands:
         return {}
@@ -214,7 +232,13 @@ def _detect_mentions(answer_text: str, brands: List[Brand]) -> dict[int, List[st
 def _ensure_brand(vertical_id: int, canonical_name: str, aliases: dict) -> Brand:
     session = SessionLocal()
     brand = session.query(Brand).filter(Brand.vertical_id == vertical_id, Brand.display_name == canonical_name).first()
-    brand = brand or Brand(vertical_id=vertical_id, display_name=canonical_name, aliases=aliases or {"zh": [], "en": []})
+    brand = brand or Brand(
+        vertical_id=vertical_id,
+        display_name=canonical_name,
+        original_name=canonical_name,
+        translated_name=None,
+        aliases=aliases or {"zh": [], "en": []},
+    )
     if brand.id is None:
         session.add(brand)
         session.commit()
