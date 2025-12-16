@@ -16,9 +16,11 @@ def embedding_cache_dir(model_name: str, cache_dir: str | None = None) -> Path:
 
 def ensure_embedding_model_available(model_name: str, cache_dir: str | None = None, offline_only: bool = False) -> str:
     target_dir = embedding_cache_dir(model_name, cache_dir)
-    if _is_cached(target_dir):
+    cached = _is_cached(target_dir)
+    if cached:
         return str(target_dir)
-    return _download_snapshot(model_name, target_dir, offline_only)
+    download_offline = offline_only and cached
+    return _download_snapshot(model_name, target_dir, download_offline)
 
 
 def _is_cached(target_dir: Path) -> bool:

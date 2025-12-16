@@ -55,3 +55,21 @@ def test_ensure_embedding_model_skips_when_marker_present(monkeypatch, tmp_path)
     result = model_cache.ensure_embedding_model_available("BAAI/bge-m3")
 
     assert result == str(target_dir)
+
+
+def test_offline_download_falls_back_online(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_download(repo_id, target_dir, offline_only):
+        calls.append(offline_only)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / ".downloaded").touch()
+        return str(target_dir)
+
+    monkeypatch.setenv("HF_HOME", str(tmp_path))
+    monkeypatch.setattr(model_cache, "_download_snapshot", fake_download)
+
+    result = model_cache.ensure_embedding_model_available("BAAI/bge-m3", offline_only=True)
+
+    assert result == str(tmp_path / "embeddings" / "BAAI__bge-m3")
+    assert calls == [False]
