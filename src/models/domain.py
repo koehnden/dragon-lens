@@ -8,6 +8,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.database import Base
 
 
+class EntityType(str, enum.Enum):
+    BRAND = "brand"
+    PRODUCT = "product"
+    UNKNOWN = "unknown"
+
+
 class Vertical(Base):
     __tablename__ = "verticals"
 
@@ -33,6 +39,9 @@ class Brand(Base):
     translated_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     aliases: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)  # {"zh": [...], "en": [...]}
     is_user_input: Mapped[bool] = mapped_column(nullable=False, default=True)
+    entity_type: Mapped[EntityType] = mapped_column(
+        Enum(EntityType), nullable=False, default=EntityType.BRAND
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

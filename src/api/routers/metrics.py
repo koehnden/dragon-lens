@@ -134,6 +134,7 @@ async def get_latest_metrics(
             BrandMetrics(
                 brand_id=brand.id,
                 brand_name=format_entity_label(brand.original_name, brand.translated_name),
+                entity_type=brand.entity_type.value if brand.entity_type else "unknown",
                 mention_rate=metrics["mention_rate"],
                 share_of_voice=metrics["share_of_voice"],
                 top_spot_share=metrics["top_spot_share"],
@@ -234,6 +235,7 @@ async def get_run_metrics(
             RunMetricsResponse(
                 brand_id=metric.brand_id,
                 brand_name=format_entity_label(brand.original_name, brand.translated_name),
+                entity_type=brand.entity_type.value if brand.entity_type else "unknown",
                 is_user_input=brand.is_user_input,
                 top_spot_share=metric.top_spot_share,
                 sentiment_index=metric.sentiment_index,

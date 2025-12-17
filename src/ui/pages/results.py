@@ -57,37 +57,51 @@ def show():
 
             df = pd.DataFrame(metrics["brands"])
 
+            brands_only_df = df.copy()
+            if "entity_type" in brands_only_df.columns:
+                brands_only_df = brands_only_df[brands_only_df["entity_type"] == "brand"]
+
             st.markdown("### Brand Mention Overview")
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                st.metric("Total Brands", len(df))
+                st.metric("Total Brands", len(brands_only_df))
 
             with col2:
-                avg_mention = df["mention_rate"].mean() * 100
+                if len(brands_only_df) > 0:
+                    avg_mention = brands_only_df["mention_rate"].mean() * 100
+                else:
+                    avg_mention = 0
                 st.metric("Avg Mention Rate", f"{avg_mention:.1f}%")
 
             with col3:
-                mentioned_brands = (df["mention_rate"] > 0).sum()
+                mentioned_brands = (brands_only_df["mention_rate"] > 0).sum()
                 st.metric("Brands Mentioned", mentioned_brands)
 
-            st.markdown("### Mention Rates")
-            display_df = df.copy()
-            display_df["mention_rate"] = (display_df["mention_rate"] * 100).round(1).astype(str) + "%"
-            display_df["share_of_voice"] = (display_df["share_of_voice"] * 100).round(1).astype(str) + "%"
-            display_df["top_spot_share"] = (display_df["top_spot_share"] * 100).round(1).astype(str) + "%"
-            display_df["sentiment_index"] = display_df["sentiment_index"].round(3)
-            display_df["dragon_lens_visibility"] = display_df["dragon_lens_visibility"].round(3)
+            st.markdown("### Brands Overview")
+
+            brands_df = df.copy()
+            if "entity_type" in brands_df.columns:
+                brands_df = brands_df[brands_df["entity_type"] == "brand"]
+
+            brands_df = brands_df.sort_values("dragon_lens_visibility", ascending=False)
+
+            display_df = brands_df.copy()
+            display_df["Mention Rate"] = (display_df["mention_rate"] * 100).round(1).astype(str) + "%"
+            display_df["Share of Voice"] = (display_df["share_of_voice"] * 100).round(1).astype(str) + "%"
+            display_df["Top Spot Share"] = (display_df["top_spot_share"] * 100).round(1).astype(str) + "%"
+            display_df["Sentiment Index"] = display_df["sentiment_index"].round(3)
+            display_df["DVS"] = display_df["dragon_lens_visibility"].round(3)
 
             st.dataframe(
                 display_df[[
                     "brand_name",
-                    "mention_rate",
-                    "share_of_voice",
-                    "top_spot_share",
-                    "sentiment_index",
-                    "dragon_lens_visibility",
-                ]],
+                    "Mention Rate",
+                    "Share of Voice",
+                    "Top Spot Share",
+                    "Sentiment Index",
+                    "DVS",
+                ]].rename(columns={"brand_name": "Brand"}),
                 use_container_width=True,
                 hide_index=True,
             )
@@ -96,13 +110,13 @@ def show():
 
             with col1:
                 st.markdown("### Mention Rate by Brand")
-                chart_data = df[["brand_name", "mention_rate"]].copy()
+                chart_data = brands_df[["brand_name", "mention_rate"]].copy()
                 chart_data["mention_rate"] = chart_data["mention_rate"] * 100
                 st.bar_chart(chart_data.set_index("brand_name"))
 
             with col2:
                 st.markdown("### Share of Voice")
-                sov_data = df[["brand_name", "share_of_voice"]].copy()
+                sov_data = brands_df[["brand_name", "share_of_voice"]].copy()
                 sov_data["share_of_voice"] = sov_data["share_of_voice"] * 100
                 st.bar_chart(sov_data.set_index("brand_name"))
 

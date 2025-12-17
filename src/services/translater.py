@@ -8,11 +8,34 @@ def has_latin_letters(text: str) -> bool:
     return bool(re.search(r"[A-Za-z]", text or ""))
 
 
+def has_chinese_chars(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+
+
+def capitalize_words(text: str) -> str:
+    return " ".join(word.capitalize() for word in text.split())
+
+
 def format_entity_label(original: str, translated: str | None) -> str:
     base = original.strip()
     alt = (translated or "").strip()
-    if not alt or alt == base:
+
+    if not alt:
+        if has_latin_letters(base) and not has_chinese_chars(base):
+            return capitalize_words(base)
         return base
+
+    if alt.lower() == base.lower():
+        return capitalize_words(alt) if has_latin_letters(alt) else alt
+
+    if has_chinese_chars(base) and has_latin_letters(alt):
+        display_alt = capitalize_words(alt) if alt == alt.lower() else alt
+        return f"{display_alt} ({base})"
+
+    if has_latin_letters(base) and has_chinese_chars(alt):
+        display_base = capitalize_words(base) if base == base.lower() else base
+        return f"{display_base} ({alt})"
+
     return f"{alt} ({base})"
 
 
