@@ -17,6 +17,7 @@ from models import (
     Vertical,
     get_db,
 )
+from models.domain import EntityType
 from metrics.metrics import AnswerMetrics, visibility_metrics
 from models.schemas import AllRunMetricsResponse, BrandMetrics, MetricsResponse, RunMetricsResponse
 from services.translater import format_entity_label
@@ -101,7 +102,11 @@ async def get_latest_metrics(
 
     prompts = db.query(Prompt).filter(Prompt.vertical_id == vertical_id).all()
     prompt_ids = [p.id for p in prompts]
-    brands = db.query(Brand).filter(Brand.vertical_id == vertical_id).all()
+    brands = (
+        db.query(Brand)
+        .filter(Brand.vertical_id == vertical_id, Brand.entity_type == EntityType.BRAND)
+        .all()
+    )
     mentions = (
         db.query(BrandMention)
         .join(LLMAnswer, LLMAnswer.id == BrandMention.llm_answer_id)
@@ -142,6 +147,8 @@ async def get_latest_metrics(
                 dragon_lens_visibility=metrics["dragon_lens_visibility"],
             )
         )
+
+    brand_metrics.sort(key=lambda item: item.dragon_lens_visibility, reverse=True)
 
     return MetricsResponse(
         vertical_id=vertical_id,

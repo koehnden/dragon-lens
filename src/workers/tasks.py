@@ -15,8 +15,12 @@ from models import (
     Vertical,
 )
 from models.database import SessionLocal
-from models.domain import PromptLanguage, RunStatus, Sentiment
-from services.brand_discovery import discover_all_brands
+from models.domain import EntityType, PromptLanguage, RunStatus, Sentiment
+from services.brand_discovery import (
+    EntityTarget,
+    build_entity_targets,
+    discover_all_brands,
+)
 from services.brand_recognition import extract_entities
 from services.translater import TranslaterService
 from services.metrics_service import calculate_and_save_metrics
@@ -39,6 +43,25 @@ class DatabaseTask(Task):
         if self._db is not None:
             self._db.close()
             self._db = None
+
+
+def _target_alias(target: EntityTarget, brands: dict[int, Brand]) -> list[str]:
+    if target.entity_type != EntityType.BRAND:
+        return []
+    brand = brands.get(target.brand_id)
+    if not brand:
+        return []
+    return brand.aliases.get("zh", []) + brand.aliases.get("en", [])
+
+
+def _prepare_targets(
+    brands: list[Brand], products: list
+) -> tuple[list[str], list[list[str]], list[EntityTarget]]:
+    targets = build_entity_targets(brands, products)
+    lookup = {brand.id: brand for brand in brands}
+    names = [target.name for target in targets]
+    aliases = [_target_alias(target, lookup) for target in targets]
+    return names, aliases, targets
 
 
 @celery_app.task(base=DatabaseTask, bind=True)
@@ -109,16 +132,19 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
             self.db.flush()
 
             logger.info("Discovering all brands in response...")
-            all_brands = discover_all_brands(answer_zh, vertical_id, brands, self.db)
+            entities = discover_all_brands(answer_zh, vertical_id, brands, self.db)
+            discovered_count = len(entities.brands) - len(brands)
             logger.info(
-                f"Found {len(all_brands)} brands ({len(brands)} user-input, {len(all_brands) - len(brands)} discovered)"
+                f"Found {len(entities.brands)} brands ({len(brands)} user-input, {discovered_count} discovered)"
             )
 
-            _apply_brand_translations(all_brands, translator, self.db)
-            brand_names = [b.display_name for b in all_brands]
-            brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
+            _apply_brand_translations(entities.brands, translator, self.db)
+            brand_names, brand_aliases, targets = _prepare_targets(
+                entities.brands, entities.products
+            )
+            brand_lookup = {brand.id: brand for brand in entities.brands}
 
-            logger.info(f"Extracting brand mentions for {len(all_brands)} brands...")
+            logger.info(f"Extracting brand mentions for {len(targets)} entities...")
             mentions = asyncio.run(
                 ollama_service.extract_brands(answer_zh, brand_names, brand_aliases)
             )
@@ -127,13 +153,15 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
                 if not mention_data["mentioned"]:
                     continue
 
-                brand = all_brands[mention_data["brand_index"]]
+                target = targets[mention_data["brand_index"]]
+                brand = brand_lookup.get(target.brand_id)
+                brand_label = brand.display_name if brand else target.name
 
                 sentiment_str = "neutral"
                 if mention_data["snippets"]:
                     snippet = mention_data["snippets"][0]
                     sentiment_str = asyncio.run(ollama_service.classify_sentiment(snippet))
-                    logger.info(f"Brand {brand.display_name} sentiment: {sentiment_str}")
+                    logger.info(f"Brand {brand_label} sentiment: {sentiment_str}")
 
                 sentiment = Sentiment.POSITIVE if sentiment_str == "positive" else (
                     Sentiment.NEGATIVE if sentiment_str == "negative" else Sentiment.NEUTRAL
@@ -146,7 +174,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
 
                 mention = BrandMention(
                     llm_answer_id=llm_answer.id,
-                    brand_id=brand.id,
+                    brand_id=target.brand_id,
                     mentioned=True,
                     rank=mention_data["rank"],
                     sentiment=sentiment,
