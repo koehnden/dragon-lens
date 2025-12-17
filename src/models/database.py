@@ -27,30 +27,36 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def ensure_brand_columns(connection) -> None:
+    inspector = inspect(connection)
+    if "brands" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("brands")}
+    migrations = [
+        (
+            "is_user_input",
+            "ALTER TABLE brands ADD COLUMN is_user_input BOOLEAN NOT NULL DEFAULT 1",
+        ),
+        (
+            "original_name",
+            "ALTER TABLE brands ADD COLUMN original_name VARCHAR(255) NOT NULL DEFAULT ''",
+        ),
+        (
+            "translated_name",
+            "ALTER TABLE brands ADD COLUMN translated_name VARCHAR(255)",
+        ),
+        (
+            "entity_type",
+            "ALTER TABLE brands ADD COLUMN entity_type VARCHAR(50) NOT NULL DEFAULT 'BRAND'",
+        ),
+    ]
+    for name, statement in migrations:
+        if name not in columns:
+            connection.execute(text(statement))
+
+
 def init_db() -> None:
     with engine.begin() as connection:
-        inspector = inspect(connection)
-        existing_tables = inspector.get_table_names()
-
-        if "brands" in existing_tables:
-            brand_columns = {column["name"] for column in inspector.get_columns("brands")}
-            if "is_user_input" not in brand_columns:
-                connection.execute(
-                    text(
-                        "ALTER TABLE brands ADD COLUMN is_user_input BOOLEAN NOT NULL DEFAULT 1"
-                    )
-                )
-            if "original_name" not in brand_columns:
-                connection.execute(
-                    text(
-                        "ALTER TABLE brands ADD COLUMN original_name VARCHAR(255) NOT NULL DEFAULT ''"
-                    )
-                )
-            if "translated_name" not in brand_columns:
-                connection.execute(
-                    text(
-                        "ALTER TABLE brands ADD COLUMN translated_name VARCHAR(255)"
-                    )
-                )
+        ensure_brand_columns(connection)
 
     Base.metadata.create_all(bind=engine)

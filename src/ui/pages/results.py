@@ -61,7 +61,7 @@ def show():
             if "entity_type" in brands_only_df.columns:
                 brands_only_df = brands_only_df[brands_only_df["entity_type"] == "brand"]
 
-            st.markdown("### Brand Mention Overview")
+            st.markdown("### Brands Overview")
             col1, col2, col3 = st.columns(3)
 
             with col1:

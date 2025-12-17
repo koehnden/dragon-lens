@@ -56,7 +56,7 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    brand_id: Mapped[Optional[int]] = mapped_column(ForeignKey("brands.id"), nullable=True)
+    brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
     original_name: Mapped[str] = mapped_column(String(255), nullable=False)
     translated_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
