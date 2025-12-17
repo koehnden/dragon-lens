@@ -1,9 +1,10 @@
 import re
+from dataclasses import dataclass
 from typing import Dict, List
 
 from sqlalchemy.orm import Session
 
-from models import Brand
+from models import Brand, Product
 from models.domain import EntityType
 from services.brand_recognition import extract_entities
 
@@ -25,6 +26,27 @@ GENERIC_TERMS = {
     "best", "top", "good", "great", "new", "old",
     "最好", "推荐", "选择", "品牌", "产品",
 }
+
+
+@dataclass
+class EntityCollection:
+    brands: List[Brand]
+    products: List[Product]
+
+
+@dataclass
+class EntityTarget:
+    name: str
+    brand_id: int
+    entity_type: EntityType
+
+
+def _has_model_token(name: str) -> bool:
+    parts = name.split()
+    if len(parts) < 2:
+        return False
+    tail = parts[1:]
+    return any(any(char.isdigit() for char in token) or token.isupper() for token in tail)
 
 
 def classify_entity_type(name: str) -> EntityType:
@@ -57,6 +79,9 @@ def classify_entity_type(name: str) -> EntityType:
         if re.search(pattern, name, re.IGNORECASE):
             return EntityType.PRODUCT
 
+    if _has_model_token(name):
+        return EntityType.PRODUCT
+
     if re.search(r"[\u4e00-\u9fff]", name):
         if len(name) <= 4 and not re.search(r"\d", name):
             return EntityType.BRAND
@@ -78,28 +103,89 @@ def discover_all_brands(
     vertical_id: int,
     user_brands: List[Brand],
     db: Session,
-) -> List[Brand]:
-    all_brands_map: Dict[str, Brand] = {}
-
-    for user_brand in user_brands:
-        normalized_name = user_brand.display_name.lower().strip()
-        all_brands_map[normalized_name] = user_brand
+) -> EntityCollection:
+    collection = EntityCollection(brands=list(user_brands), products=[])
+    brand_map: Dict[str, Brand] = {
+        brand.display_name.lower().strip(): brand for brand in collection.brands
+    }
 
     discovered_entities = extract_entities(text, "", {})
 
     for canonical_name, surface_forms in discovered_entities.items():
         normalized_name = canonical_name.lower().strip()
+        if normalized_name in brand_map:
+            continue
 
-        if normalized_name in all_brands_map:
+        entity_type = classify_entity_type(canonical_name)
+        if entity_type == EntityType.PRODUCT:
+            product = _register_product(canonical_name, collection.brands, db)
+            if product:
+                collection.products.append(product)
             continue
 
         if _is_brand_like(canonical_name, surface_forms):
             brand = _get_or_create_discovered_brand(
                 db, vertical_id, canonical_name
             )
-            all_brands_map[normalized_name] = brand
+            brand_map[normalized_name] = brand
+            collection.brands.append(brand)
 
-    return list(all_brands_map.values())
+    return collection
+
+
+def _find_matching_brand(name: str, brands: List[Brand]) -> Brand | None:
+    lowered = name.lower()
+    for brand in brands:
+        translated = (brand.translated_name or "").lower()
+        aliases = brand.aliases.get("zh", []) + brand.aliases.get("en", [])
+        has_alias = any(alias.lower() in lowered for alias in aliases)
+        if (
+            brand.display_name.lower() in lowered
+            or translated in lowered
+            or has_alias
+        ):
+            return brand
+    return None
+
+
+def _get_or_create_product(db: Session, brand_id: int, name: str) -> Product:
+    product = db.query(Product).filter(
+        Product.brand_id == brand_id, Product.original_name == name
+    ).first()
+    if product:
+        return product
+    product = Product(brand_id=brand_id, original_name=name, translated_name=None)
+    db.add(product)
+    db.flush()
+    return product
+
+
+def _register_product(name: str, brands: List[Brand], db: Session) -> Product | None:
+    brand = _find_matching_brand(name, brands)
+    if not brand:
+        return None
+    return _get_or_create_product(db, brand.id, name)
+
+
+def build_entity_targets(brands: List[Brand], products: List[Product]) -> List[EntityTarget]:
+    targets = [
+        EntityTarget(
+            name=brand.display_name,
+            brand_id=brand.id,
+            entity_type=EntityType.BRAND,
+        )
+        for brand in brands
+    ]
+    product_targets = [
+        EntityTarget(
+            name=product.original_name,
+            brand_id=product.brand_id,
+            entity_type=EntityType.PRODUCT,
+        )
+        for product in products
+        if product.brand_id
+    ]
+    return targets + product_targets
 
 
 def _is_brand_like(canonical_name: str, surface_forms: List[str]) -> bool:
@@ -175,8 +261,6 @@ def _get_or_create_discovered_brand(
     if existing:
         return existing
 
-    entity_type = classify_entity_type(brand_name)
-
     brand = Brand(
         vertical_id=vertical_id,
         display_name=brand_name,
@@ -184,7 +268,7 @@ def _get_or_create_discovered_brand(
         translated_name=None,
         aliases={"zh": [], "en": []},
         is_user_input=False,
-        entity_type=entity_type,
+        entity_type=EntityType.BRAND,
     )
     db.add(brand)
     db.flush()
