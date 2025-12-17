@@ -47,7 +47,7 @@ def ensure_brand_columns(connection) -> None:
         ),
         (
             "entity_type",
-            "ALTER TABLE brands ADD COLUMN entity_type VARCHAR(50) NOT NULL DEFAULT 'brand'",
+            "ALTER TABLE brands ADD COLUMN entity_type VARCHAR(50) NOT NULL DEFAULT 'BRAND'",
         ),
     ]
     for name, statement in migrations:
