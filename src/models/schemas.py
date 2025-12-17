@@ -75,6 +75,7 @@ class TrackingJobResponse(BaseModel):
 class BrandMetrics(BaseModel):
     brand_id: int
     brand_name: str
+    entity_type: str
     mention_rate: float
     share_of_voice: float
     top_spot_share: float
@@ -142,6 +143,7 @@ class RunDetailedResponse(BaseModel):
 class RunMetricsResponse(BaseModel):
     brand_id: int
     brand_name: str
+    entity_type: str
     is_user_input: bool
     top_spot_share: float
     sentiment_index: float

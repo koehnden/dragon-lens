@@ -1,9 +1,76 @@
+import re
 from typing import Dict, List
 
 from sqlalchemy.orm import Session
 
 from models import Brand
+from models.domain import EntityType
 from services.brand_recognition import extract_entities
+
+
+PRODUCT_INDICATORS = [
+    r"\d+",
+    r"(PLUS|Plus|PRO|Pro|MAX|Max|Ultra|Mini|Lite|SE|GT|RS|Sport)",
+    r"(Model\s?[A-ZX0-9])",
+    r"([A-Z]{1,2}\d{1,3})",
+    r"(宋|汉|唐|秦|元|海豚|海鸥|仰望)",
+    r"(L\d|ES\d|EC\d|ET\d|G\d|P\d)",
+]
+
+GENERIC_TERMS = {
+    "suv", "car", "sedan", "truck", "van", "coupe", "hatchback",
+    "phone", "smartphone", "tablet", "laptop", "computer",
+    "轿车", "越野车", "跑车", "电动车", "新能源",
+    "手机", "电脑", "平板",
+    "best", "top", "good", "great", "new", "old",
+    "最好", "推荐", "选择", "品牌", "产品",
+}
+
+
+def classify_entity_type(name: str) -> EntityType:
+    if not name or len(name) < 2:
+        return EntityType.UNKNOWN
+
+    normalized = name.lower().strip()
+
+    if normalized in GENERIC_TERMS:
+        return EntityType.UNKNOWN
+
+    if re.match(r"^\d+$", normalized):
+        return EntityType.UNKNOWN
+
+    if re.match(r"^(suv|car|auto)\d*$", normalized):
+        return EntityType.UNKNOWN
+
+    feature_patterns = [
+        r"(性|度|率|感|力)$",
+        r"(效果|功能|特点|配置|体验|表现)",
+        r"(安全|舒适|豪华|高端|入门)",
+        r"(丰富|优秀|良好)",
+        r"(性价比|可靠性|实用性|经济性)",
+    ]
+    for pattern in feature_patterns:
+        if re.search(pattern, name):
+            return EntityType.UNKNOWN
+
+    for pattern in PRODUCT_INDICATORS:
+        if re.search(pattern, name, re.IGNORECASE):
+            return EntityType.PRODUCT
+
+    if re.search(r"[\u4e00-\u9fff]", name):
+        if len(name) <= 4 and not re.search(r"\d", name):
+            return EntityType.BRAND
+
+    if re.match(r"^[A-Z][a-z]*$", name) and len(name) >= 2:
+        return EntityType.BRAND
+
+    if re.match(r"^[A-Z][a-z]+(\s+[A-Z][a-z]+)?$", name):
+        return EntityType.BRAND
+
+    if re.match(r"^[A-Z]{2,}$", name) and len(name) <= 6:
+        return EntityType.BRAND
+
+    return EntityType.UNKNOWN
 
 
 def discover_all_brands(
@@ -108,6 +175,8 @@ def _get_or_create_discovered_brand(
     if existing:
         return existing
 
+    entity_type = classify_entity_type(brand_name)
+
     brand = Brand(
         vertical_id=vertical_id,
         display_name=brand_name,
@@ -115,6 +184,7 @@ def _get_or_create_discovered_brand(
         translated_name=None,
         aliases={"zh": [], "en": []},
         is_user_input=False,
+        entity_type=entity_type,
     )
     db.add(brand)
     db.flush()
