@@ -1,5 +1,8 @@
+import time
+from functools import wraps
 from typing import List
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from metrics.metrics import AnswerMetrics, visibility_metrics
@@ -7,6 +10,32 @@ from models import Brand, BrandMention, LLMAnswer, Prompt, Run, RunMetrics
 from models.domain import EntityType
 
 
+def retry_on_db_lock(max_retries: int = 5, base_delay: float = 0.1, max_delay: float = 2.0):
+    """Decorator to retry database operations on SQLite lock errors."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except OperationalError as e:
+                    last_exception = e
+                    if "database is locked" in str(e).lower():
+                        if attempt < max_retries - 1:
+                            delay = min(base_delay * (2 ** attempt), max_delay)
+                            print(f"Database locked, retrying metrics calculation in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
+                            time.sleep(delay)
+                            continue
+                    # Re-raise if not a lock error or max retries reached
+                    raise
+            # This should not be reached, but just in case
+            raise last_exception
+        return wrapper
+    return decorator
+
+
+@retry_on_db_lock()
 def calculate_and_save_metrics(db: Session, run_id: int) -> None:
     run = db.query(Run).filter(Run.id == run_id).first()
     if not run:

@@ -192,6 +192,7 @@ run: check-deps ## Start all services (Redis, Ollama, API, Celery, Streamlit)
 	@echo ""
 	@$(MAKE) start-redis
 	@$(MAKE) start-ollama
+	@$(MAKE) download-embeddings
 	@$(MAKE) start-api
 	@$(MAKE) start-celery
 	@$(MAKE) start-streamlit

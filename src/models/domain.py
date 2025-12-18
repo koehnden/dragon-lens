@@ -180,11 +180,14 @@ class RunMetrics(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
-    mention_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    share_of_voice: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # Map old column names to new ones
+    mention_rate: Mapped[float] = mapped_column("asov_coverage", Float, nullable=False, default=0.0)
+    share_of_voice: Mapped[float] = mapped_column("asov_relative", Float, nullable=False, default=0.0)
+    # prominence_score column exists but we don't use it in the current model
     top_spot_share: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     sentiment_index: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    dragon_lens_visibility: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # positive_share and opportunity_rate exist but we don't use them
+    dragon_lens_visibility: Mapped[float] = mapped_column("dragon_visibility_score", Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

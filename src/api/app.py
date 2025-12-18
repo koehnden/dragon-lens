@@ -18,9 +18,13 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     init_db()
     if ENABLE_EMBEDDING_CLUSTERING:
-        logger.info(f"Caching embedding model: {EMBEDDING_MODEL_NAME}")
-        ensure_embedding_model_available(EMBEDDING_MODEL_NAME)
-        logger.info(f"Embedding model {EMBEDDING_MODEL_NAME} cached successfully")
+        logger.info(f"Checking embedding model: {EMBEDDING_MODEL_NAME}")
+        try:
+            ensure_embedding_model_available(EMBEDDING_MODEL_NAME)
+            logger.info(f"Embedding model {EMBEDDING_MODEL_NAME} is available")
+        except Exception as e:
+            logger.warning(f"Embedding model {EMBEDDING_MODEL_NAME} not available: {e}")
+            logger.warning("Brand clustering will fall back to simpler methods")
     yield
 
 app = FastAPI(
