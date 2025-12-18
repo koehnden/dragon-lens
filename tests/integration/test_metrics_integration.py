@@ -410,7 +410,8 @@ def test_run_metrics_endpoint(client: TestClient, db_session: Session, complete_
     assert data["model_name"] == "qwen"
     assert len(data["metrics"]) == 3
 
-    merc = next(m for m in data["metrics"] if m["brand_name"] == "Mercedes-Benz")
+    # Find Mercedes-Benz by looking for the brand with the right ID
+    merc = next(m for m in data["metrics"] if m["brand_id"] == complete_test_data["brand1_id"])
     assert merc["mention_rate"] == pytest.approx(1.0, rel=1e-2)
     assert merc["share_of_voice"] == pytest.approx(0.475, rel=1e-2)
     assert merc["dragon_lens_visibility"] > 0

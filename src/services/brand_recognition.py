@@ -12,7 +12,8 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 ENABLE_QWEN_FILTERING = os.getenv("ENABLE_QWEN_FILTERING", "true").lower() == "true"
-ENABLE_EMBEDDING_CLUSTERING = os.getenv("ENABLE_EMBEDDING_CLUSTERING", "false").lower() == "true"
+# Temporarily disabled due to download issues - can be re-enabled when download works
+ENABLE_EMBEDDING_CLUSTERING = False
 ENABLE_LLM_CLUSTERING = os.getenv("ENABLE_LLM_CLUSTERING", "false").lower() == "true"
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-small-zh-v1.5")
 
@@ -122,12 +123,12 @@ def _is_intro_paragraph(candidate: str, full_text: str) -> bool:
     return candidate.strip() == intro_part
 
 
-def extract_entities(text: str, primary_brand: str, aliases: Dict[str, List[str]]) -> Dict[str, List[str]]:
+def extract_entities(text: str, primary_brand: str, aliases: Dict[str, List[str]], vertical_name: str = "", vertical_description: str = "") -> Dict[str, List[str]]:
     normalized_text = normalize_text_for_ner(text)
     candidates = generate_candidates(normalized_text, primary_brand, aliases)
 
     if ENABLE_QWEN_FILTERING:
-        filtered_candidates = _run_async(_filter_candidates_with_qwen(candidates, normalized_text))
+        filtered_candidates = _run_async(_filter_candidates_with_qwen(candidates, normalized_text, vertical_name, vertical_description))
     else:
         filtered_candidates = _filter_candidates_simple(candidates)
 
@@ -237,7 +238,7 @@ def generate_candidates(text: str, primary_brand: str, aliases: Dict[str, List[s
     ]
 
 
-async def _filter_candidates_with_qwen(candidates: List[EntityCandidate], text: str) -> List[EntityCandidate]:
+async def _filter_candidates_with_qwen(candidates: List[EntityCandidate], text: str, vertical_name: str = "", vertical_description: str = "") -> List[EntityCandidate]:
     from services.ollama import OllamaService
 
     filtered = []
@@ -253,7 +254,7 @@ async def _filter_candidates_with_qwen(candidates: List[EntityCandidate], text: 
 
     if needs_qwen_verification:
         ollama = OllamaService()
-        batch_results = await _batch_verify_entities_with_qwen(ollama, needs_qwen_verification, text)
+        batch_results = await _batch_verify_entities_with_qwen(ollama, needs_qwen_verification, text, vertical_name, vertical_description)
         for candidate in needs_qwen_verification:
             if batch_results.get(candidate.name) in ["brand", "product"]:
                 filtered.append(candidate)
@@ -285,13 +286,15 @@ async def _batch_verify_entities_with_qwen(
     ollama,
     candidates: List[EntityCandidate],
     text: str,
+    vertical_name: str = "",
+    vertical_description: str = "",
     batch_size: int = 30
 ) -> Dict[str, str]:
     results: Dict[str, str] = {}
 
     for i in range(0, len(candidates), batch_size):
         batch = candidates[i:i + batch_size]
-        batch_results = await _verify_batch_with_qwen(ollama, batch, text)
+        batch_results = await _verify_batch_with_qwen(ollama, batch, text, vertical_name, vertical_description)
         results.update(batch_results)
 
     return results
@@ -300,24 +303,40 @@ async def _batch_verify_entities_with_qwen(
 async def _verify_batch_with_qwen(
     ollama,
     batch: List[EntityCandidate],
-    text: str
+    text: str,
+    vertical_name: str = "",
+    vertical_description: str = ""
 ) -> Dict[str, str]:
     import json
 
     candidate_names = [c.name for c in batch]
     candidates_json = json.dumps(candidate_names, ensure_ascii=False)
 
-    system_prompt = """You are a brand/product recognition expert. Classify each candidate entity based on the source text.
+    vertical_context = ""
+    if vertical_name:
+        vertical_context = f"Vertical/Domain: {vertical_name}"
+        if vertical_description:
+            vertical_context += f" - {vertical_description}"
+        vertical_context += "\n\n"
 
-CRITICAL RULES:
-1. Base your classification ONLY on the provided text context
-2. Output ONLY valid JSON array with the exact format specified
-3. Each entry must have "name" and "type" fields
+    system_prompt = f"""You are a brand/product recognition expert. Classify each candidate entity based on the source text.
+
+{vertical_context}CRITICAL RULES:
+1. Base your classification ONLY on the provided text context and vertical domain
+2. Consider what makes sense as a brand/product in the {vertical_name or 'given'} market
+3. Output ONLY valid JSON array with the exact format specified
+4. Each entry must have "name" and "type" fields
+5. Be very conservative - only classify as "brand" or "product" if clearly a company/product name
 
 Classify each entity as:
-- "brand": A brand/company name (e.g., 比亚迪, Tesla, Loreal)
-- "product": A specific product/model name (e.g., 宋PLUS, iPhone14, Mate50)
-- "other": Feature descriptions, quality descriptors, generic terms
+- "brand": A brand/company name (e.g., 比亚迪, Tesla, Loreal, Volkswagen, Toyota)
+- "product": A specific product/model name (e.g., 宋PLUS, iPhone14, Mate50, Model Y)
+- "other": Feature descriptions, quality descriptors, generic terms, phrases (e.g., "star evaluation", "driver", "measurement and analysis", "in the latest", "One", "best choice")
+
+Examples of "other":
+- Descriptive phrases: "star evaluation", "in the latest", "measurement and analysis"
+- Generic terms: "driver", "One", "carplay", "performance"
+- Feature words: "safety", "comfort", "reliability", "space"
 
 Output format (JSON array only, no additional text):
 [{"name": "entity1", "type": "brand"}, {"name": "entity2", "type": "other"}, ...]"""
@@ -461,6 +480,9 @@ def _is_valid_brand_candidate(name: str) -> bool:
         "猫粮", "狗粮", "补剂", "胶原蛋白",
         "扫地机", "吸尘器", "处方粮",
         "温和性好", "性价比高", "肤感舒适", "适合敏感肌",
+        "驾驶者", "在最新的", "星评价", "测和分析",
+        "评价", "测评", "分析", "测试",
+        "最新", "最佳", "排名", "评测",
     }
 
     if name.lower() in {w.lower() for w in generic_stop_words}:

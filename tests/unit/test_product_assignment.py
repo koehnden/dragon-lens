@@ -25,7 +25,7 @@ def test_discover_all_brands_registers_products(db_session, monkeypatch):
     toyota = _create_brand(db_session, vertical.id, "Toyota")
     honda = _create_brand(db_session, vertical.id, "Honda")
 
-    def fake_extract_entities(text, primary_brand, aliases):
+    def fake_extract_entities(text, primary_brand, aliases, vertical_name="", vertical_description=""):
         return {
             "Toyota RAV4": ["Toyota RAV4"],
             "Honda CRV": ["Honda CRV"],

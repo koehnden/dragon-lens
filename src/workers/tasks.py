@@ -1,9 +1,12 @@
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import List
 
 from celery import Task
+from functools import wraps
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from models import (
@@ -30,6 +33,31 @@ from workers.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
+def retry_on_db_lock(max_retries: int = 5, base_delay: float = 0.1, max_delay: float = 2.0):
+    """Decorator to retry database operations on SQLite lock errors."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except OperationalError as e:
+                    last_exception = e
+                    if "database is locked" in str(e).lower():
+                        if attempt < max_retries - 1:
+                            delay = min(base_delay * (2 ** attempt), max_delay)
+                            logger.warning(f"Database locked, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
+                            time.sleep(delay)
+                            continue
+                    # Re-raise if not a lock error or max retries reached
+                    raise
+            # This should not be reached, but just in case
+            raise last_exception
+        return wrapper
+    return decorator
+
+
 class DatabaseTask(Task):
     _db: Session | None = None
 
@@ -43,6 +71,17 @@ class DatabaseTask(Task):
         if self._db is not None:
             self._db.close()
             self._db = None
+
+    @retry_on_db_lock()
+    def _add_llm_answer_with_retry(self, llm_answer: LLMAnswer) -> None:
+        """Add LLM answer with retry on database lock."""
+        self.db.add(llm_answer)
+        self.db.flush()
+
+    @retry_on_db_lock()
+    def _commit_with_retry(self) -> None:
+        """Commit database transaction with retry on database lock."""
+        self.db.commit()
 
 
 def _target_alias(target: EntityTarget, brands: dict[int, Brand]) -> list[str]:
@@ -128,11 +167,10 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
                 tokens_out=tokens_out,
                 cost_estimate=0.0,
             )
-            self.db.add(llm_answer)
-            self.db.flush()
+            self._add_llm_answer_with_retry(llm_answer)
 
             logger.info("Discovering all brands in response...")
-            entities = discover_all_brands(answer_zh, vertical_id, brands, self.db)
+            entities = discover_all_brands(answer_zh, vertical_id, brands, self.db, vertical.name, vertical.description)
             discovered_count = len(entities.brands) - len(brands)
             logger.info(
                 f"Found {len(entities.brands)} brands ({len(brands)} user-input, {discovered_count} discovered)"
@@ -182,7 +220,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
                 )
                 self.db.add(mention)
 
-            self.db.commit()
+            self._commit_with_retry()
 
         logger.info(f"Calculating metrics for run {run_id}...")
         calculate_and_save_metrics(self.db, run_id)

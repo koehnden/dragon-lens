@@ -6,7 +6,9 @@ from services.model_cache import ensure_embedding_model_available
 
 def prefetch_default_embedding() -> None:
     cache_dir = os.getenv("EMBEDDING_CACHE_DIR")
-    ensure_embedding_model_available(EMBEDDING_MODEL_NAME, cache_dir)
+    print(f"Prefetching embedding model: {EMBEDDING_MODEL_NAME}")
+    result = ensure_embedding_model_available(EMBEDDING_MODEL_NAME, cache_dir)
+    print(f"Model cached at: {result}")
 
 
 if __name__ == "__main__":

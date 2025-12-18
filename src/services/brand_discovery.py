@@ -70,6 +70,10 @@ def classify_entity_type(name: str) -> EntityType:
         r"(安全|舒适|豪华|高端|入门)",
         r"(丰富|优秀|良好)",
         r"(性价比|可靠性|实用性|经济性)",
+        r"(评价|测评|分析|测试)",
+        r"(最新|最佳|推荐)",
+        r"(和|与|及|以及)",
+        r"\s+the\s+",
     ]
     for pattern in feature_patterns:
         if re.search(pattern, name):
@@ -103,13 +107,15 @@ def discover_all_brands(
     vertical_id: int,
     user_brands: List[Brand],
     db: Session,
+    vertical_name: str = "",
+    vertical_description: str = "",
 ) -> EntityCollection:
     collection = EntityCollection(brands=list(user_brands), products=[])
     brand_map: Dict[str, Brand] = {
         brand.display_name.lower().strip(): brand for brand in collection.brands
     }
 
-    discovered_entities = extract_entities(text, "", {})
+    discovered_entities = extract_entities(text, "", {}, vertical_name=vertical_name, vertical_description=vertical_description)
 
     for canonical_name, surface_forms in discovered_entities.items():
         normalized_name = canonical_name.lower().strip()
@@ -218,6 +224,9 @@ def _is_brand_like(canonical_name: str, surface_forms: List[str]) -> bool:
         "品牌", "产品", "类型", "种类", "系列",
         "国产", "进口", "豪华", "高端", "入门",
         "安全性", "可靠性", "舒适性", "性价比",
+        "驾驶者", "在最新的", "星评价", "测和分析",
+        "评价", "测评", "分析", "测试",
+        "最新", "最佳", "排名", "评测",
     }
     if canonical_name in generic_stop_words:
         return False
