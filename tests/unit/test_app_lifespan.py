@@ -1,5 +1,5 @@
 import importlib
-from unittest.mock import patch
+import logging
 
 from fastapi.testclient import TestClient
 
@@ -13,39 +13,25 @@ def test_lifespan_initializes_app_successfully():
         assert response.json() == {"status": "healthy"}
 
 
-def test_lifespan_caches_embedding_model_when_enabled(monkeypatch, tmp_path):
+def test_lifespan_logs_embedding_model_when_enabled(monkeypatch, caplog):
     monkeypatch.setenv("ENABLE_EMBEDDING_CLUSTERING", "true")
-    monkeypatch.setenv("HF_HOME", str(tmp_path))
-    cache_calls = []
 
-    def fake_ensure(model_name, cache_dir=None, offline_only=False):
-        cache_calls.append(model_name)
-        target = tmp_path / "embeddings" / model_name.replace("/", "__")
-        target.mkdir(parents=True, exist_ok=True)
-        (target / ".downloaded").touch()
-        return str(target)
-
-    with patch("services.model_cache.ensure_embedding_model_available", fake_ensure):
+    with caplog.at_level(logging.INFO):
         importlib.reload(importlib.import_module("services.brand_recognition"))
         app_module = importlib.reload(importlib.import_module("api.app"))
         with TestClient(app_module.app):
             pass
 
-    assert "BAAI/bge-small-zh-v1.5" in cache_calls
+    assert "qllama/bge-small-zh-v1.5" in caplog.text or "Ollama embedding model" in caplog.text
 
 
-def test_lifespan_skips_caching_when_disabled(monkeypatch):
+def test_lifespan_skips_logging_when_disabled(monkeypatch, caplog):
     monkeypatch.setenv("ENABLE_EMBEDDING_CLUSTERING", "false")
-    cache_calls = []
 
-    def fake_ensure(model_name, cache_dir=None, offline_only=False):
-        cache_calls.append(model_name)
-        return "/fake/path"
-
-    with patch("services.model_cache.ensure_embedding_model_available", fake_ensure):
+    with caplog.at_level(logging.INFO):
         importlib.reload(importlib.import_module("services.brand_recognition"))
         app_module = importlib.reload(importlib.import_module("api.app"))
         with TestClient(app_module.app):
             pass
 
-    assert cache_calls == []
+    assert "Using Ollama embedding model" not in caplog.text

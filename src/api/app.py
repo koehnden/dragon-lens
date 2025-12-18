@@ -8,8 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routers import metrics, tracking, verticals
 from config import settings
 from models import init_db
-from services.brand_recognition import EMBEDDING_MODEL_NAME, ENABLE_EMBEDDING_CLUSTERING
-from services.model_cache import ensure_embedding_model_available
+from services.brand_recognition import OLLAMA_EMBEDDING_MODEL, ENABLE_EMBEDDING_CLUSTERING
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +17,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     init_db()
     if ENABLE_EMBEDDING_CLUSTERING:
-        logger.info(f"Caching embedding model: {EMBEDDING_MODEL_NAME}")
-        ensure_embedding_model_available(EMBEDDING_MODEL_NAME)
-        logger.info(f"Embedding model {EMBEDDING_MODEL_NAME} cached successfully")
+        logger.info(f"Using Ollama embedding model: {OLLAMA_EMBEDDING_MODEL}")
+        logger.info("Ensure model is pulled with: ollama pull qllama/bge-small-zh-v1.5")
     yield
 
 app = FastAPI(
