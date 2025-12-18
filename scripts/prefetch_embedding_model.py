@@ -1,13 +1,17 @@
-import os
+import subprocess
 
-from services.brand_recognition import EMBEDDING_MODEL_NAME
-from services.model_cache import ensure_embedding_model_available
+from services.brand_recognition import OLLAMA_EMBEDDING_MODEL
 
 
-def prefetch_default_embedding() -> None:
-    cache_dir = os.getenv("EMBEDDING_CACHE_DIR")
-    ensure_embedding_model_available(EMBEDDING_MODEL_NAME, cache_dir)
+def prefetch_ollama_embedding_model() -> None:
+    print(f"Pulling Ollama embedding model: {OLLAMA_EMBEDDING_MODEL}")
+    result = subprocess.run(["ollama", "pull", OLLAMA_EMBEDDING_MODEL], capture_output=True, text=True)
+    if result.returncode == 0:
+        print(f"Successfully pulled {OLLAMA_EMBEDDING_MODEL}")
+    else:
+        print(f"Failed to pull {OLLAMA_EMBEDDING_MODEL}: {result.stderr}")
+        raise RuntimeError(f"Failed to pull Ollama model: {result.stderr}")
 
 
 if __name__ == "__main__":
-    prefetch_default_embedding()
+    prefetch_ollama_embedding_model()

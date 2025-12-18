@@ -14,34 +14,38 @@ logger = logging.getLogger(__name__)
 ENABLE_QWEN_FILTERING = os.getenv("ENABLE_QWEN_FILTERING", "true").lower() == "true"
 
 KNOWN_BRANDS = {
-    "honda", "toyota", "byd", "比亚迪", "volkswagen", "vw", "大众", "bmw", "宝马",
-    "mercedes", "mercedes-benz", "奔驰", "audi", "奥迪", "tesla", "特斯拉",
-    "ford", "福特", "chevrolet", "雪佛兰", "nissan", "日产", "hyundai", "现代",
-    "kia", "起亚", "porsche", "保时捷", "lexus", "雷克萨斯", "volvo", "沃尔沃",
-    "mazda", "马自达", "subaru", "斯巴鲁", "jeep", "吉普", "land rover", "路虎",
-    "jaguar", "捷豹", "ferrari", "法拉利", "lamborghini", "兰博基尼",
+    "honda", "本田", "toyota", "丰田", "byd", "比亚迪", "volkswagen", "vw", "大众",
+    "bmw", "宝马", "mercedes", "mercedes-benz", "奔驰", "audi", "奥迪",
+    "tesla", "特斯拉", "ford", "福特", "chevrolet", "雪佛兰", "nissan", "日产",
+    "hyundai", "现代", "kia", "起亚", "porsche", "保时捷", "lexus", "雷克萨斯",
+    "volvo", "沃尔沃", "mazda", "马自达", "subaru", "斯巴鲁", "jeep", "吉普",
+    "land rover", "路虎", "jaguar", "捷豹", "ferrari", "法拉利", "lamborghini", "兰博基尼",
     "理想", "li auto", "nio", "蔚来", "xpeng", "小鹏", "geely", "吉利",
     "changan", "长安", "great wall", "长城", "haval", "哈弗", "wey", "魏牌",
     "zeekr", "极氪", "lynk & co", "领克", "buick", "别克", "cadillac", "凯迪拉克",
     "apple", "苹果", "samsung", "三星", "huawei", "华为", "xiaomi", "小米",
-    "oppo", "vivo", "oneplus", "一加", "sony", "索尼", "loreal", "欧莱雅",
-    "nike", "耐克", "adidas", "阿迪达斯", "puma", "彪马", "under armour",
+    "oppo", "vivo", "oneplus", "一加", "sony", "索尼", "google", "谷歌",
+    "loreal", "欧莱雅", "nike", "耐克", "adidas", "阿迪达斯", "puma", "彪马",
+    "under armour", "dyson", "戴森", "shark", "roomba", "irobot",
 }
 
 KNOWN_PRODUCTS = {
     "crv", "cr-v", "rav4", "rav-4", "model y", "model 3", "model s", "model x",
     "宋plus", "宋pro", "宋", "汉ev", "汉dm", "汉", "唐dm", "唐", "秦plus", "秦", "元plus", "元", "海豚", "海鸥",
-    "id.4", "id.6", "tuareg", "tuareq", "tiguan", "passat", "golf", "polo",
-    "camry", "凯美瑞", "corolla", "卡罗拉", "highlander", "汉兰达", "prado", "普拉多",
-    "accord", "雅阁", "civic", "思域", "odyssey", "奥德赛", "pilot",
-    "x3", "x5", "x7", "3 series", "5 series", "7 series",
+    "id.4", "id.6", "tiguan", "途观", "途观l", "passat", "帕萨特", "golf", "高尔夫", "polo",
+    "camry", "凯美瑞", "corolla", "卡罗拉", "highlander", "汉兰达", "prado", "普拉多", "4runner",
+    "accord", "雅阁", "civic", "思域", "odyssey", "奥德赛", "pilot", "passport", "hr-v",
+    "x3", "x5", "x7", "3 series", "5 series", "7 series", "x1",
     "a4", "a6", "a8", "q3", "q5", "q7", "q8", "e-tron",
     "cayenne", "macan", "panamera", "911", "taycan",
-    "mustang", "野马", "f-150", "explorer", "escape",
+    "mustang", "野马", "f-150", "explorer", "escape", "bronco",
     "l9", "l8", "l7", "l6", "理想one", "et7", "et5", "es6", "es8", "ec6",
-    "p7", "g9", "g6", "p5",
-    "iphone", "iphone 14", "iphone 15", "galaxy", "mate", "p50", "p60",
+    "p7", "g9", "g6", "p5", "tucson", "途胜", "telluride", "palisade",
+    "iphone", "iphone 14", "iphone 15", "iphone 15 pro", "galaxy", "galaxy s24",
+    "mate", "mate 50", "p50", "p60", "pixel", "pixel 8",
     "mi 14", "redmi", "find x", "reno",
+    "air max", "ultraboost", "v15", "navigator", "crosswave", "i7", "ascent",
+    "rx", "glc", "gle", "gls", "sealion",
 }
 
 GENERIC_TERMS = {
@@ -56,7 +60,7 @@ GENERIC_TERMS = {
 }
 ENABLE_EMBEDDING_CLUSTERING = os.getenv("ENABLE_EMBEDDING_CLUSTERING", "false").lower() == "true"
 ENABLE_LLM_CLUSTERING = os.getenv("ENABLE_LLM_CLUSTERING", "false").lower() == "true"
-EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-small-zh-v1.5")
+OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "qllama/bge-small-zh-v1.5:latest")
 
 
 @dataclass
@@ -226,6 +230,7 @@ LIST_PATTERNS = [
     r'^\s*\d+、',
     r'^\s*[-*]\s+',
     r'^\s*[・○→]\s*',
+    r'^#{1,4}\s*\**\d+[.\)]\s*',
 ]
 
 COMPILED_LIST_PATTERNS = [re.compile(p, re.MULTILINE) for p in LIST_PATTERNS]
@@ -243,7 +248,7 @@ def split_into_list_items(text: str) -> List[str]:
     if not is_list_format(text):
         return []
 
-    combined_pattern = r'(?:^\s*\d+[.\)]|^\s*\d+、|^\s*[-*]|^\s*[・○→])\s*'
+    combined_pattern = r'(?:^\s*\d+[.\)]|^\s*\d+、|^\s*[-*]|^\s*[・○→]|^#{1,4}\s*\**\d+[.\)])\s*'
     parts = re.split(combined_pattern, text, flags=re.MULTILINE)
     items = [p.strip() for p in parts if p and p.strip()]
 
@@ -255,7 +260,7 @@ def split_into_list_items(text: str) -> List[str]:
 
 
 def _find_first_list_item_index(text: str) -> int:
-    combined_pattern = r'(?:^\s*\d+[.\)]|^\s*\d+、|^\s*[-*]|^\s*[・○→])'
+    combined_pattern = r'(?:^\s*\d+[.\)]|^\s*\d+、|^\s*[-*]|^\s*[・○→]|^#{1,4}\s*\**\d+[.\)])'
     match = re.search(combined_pattern, text, flags=re.MULTILINE)
     return match.start() if match else 0
 
@@ -268,12 +273,20 @@ def _is_intro_paragraph(candidate: str, full_text: str) -> bool:
     return candidate.strip() == intro_part
 
 
-def extract_entities(text: str, primary_brand: str, aliases: Dict[str, List[str]]) -> Dict[str, List[str]]:
+def extract_entities(
+    text: str,
+    primary_brand: str,
+    aliases: Dict[str, List[str]],
+    vertical: str = "",
+    vertical_description: str = "",
+) -> Dict[str, List[str]]:
     normalized_text = normalize_text_for_ner(text)
     candidates = generate_candidates(normalized_text, primary_brand, aliases)
 
     if ENABLE_QWEN_FILTERING:
-        filtered_candidates = _run_async(_filter_candidates_with_qwen(candidates, normalized_text))
+        filtered_candidates = _run_async(
+            _filter_candidates_with_qwen(candidates, normalized_text, vertical, vertical_description)
+        )
     else:
         filtered_candidates = _filter_candidates_simple(candidates)
 
@@ -311,27 +324,161 @@ def _filter_by_list_position(candidates: List[EntityCandidate], text: str) -> Li
     if not list_items:
         return candidates
 
-    allowed_entities: Set[str] = set()
+    allowed_brands: Set[str] = set()
+    allowed_products: Set[str] = set()
 
     intro_text = _get_intro_text(text)
     if intro_text:
-        intro_lower = intro_text.lower()
-        for candidate in candidates:
-            if candidate.name.lower() in intro_lower:
-                allowed_entities.add(candidate.name.lower())
+        _add_all_entities_from_text(intro_text, candidates, allowed_brands, allowed_products)
 
     for item in list_items:
-        item_lower = item.lower()
-        primary_region = _get_primary_region(item_lower)
+        primary = _extract_first_brand_and_product_from_item(item, candidates)
+        if primary["brand"]:
+            allowed_brands.add(primary["brand"].lower())
+        if primary["product"]:
+            allowed_products.add(primary["product"].lower())
 
-        for candidate in candidates:
-            name_lower = candidate.name.lower()
-            if name_lower in primary_region:
-                allowed_entities.add(name_lower)
-
-    filtered = [c for c in candidates if c.name.lower() in allowed_entities]
+    filtered = _match_candidates_to_allowed(candidates, allowed_brands, allowed_products)
     logger.info(f"List position filter: {len(candidates)} -> {len(filtered)} candidates")
     return filtered
+
+
+def _match_candidates_to_allowed(
+    candidates: List[EntityCandidate],
+    allowed_brands: Set[str],
+    allowed_products: Set[str]
+) -> List[EntityCandidate]:
+    filtered: List[EntityCandidate] = []
+    allowed_all = allowed_brands | allowed_products
+
+    for candidate in candidates:
+        name_lower = candidate.name.lower()
+
+        if name_lower in allowed_all:
+            filtered.append(candidate)
+            continue
+
+        if _candidate_matches_allowed(name_lower, allowed_brands):
+            filtered.append(candidate)
+            continue
+
+        if _candidate_matches_allowed(name_lower, allowed_products):
+            filtered.append(candidate)
+            continue
+
+    return filtered
+
+
+def _candidate_matches_allowed(candidate_lower: str, allowed_set: Set[str]) -> bool:
+    for allowed in allowed_set:
+        if candidate_lower in allowed:
+            return True
+        if allowed == candidate_lower:
+            return True
+        if _is_clean_substring_match(allowed, candidate_lower):
+            return True
+    return False
+
+
+def _is_clean_substring_match(allowed: str, candidate: str) -> bool:
+    if allowed not in candidate:
+        return False
+    if len(candidate) > len(allowed) * 2:
+        return False
+    extra = candidate.replace(allowed, "", 1)
+    if re.search(r"[\u4e00-\u9fff]{2,}", extra):
+        return False
+    if re.search(r"[a-z]{3,}", extra):
+        return False
+    return True
+
+
+def _add_all_entities_from_text(
+    text: str, candidates: List[EntityCandidate], brands: Set[str], products: Set[str]
+) -> None:
+    text_lower = text.lower()
+    for candidate in candidates:
+        name_lower = candidate.name.lower()
+        if name_lower in text_lower:
+            if candidate.entity_type == "brand" or name_lower in KNOWN_BRANDS:
+                brands.add(name_lower)
+            elif candidate.entity_type == "product" or name_lower in KNOWN_PRODUCTS:
+                products.add(name_lower)
+            else:
+                brands.add(name_lower)
+
+
+def _extract_first_brand_and_product_from_item(
+    item: str, candidates: List[EntityCandidate]
+) -> Dict[str, str | None]:
+    result: Dict[str, str | None] = {"brand": None, "product": None}
+    item_lower = item.lower()
+
+    known_brand_positions: List[Tuple[int, int, str]] = []
+    known_product_positions: List[Tuple[int, int, str]] = []
+
+    for brand in KNOWN_BRANDS:
+        pos = item_lower.find(brand.lower())
+        if pos != -1:
+            known_brand_positions.append((pos, -len(brand), brand))
+
+    for product in KNOWN_PRODUCTS:
+        pos = item_lower.find(product.lower())
+        if pos != -1:
+            known_product_positions.append((pos, -len(product), product))
+
+    if known_brand_positions:
+        known_brand_positions.sort(key=lambda x: (x[0], x[1]))
+        result["brand"] = known_brand_positions[0][2]
+
+    if known_product_positions:
+        known_product_positions.sort(key=lambda x: (x[0], x[1]))
+        result["product"] = known_product_positions[0][2]
+
+    if result["brand"] is None or result["product"] is None:
+        candidate_brand_positions: List[Tuple[int, int, str]] = []
+        candidate_product_positions: List[Tuple[int, int, str]] = []
+
+        for candidate in candidates:
+            name = candidate.name
+            name_lower = name.lower()
+            pos = item_lower.find(name_lower)
+            if pos == -1:
+                continue
+
+            if name_lower in KNOWN_BRANDS or name_lower in KNOWN_PRODUCTS:
+                continue
+
+            is_brand = candidate.entity_type == "brand"
+            is_product = candidate.entity_type == "product"
+
+            if is_brand and result["brand"] is None:
+                candidate_brand_positions.append((pos, -len(name), name))
+            elif is_product and result["product"] is None:
+                candidate_product_positions.append((pos, -len(name), name))
+            elif not is_brand and not is_product:
+                if _looks_like_product(name) and result["product"] is None:
+                    candidate_product_positions.append((pos, -len(name), name))
+                elif result["brand"] is None:
+                    candidate_brand_positions.append((pos, -len(name), name))
+
+        if result["brand"] is None and candidate_brand_positions:
+            candidate_brand_positions.sort(key=lambda x: (x[0], x[1]))
+            result["brand"] = candidate_brand_positions[0][2]
+
+        if result["product"] is None and candidate_product_positions:
+            candidate_product_positions.sort(key=lambda x: (x[0], x[1]))
+            result["product"] = candidate_product_positions[0][2]
+
+    return result
+
+
+def _looks_like_product(name: str) -> bool:
+    if re.search(r"\d", name):
+        return True
+    if re.search(r"(PLUS|Plus|Pro|Max|Ultra|Mini|EV|DM)", name):
+        return True
+    return False
 
 
 def _get_intro_text(text: str) -> str | None:
@@ -465,6 +612,193 @@ async def _batch_verify_entities_with_qwen(
 
 
 async def _verify_batch_with_qwen(
+    ollama,
+    batch: List[EntityCandidate],
+    text: str,
+    vertical: str = "",
+    vertical_description: str = ""
+) -> Dict[str, str]:
+    import json
+
+    candidate_names = [c.name for c in batch]
+    text_snippet = text[:1500] if len(text) > 1500 else text
+
+    brand_results = await _verify_brands_with_qwen(
+        ollama, candidate_names, text_snippet, vertical, vertical_description
+    )
+
+    remaining = [n for n in candidate_names if brand_results.get(n) != "brand"]
+
+    product_results = {}
+    if remaining:
+        product_results = await _verify_products_with_qwen(
+            ollama, remaining, text_snippet, vertical, vertical_description
+        )
+
+    final_results: Dict[str, str] = {}
+    for name in candidate_names:
+        if brand_results.get(name) == "brand":
+            final_results[name] = "brand"
+        elif product_results.get(name) == "product":
+            final_results[name] = "product"
+        else:
+            final_results[name] = "other"
+
+    return final_results
+
+
+async def _verify_brands_with_qwen(
+    ollama,
+    candidates: List[str],
+    text: str,
+    vertical: str = "",
+    vertical_description: str = ""
+) -> Dict[str, str]:
+    import json
+
+    candidates_json = json.dumps(candidates, ensure_ascii=False)
+
+    vertical_info = f"Industry: {vertical}" if vertical else "Industry: General"
+    if vertical_description:
+        vertical_info += f"\nDescription: {vertical_description}"
+
+    system_prompt = f"""You are an expert at identifying BRAND names (companies/manufacturers) in the {vertical or 'general'} industry.
+
+YOUR TASK: For each candidate, determine if it is a BRAND (company/manufacturer name).
+
+WHAT IS A BRAND:
+- A company or manufacturer that creates and sells products
+- Examples: Toyota, Honda, BYD, 比亚迪, Tesla, BMW, Apple, Samsung, Nike, L'Oreal
+- The name of an organization that owns product lines
+
+WHAT IS NOT A BRAND (classify as "other"):
+- Product/model names (RAV4, iPhone, Model Y) - these are NOT brands
+- Generic category terms (SUV, sedan, smartphone, laptop, 汽车)
+- Feature/technology words (CarPlay, GPS, LED, AWD, hybrid)
+- Common modifiers (One, Pro, Max, Plus, Ultra, Mini)
+- Quality descriptors (best, premium, good, popular)
+- Industry jargon or technical terms
+
+Output JSON array with classification for EACH candidate:
+[{{"name": "candidate1", "is_brand": true}}, {{"name": "candidate2", "is_brand": false}}]"""
+
+    prompt = f"""{vertical_info}
+
+Source text for context:
+{text}
+
+Candidates to evaluate:
+{candidates_json}
+
+For EACH candidate above, determine if it is a BRAND (company/manufacturer).
+Output JSON array only:"""
+
+    try:
+        response = await ollama._call_ollama(
+            model=ollama.ner_model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.1,
+        )
+        return _parse_brand_verification_response(response, candidates)
+    except Exception as e:
+        logger.warning(f"Brand verification failed: {e}")
+        return {}
+
+
+async def _verify_products_with_qwen(
+    ollama,
+    candidates: List[str],
+    text: str,
+    vertical: str = "",
+    vertical_description: str = ""
+) -> Dict[str, str]:
+    import json
+
+    candidates_json = json.dumps(candidates, ensure_ascii=False)
+
+    vertical_info = f"Industry: {vertical}" if vertical else "Industry: General"
+    if vertical_description:
+        vertical_info += f"\nDescription: {vertical_description}"
+
+    system_prompt = f"""You are an expert at identifying PRODUCT names (specific models/items) in the {vertical or 'general'} industry.
+
+YOUR TASK: For each candidate, determine if it is a PRODUCT (specific model/item name).
+
+WHAT IS A PRODUCT:
+- A specific model, item, or product line made by a brand
+- Usually has model numbers, letters, or distinguishing names
+- Examples: RAV4, CRV, Model Y, 宋PLUS, X5, iPhone 15, Galaxy S24, Air Max
+- Can include variants: Model Y Long Range, 宋PLUS DM-i
+
+WHAT IS NOT A PRODUCT (classify as "other"):
+- Brand/company names (Toyota, Apple, Nike) - these are NOT products
+- Generic category terms (SUV, sedan, smartphone, 汽车, 电动车)
+- Feature/technology words (CarPlay, GPS, LED, AWD, hybrid)
+- Standalone modifiers not attached to product (One, Pro, Max)
+- Quality descriptors (best, premium, good)
+- Industry jargon or technical terms
+
+Output JSON array with classification for EACH candidate:
+[{{"name": "candidate1", "is_product": true}}, {{"name": "candidate2", "is_product": false}}]"""
+
+    prompt = f"""{vertical_info}
+
+Source text for context:
+{text}
+
+Candidates to evaluate:
+{candidates_json}
+
+For EACH candidate above, determine if it is a PRODUCT (specific model/item).
+Output JSON array only:"""
+
+    try:
+        response = await ollama._call_ollama(
+            model=ollama.ner_model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.1,
+        )
+        return _parse_product_verification_response(response, candidates)
+    except Exception as e:
+        logger.warning(f"Product verification failed: {e}")
+        return {}
+
+
+def _parse_brand_verification_response(response: str, candidates: List[str]) -> Dict[str, str]:
+    parsed = _parse_batch_json_response(response)
+    if not parsed:
+        return {}
+
+    results: Dict[str, str] = {}
+    for item in parsed:
+        if isinstance(item, dict) and "name" in item:
+            name = item["name"]
+            is_brand = item.get("is_brand", False)
+            if is_brand:
+                results[name] = "brand"
+
+    return results
+
+
+def _parse_product_verification_response(response: str, candidates: List[str]) -> Dict[str, str]:
+    parsed = _parse_batch_json_response(response)
+    if not parsed:
+        return {}
+
+    results: Dict[str, str] = {}
+    for item in parsed:
+        if isinstance(item, dict) and "name" in item:
+            name = item["name"]
+            is_product = item.get("is_product", False)
+            if is_product:
+                results[name] = "product"
+
+    return results
+
+
+async def _verify_batch_with_qwen_legacy(
     ollama,
     batch: List[EntityCandidate],
     text: str,
@@ -862,10 +1196,10 @@ def _parse_json_response(response: str) -> Dict | None:
     return None
 
 
-def _get_embeddings_sync(texts: List[str], model_name: str):
-    from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer(model_name)
-    return model.encode(texts, normalize_embeddings=True)
+async def _get_embeddings_ollama(texts: List[str]) -> List[List[float]]:
+    from services.ollama import OllamaService
+    ollama = OllamaService()
+    return await ollama.get_embeddings(texts, model=OLLAMA_EMBEDDING_MODEL)
 
 
 async def _cluster_with_embeddings(candidates: List[EntityCandidate]) -> Dict[str, List[EntityCandidate]]:
@@ -874,8 +1208,8 @@ async def _cluster_with_embeddings(candidates: List[EntityCandidate]) -> Dict[st
 
     try:
         names = [c.name for c in candidates]
-        loop = asyncio.get_running_loop()
-        embeddings = await loop.run_in_executor(None, _get_embeddings_sync, names, EMBEDDING_MODEL_NAME)
+        raw_embeddings = await _get_embeddings_ollama(names)
+        embeddings = _normalize_embeddings(raw_embeddings)
 
         similarity_threshold = 0.85
         clusters = {}
@@ -907,6 +1241,13 @@ async def _cluster_with_embeddings(candidates: List[EntityCandidate]) -> Dict[st
     except Exception as e:
         logger.warning(f"Embedding clustering failed: {e}. Falling back to individual candidates.")
         return {c.name: [c] for c in candidates}
+
+
+def _normalize_embeddings(embeddings: List[List[float]]) -> np.ndarray:
+    arr = np.array(embeddings)
+    norms = np.linalg.norm(arr, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1, norms)
+    return arr / norms
 
 
 async def _llm_assisted_clustering(
