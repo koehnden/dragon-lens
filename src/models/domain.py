@@ -47,12 +47,18 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
     brand_id: Mapped[Optional[int]] = mapped_column(ForeignKey("brands.id"), nullable=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     original_name: Mapped[str] = mapped_column(String(255), nullable=False)
     translated_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_user_input: Mapped[bool] = mapped_column(nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    vertical: Mapped["Vertical"] = relationship("Vertical")
+    brand: Mapped[Optional["Brand"]] = relationship("Brand")
 
 
 class PromptLanguage(str, enum.Enum):

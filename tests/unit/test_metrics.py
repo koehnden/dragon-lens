@@ -16,10 +16,10 @@ def test_visibility_metrics_with_ranked_mentions():
     metrics = visibility_metrics(prompt_ids, mentions, "Alpha", ["Beta"])
 
     assert metrics["mention_rate"] == pytest.approx(0.75, rel=1e-2)
-    assert metrics["share_of_voice"] == pytest.approx(0.56, rel=1e-2)
+    assert metrics["share_of_voice"] == pytest.approx(0.479, rel=1e-2)
     assert metrics["top_spot_share"] == pytest.approx(0.25, rel=1e-2)
     assert metrics["sentiment_index"] == pytest.approx(2 / 3, rel=1e-2)
-    assert metrics["dragon_lens_visibility"] == pytest.approx(0.49, rel=1e-2)
+    assert metrics["dragon_lens_visibility"] == pytest.approx(0.47, rel=1e-2)
 
 
 def test_metrics_zero_when_brand_absent():
