@@ -29,9 +29,13 @@ class Settings(BaseSettings):
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model_translation: str = "qwen2.5:7b-instruct-q4_0"
-    ollama_model_sentiment: str = "qwen2.5:7b-instruct-q4_0"
+    ollama_model_sentiment: str = "qwen2.5:7b-instruct-q4_0"  # Fallback model
     ollama_model_ner: str = "qwen2.5:7b-instruct-q4_0"
     ollama_model_main: str = "qwen2.5:7b-instruct-q4_0"
+
+    # Erlangshen-Roberta-110M-Sentiment configuration
+    erlangshen_sentiment_model: str = "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment"
+    use_erlangshen_sentiment: bool = True  # Set to False to disable Erlangshen and use Qwen only
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
