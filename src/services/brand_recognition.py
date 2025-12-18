@@ -32,7 +32,7 @@ KNOWN_BRANDS = {
 KNOWN_PRODUCTS = {
     "crv", "cr-v", "rav4", "rav-4", "model y", "model 3", "model s", "model x",
     "宋plus", "宋pro", "宋", "汉ev", "汉dm", "汉", "唐dm", "唐", "秦plus", "秦", "元plus", "元", "海豚", "海鸥",
-    "id.4", "id.6", "tiguan", "途观", "途观l", "passat", "帕萨特", "golf", "高尔夫", "polo",
+    "id.4", "id.6", "tiguan", "途观", "途观l", "passat", "帕萨特", "golf", "高尔夫", "polo", "tuareg", "tuareq", "途锐",
     "camry", "凯美瑞", "corolla", "卡罗拉", "highlander", "汉兰达", "prado", "普拉多", "4runner",
     "accord", "雅阁", "civic", "思域", "odyssey", "奥德赛", "pilot", "passport", "hr-v",
     "x3", "x5", "x7", "3 series", "5 series", "7 series", "x1",
@@ -383,12 +383,31 @@ def _candidate_matches_allowed(candidate_lower: str, allowed_set: Set[str]) -> b
 def _is_clean_substring_match(allowed: str, candidate: str) -> bool:
     if allowed not in candidate:
         return False
-    if len(candidate) > len(allowed) * 2:
+    if len(candidate) > len(allowed) * 4:
         return False
-    extra = candidate.replace(allowed, "", 1)
+    extra = candidate.replace(allowed, "", 1).strip()
     if re.search(r"[\u4e00-\u9fff]{2,}", extra):
         return False
+    if _extra_is_valid(extra):
+        return True
     if re.search(r"[a-z]{3,}", extra):
+        return False
+    return True
+
+
+VALID_EXTRA_TERMS = {"hybrid", "ev", "plus", "pro", "max", "ultra", "mini", "dmi", "dm-i", "dmp", "dm-p"}
+
+
+def _extra_is_valid(extra: str) -> bool:
+    words = extra.lower().split()
+    for word in words:
+        word = word.strip()
+        if not word:
+            continue
+        if word in KNOWN_BRANDS:
+            continue
+        if word in VALID_EXTRA_TERMS:
+            continue
         return False
     return True
 
@@ -1038,18 +1057,46 @@ def _simple_clustering(
     for cluster_key, cluster_members in embedding_clusters.items():
         normalized = _normalize_text(cluster_key)
 
-        canonical = normalized_aliases.get(normalized)
-        if not canonical:
-            canonical = _match_substring_alias(normalized, normalized_aliases)
-        if not canonical:
-            canonical = _fuzzy_match(normalized, normalized_aliases)
-        if not canonical:
-            canonical = normalized
+        product_canonical = _extract_product_canonical(normalized)
+        if product_canonical:
+            canonical = product_canonical
+        else:
+            canonical = normalized_aliases.get(normalized)
+            if not canonical:
+                canonical = _match_substring_alias(normalized, normalized_aliases)
+            if not canonical:
+                canonical = _fuzzy_match(normalized, normalized_aliases)
+            if not canonical:
+                canonical = normalized
 
         final_clusters.setdefault(canonical, set()).update(m.name for m in cluster_members)
 
     logger.info(f"Simple clustering: {len(embedding_clusters)} clusters -> {len(final_clusters)} final clusters")
     return {k: sorted(v) for k, v in final_clusters.items() if k}
+
+
+def _extract_product_canonical(normalized: str) -> str | None:
+    for product in KNOWN_PRODUCTS:
+        product_norm = _normalize_text(product)
+        if product_norm in normalized and normalized != product_norm:
+            remaining = normalized.replace(product_norm, "").strip()
+            if not remaining:
+                continue
+            if remaining in KNOWN_BRANDS:
+                return product_norm
+            if _remaining_is_brand_and_suffix(remaining):
+                return product_norm
+    return None
+
+
+def _remaining_is_brand_and_suffix(remaining: str) -> bool:
+    for brand in KNOWN_BRANDS:
+        brand_norm = _normalize_text(brand)
+        if brand_norm in remaining:
+            suffix = remaining.replace(brand_norm, "").strip()
+            if not suffix or suffix in VALID_EXTRA_TERMS:
+                return True
+    return False
 
 
 def _fuzzy_match(normalized: str, lookup: Dict[str, str]) -> str | None:
@@ -1393,11 +1440,12 @@ def _regex_candidates(text: str) -> Set[str]:
 
     digit_prefix_models = re.findall(r"(?:^|[\s\u4e00-\u9fff])([A-Z]\d+[A-Za-z]*)", text)
     letter_digit_combo = re.findall(r"(?:^|[\s\u4e00-\u9fff])([A-Z]{1,3}\d{1,4}[A-Za-z]*)", text)
+    digit_first_models = re.findall(r"(?:^|[\s\u4e00-\u9fff])(\d+[A-Z][A-Za-z]+)", text)
 
     hits = (latin_models + model_variants + model_words + id_models +
             chinese_digit_suffix + chinese_suffix + chinese_digits + chinese_latin + chinese_brands +
             latin_suffix + product_lines + mixed_case + latin_with_space + multiword_latin_number +
-            standalone_latin + digit_prefix_models + letter_digit_combo)
+            standalone_latin + digit_prefix_models + letter_digit_combo + digit_first_models)
 
     return {n.strip() for n in hits if n.strip() and len(n.strip()) >= 2}
 
