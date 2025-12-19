@@ -5,6 +5,11 @@ import httpx
 
 from config import settings
 from services.sentiment_analysis import ErlangshenSentimentService
+from services.brand_recognition import (
+    is_list_format,
+    split_into_list_items,
+    extract_snippet_with_list_awareness,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -113,11 +118,12 @@ class OllamaService:
         text_lower = text_zh.lower()
 
         all_brand_positions = {}
-        all_brand_names = set()
+        all_brand_names_lower = set()
+        flat_positions: list[tuple[int, int]] = []
 
         for i, (brand_name, aliases) in enumerate(zip(brand_names, brand_aliases)):
             all_names = [brand_name.lower()] + [alias.lower() for alias in aliases]
-            all_brand_names.update(all_names)
+            all_brand_names_lower.update(all_names)
 
             for name in all_names:
                 start_pos = 0
@@ -133,7 +139,10 @@ class OllamaService:
                         'end': pos + len(name),
                         'original_name': brand_name
                     })
+                    flat_positions.append((pos, pos + len(name)))
                     start_pos = pos + 1
+
+        flat_positions.sort(key=lambda x: x[0])
 
         for brand_idx, positions in all_brand_positions.items():
             brand_name = brand_names[brand_idx]
@@ -144,9 +153,14 @@ class OllamaService:
             rank = None
 
             for pos_info in positions:
-                start = max(0, pos_info['start'] - 50)
-                end = min(len(text_zh), pos_info['end'] + 50)
-                snippet = text_zh[start:end]
+                snippet = extract_snippet_with_list_awareness(
+                    text_zh,
+                    pos_info['start'],
+                    pos_info['end'],
+                    flat_positions,
+                    all_names,
+                    max_length=50,
+                )
 
                 clean_snippet = snippet
                 for other_idx, other_positions in all_brand_positions.items():

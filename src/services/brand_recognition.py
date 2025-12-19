@@ -1645,6 +1645,48 @@ def _alias_hits(text: str, alias_table: Dict[str, str]) -> Set[str]:
     return hits
 
 
+def extract_snippet_for_brand(
+    text: str,
+    brand_start: int,
+    brand_end: int,
+    all_brand_positions: List[Tuple[int, int]],
+    max_length: int = 50,
+) -> str:
+    if not text:
+        return ""
+
+    snippet_start = brand_start
+    snippet_end = min(len(text), brand_end + max_length)
+
+    for other_start, other_end in all_brand_positions:
+        if other_start > brand_end and other_start < snippet_end:
+            snippet_end = other_start
+            break
+
+    return text[snippet_start:snippet_end].strip()
+
+
+def extract_snippet_with_list_awareness(
+    text: str,
+    brand_start: int,
+    brand_end: int,
+    all_brand_positions: List[Tuple[int, int]],
+    brand_names_lower: List[str],
+    max_length: int = 50,
+) -> str:
+    if is_list_format(text):
+        list_items = split_into_list_items(text)
+        list_items_lower = [item.lower() for item in list_items]
+        for i, item_lower in enumerate(list_items_lower):
+            for name in brand_names_lower:
+                if name in item_lower:
+                    return list_items[i]
+
+    return extract_snippet_for_brand(
+        text, brand_start, brand_end, all_brand_positions, max_length
+    )
+
+
 def _load_optional_model(module_name: str, attr: str):
     module = importlib.util.find_spec(module_name)
     if not module:
