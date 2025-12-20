@@ -157,7 +157,7 @@ start-api: check-deps ## Start FastAPI server
 
 start-celery: check-deps start-redis ## Start Celery worker
 	@echo "$(YELLOW)Starting Celery worker...$(NC)"
-	@poetry run celery -A workers.celery_app worker --loglevel=info > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
+	@poetry run celery -A workers.celery_app worker --loglevel=info --pool=solo > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
 	@sleep 2
 	@if [ -f .celery.pid ] && kill -0 $$(cat .celery.pid) 2>/dev/null; then \
 		echo "$(GREEN)✓ Celery worker started$(NC)"; \
@@ -277,7 +277,16 @@ clear: ## Full reset: kill all workers, flush Redis, delete SQLite, clear caches
 	@echo "$(YELLOW)Step 1: Killing ALL Celery processes...$(NC)"
 	@pkill -9 -f "celery" 2>/dev/null || true
 	@pkill -9 -f "workers.celery_app" 2>/dev/null || true
+	@pkill -9 -f "billiard" 2>/dev/null || true
+	@pkill -9 -f "ForkPoolWorker" 2>/dev/null || true
 	@rm -f .celery.pid
+	@sleep 1
+	@REMAINING=$$(pgrep -f "celery|billiard" 2>/dev/null | wc -l | tr -d ' '); \
+	if [ "$$REMAINING" -gt 0 ]; then \
+		echo "$(YELLOW)  Killing $$REMAINING remaining worker(s)...$(NC)"; \
+		pkill -9 -f "celery|billiard" 2>/dev/null || true; \
+		sleep 1; \
+	fi
 	@echo "$(GREEN)✓ Celery processes killed$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 2: Killing API and Streamlit...$(NC)"

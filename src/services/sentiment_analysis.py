@@ -5,6 +5,15 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipe
 
 logger = logging.getLogger(__name__)
 
+_sentiment_service_instance: Optional["ErlangshenSentimentService"] = None
+
+
+def get_sentiment_service() -> "ErlangshenSentimentService":
+    global _sentiment_service_instance
+    if _sentiment_service_instance is None:
+        _sentiment_service_instance = ErlangshenSentimentService()
+    return _sentiment_service_instance
+
 class ErlangshenSentimentService:
     def __init__(self, model_name: str = "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment"):
         self.model_name = model_name

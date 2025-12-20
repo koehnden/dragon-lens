@@ -4,6 +4,15 @@ import pytest
 from unittest.mock import patch, MagicMock
 from services.sentiment_analysis import ErlangshenSentimentService
 from models.domain import Sentiment
+import services.sentiment_analysis as sentiment_module
+
+
+@pytest.fixture(autouse=True)
+def reset_sentiment_singleton():
+    sentiment_module._sentiment_service_instance = None
+    yield
+    sentiment_module._sentiment_service_instance = None
+
 
 @pytest.fixture
 def mock_transformers():
@@ -18,7 +27,11 @@ def mock_transformers():
 
 def test_erlangshen_sentiment_service_initialization(mock_transformers):
     """Test that the Erlangshen sentiment service initializes correctly."""
+    import torch
+
     mock_model_instance = MagicMock()
+    mock_model_on_cpu = MagicMock()
+    mock_model_instance.to.return_value = mock_model_on_cpu
     mock_tokenizer_instance = MagicMock()
     mock_pipeline_instance = MagicMock()
 
@@ -28,22 +41,22 @@ def test_erlangshen_sentiment_service_initialization(mock_transformers):
 
     service = ErlangshenSentimentService()
 
-    # Verify initialization
     assert service.model is not None
     assert service.tokenizer is not None
     assert service.pipeline is not None
 
-    # Verify correct model loading
     mock_transformers['model_class'].from_pretrained.assert_called_once_with(
         "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment"
     )
+    mock_model_instance.to.assert_called_once_with(torch.device("cpu"))
     mock_transformers['tokenizer_class'].from_pretrained.assert_called_once_with(
         "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment"
     )
     mock_transformers['pipeline'].assert_called_once_with(
         "text-classification",
-        model=mock_model_instance,
-        tokenizer=mock_tokenizer_instance
+        model=mock_model_on_cpu,
+        tokenizer=mock_tokenizer_instance,
+        device=torch.device("cpu")
     )
 
 def test_classify_sentiment_positive(mock_transformers):

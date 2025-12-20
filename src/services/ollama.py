@@ -4,7 +4,7 @@ from typing import Optional
 import httpx
 
 from config import settings
-from services.sentiment_analysis import ErlangshenSentimentService
+from services.sentiment_analysis import get_sentiment_service
 from services.brand_recognition import (
     is_list_format,
     split_into_list_items,
@@ -21,7 +21,7 @@ class OllamaService:
         self.ner_model = settings.ollama_model_ner
         self.main_model = settings.ollama_model_main
 
-        self.sentiment_service = ErlangshenSentimentService()
+        self.sentiment_service = get_sentiment_service()
 
     async def _call_ollama(
         self,
