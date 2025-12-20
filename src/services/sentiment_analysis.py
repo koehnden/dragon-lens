@@ -1,5 +1,6 @@
 import logging
 from typing import Optional, Dict, Any
+import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
 
 logger = logging.getLogger(__name__)
@@ -16,8 +17,14 @@ class ErlangshenSentimentService:
         try:
             logger.info(f"Loading Erlangshen sentiment model: {self.model_name}")
             self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name)
+            self.model = self.model.to(torch.device("cpu"))
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            self.pipeline = pipeline("text-classification", model=self.model, tokenizer=self.tokenizer)
+            self.pipeline = pipeline(
+                "text-classification",
+                model=self.model,
+                tokenizer=self.tokenizer,
+                device=torch.device("cpu")
+            )
             logger.info("Erlangshen sentiment model loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load Erlangshen sentiment model: {e}")
