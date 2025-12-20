@@ -44,10 +44,10 @@ def test_extract_entities_unifies_primary_and_competitors():
 
 
 def test_cluster_with_embeddings_falls_back_on_error(monkeypatch):
-    def error_embeddings(*args, **kwargs):
+    async def error_embeddings(*args, **kwargs):
         raise RuntimeError("Embedding model unavailable")
 
-    monkeypatch.setattr("services.brand_recognition._get_embeddings_sync", error_embeddings)
+    monkeypatch.setattr("services.brand_recognition._get_embeddings_ollama", error_embeddings)
 
     candidates = [
         EntityCandidate(name="Alpha", source="seed"),

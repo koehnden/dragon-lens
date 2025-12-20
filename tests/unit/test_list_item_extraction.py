@@ -152,3 +152,50 @@ class TestListItemFirstEntityExtraction:
         assert any("crv" in name.lower() or "cr-v" in name.lower() for name in extracted_names)
         assert any("vw" in name.lower() or "tiguan" in name.lower() for name in extracted_names)
         assert not any("rav4" in name.lower() for name in extracted_names)
+
+    def test_real_llm_response_suv_recommendations(self):
+        response = """
+**Best SUVs Under $50k in 2025**
+
+### **1. Toyota 4Runner (Best Off-Road/Midsize SUV)**
+- **Key Features**: Redesigned for 2025 with a turbocharged 2.4L engine (278 hp) or hybrid option.
+- **Starting Price**: $40,705.
+- **Pros**: Legendary off-road capability, rugged durability.
+
+### **2. Honda Passport (Best Overall Midsize SUV)**
+- **Data-Driven Choice**: Ranked #1 by iSeeCars for reliability, resale value.
+- **Starting Price**: $42,400.
+- **Pros**: Strong towing capacity (5,000 lbs), excellent crash-test ratings.
+
+### **3. Toyota Highlander Hybrid (Best Hybrid SUV)**
+- **Efficiency**: 36 MPG combined, with seating for up to eight.
+- **Starting Price**: ~$43,000.
+
+### **4. Hyundai Tucson Hybrid (Best Family/Medium SUV)**
+- **Highlights**: Updated hybrid powertrain (1.6L turbo + electric motor).
+- **Starting Price**: ~$38,000.
+
+### **5. BMW X1 (Best Luxury SUV)**
+- **Luxury Value**: Starts at $42,525 with AWD.
+- **Pros**: Agile handling, upscale interior.
+
+---
+
+**Final Recommendations**
+- **Off-Road Enthusiasts**: Toyota 4Runner.
+- **Families**: Hyundai Tucson Hybrid.
+- **Luxury Buyers**: BMW X1.
+        """
+        entities = extract_entities(response, "Toyota", {"zh": ["丰田"], "en": ["Toyota"]})
+        extracted_names = set(entities.keys())
+
+        assert any("toyota" in name.lower() for name in extracted_names)
+        assert any("honda" in name.lower() for name in extracted_names)
+        assert any("hyundai" in name.lower() for name in extracted_names)
+        assert any("bmw" in name.lower() for name in extracted_names)
+
+        assert any("4runner" in name.lower() for name in extracted_names)
+        assert any("passport" in name.lower() for name in extracted_names)
+        assert any("highlander" in name.lower() for name in extracted_names)
+        assert any("tucson" in name.lower() for name in extracted_names)
+        assert any("x1" in name.lower() for name in extracted_names)

@@ -1,4 +1,4 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean example
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean clear example
 
 # Default target
 .DEFAULT_GOAL := help
@@ -157,7 +157,7 @@ start-api: check-deps ## Start FastAPI server
 
 start-celery: check-deps start-redis ## Start Celery worker
 	@echo "$(YELLOW)Starting Celery worker...$(NC)"
-	@poetry run celery -A workers.celery_app worker --loglevel=info > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
+	@poetry run celery -A workers.celery_app worker --loglevel=info --pool=solo > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
 	@sleep 2
 	@if [ -f .celery.pid ] && kill -0 $$(cat .celery.pid) 2>/dev/null; then \
 		echo "$(GREEN)✓ Celery worker started$(NC)"; \
@@ -270,6 +270,50 @@ clean: ## Clean up temporary files and logs
 	@rm -rf **/__pycache__
 	@rm -f dragonlens.db
 	@echo "$(GREEN)✓ Cleanup complete$(NC)"
+
+clear: ## Full reset: kill all workers, flush Redis, delete SQLite, clear caches
+	@echo "$(YELLOW)Performing full system reset...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Step 1: Killing ALL Celery processes...$(NC)"
+	@pkill -9 -f "celery" 2>/dev/null || true
+	@pkill -9 -f "workers.celery_app" 2>/dev/null || true
+	@pkill -9 -f "billiard" 2>/dev/null || true
+	@pkill -9 -f "ForkPoolWorker" 2>/dev/null || true
+	@rm -f .celery.pid
+	@sleep 1
+	@REMAINING=$$(pgrep -f "celery|billiard" 2>/dev/null | wc -l | tr -d ' '); \
+	if [ "$$REMAINING" -gt 0 ]; then \
+		echo "$(YELLOW)  Killing $$REMAINING remaining worker(s)...$(NC)"; \
+		pkill -9 -f "celery|billiard" 2>/dev/null || true; \
+		sleep 1; \
+	fi
+	@echo "$(GREEN)✓ Celery processes killed$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Step 2: Killing API and Streamlit...$(NC)"
+	@if [ -f .api.pid ]; then kill -9 $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid; fi
+	@if [ -f .streamlit.pid ]; then kill -9 $$(cat .streamlit.pid) 2>/dev/null || true; rm -f .streamlit.pid; fi
+	@echo "$(GREEN)✓ API and Streamlit stopped$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Step 3: Flushing Redis (clearing all queued tasks)...$(NC)"
+	@docker exec $$(docker ps -q -f name=redis) redis-cli FLUSHALL 2>/dev/null || redis-cli FLUSHALL 2>/dev/null || echo "$(YELLOW)  Redis not running or not accessible$(NC)"
+	@echo "$(GREEN)✓ Redis flushed$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Step 4: Deleting SQLite database...$(NC)"
+	@rm -f dragonlens.db dragonlens.db-journal dragonlens.db-wal dragonlens.db-shm
+	@echo "$(GREEN)✓ Database deleted$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Step 5: Clearing Python caches...$(NC)"
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find . -name "*.pyc" -delete 2>/dev/null || true
+	@rm -f $(API_LOG) $(CELERY_LOG) $(STREAMLIT_LOG)
+	@echo "$(GREEN)✓ Caches cleared$(NC)"
+	@echo ""
+	@echo "$(GREEN)✓ Full reset complete!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Next steps:$(NC)"
+	@echo "  1. Run 'make run' to start all services fresh"
+	@echo "  2. Run 'make example' to create a test job"
+	@echo ""
 
 status: ## Show status of all services
 	@echo "$(YELLOW)Service Status:$(NC)"

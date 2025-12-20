@@ -4,9 +4,14 @@ from typing import Optional
 import httpx
 
 from config import settings
+from services.sentiment_analysis import get_sentiment_service
+from services.brand_recognition import (
+    is_list_format,
+    split_into_list_items,
+    extract_snippet_with_list_awareness,
+)
 
 logger = logging.getLogger(__name__)
-
 
 class OllamaService:
     def __init__(self):
@@ -15,6 +20,8 @@ class OllamaService:
         self.sentiment_model = settings.ollama_model_sentiment
         self.ner_model = settings.ollama_model_ner
         self.main_model = settings.ollama_model_main
+
+        self.sentiment_service = get_sentiment_service()
 
     async def _call_ollama(
         self,
@@ -55,6 +62,19 @@ class OllamaService:
                 raise
 
     async def classify_sentiment(self, text_zh: str) -> str:
+        if settings.use_erlangshen_sentiment:
+            try:
+                sentiment = self.sentiment_service.classify_sentiment(text_zh)
+                logger.debug(f"Erlangshen sentiment analysis: {text_zh[:50]}... -> {sentiment}")
+                return sentiment
+            except Exception as e:
+                logger.error(f"Erlangshen sentiment analysis failed, falling back to Qwen: {e}")
+                return await self._classify_sentiment_with_qwen(text_zh)
+        else:
+            logger.debug("Erlangshen sentiment analysis disabled, using Qwen")
+            return await self._classify_sentiment_with_qwen(text_zh)
+
+    async def _classify_sentiment_with_qwen(self, text_zh: str) -> str:
         system_prompt = (
             "You are a sentiment classifier. Analyze the sentiment of the following Chinese text. "
             "Respond with ONLY ONE WORD: positive, neutral, or negative."
@@ -65,7 +85,7 @@ class OllamaService:
             model=self.sentiment_model,
             prompt=prompt,
             system_prompt=system_prompt,
-            temperature=0.1,  # Very low temperature for classification
+            temperature=0.1,
         )
 
         result = result.strip().lower()
@@ -97,38 +117,85 @@ class OllamaService:
         mentions = []
         text_lower = text_zh.lower()
 
+        all_brand_positions = {}
+        all_brand_names_lower = set()
+        flat_positions: list[tuple[int, int]] = []
+
         for i, (brand_name, aliases) in enumerate(zip(brand_names, brand_aliases)):
             all_names = [brand_name.lower()] + [alias.lower() for alias in aliases]
-            found = False
-            snippets = []
-            rank = None
+            all_brand_names_lower.update(all_names)
 
             for name in all_names:
-                if name in text_lower:
-                    found = True
-                    pos = text_lower.index(name)
-                    start = max(0, pos - 50)
-                    end = min(len(text_zh), pos + len(name) + 50)
-                    snippet = text_zh[start:end]
-                    snippets.append(snippet)
+                start_pos = 0
+                while True:
+                    pos = text_lower.find(name, start_pos)
+                    if pos == -1:
+                        break
+                    if i not in all_brand_positions:
+                        all_brand_positions[i] = []
+                    all_brand_positions[i].append({
+                        'name': name,
+                        'start': pos,
+                        'end': pos + len(name),
+                        'original_name': brand_name
+                    })
+                    flat_positions.append((pos, pos + len(name)))
+                    start_pos = pos + 1
 
-            if found:
-                for name in all_names:
-                    if name in text_lower:
-                        pos = text_lower.index(name)
-                        prefix = text_zh[max(0, pos - 20):pos]
-                        for num in range(1, 21):  # Check ranks 1-20
-                            if f"{num}." in prefix or f"{num}、" in prefix:
-                                rank = num
-                                break
+        flat_positions.sort(key=lambda x: x[0])
+
+        for brand_idx, positions in all_brand_positions.items():
+            brand_name = brand_names[brand_idx]
+            aliases = brand_aliases[brand_idx]
+            all_names = [brand_name.lower()] + [alias.lower() for alias in aliases]
+
+            clean_snippets = []
+            rank = None
+
+            for pos_info in positions:
+                snippet = extract_snippet_with_list_awareness(
+                    text_zh,
+                    pos_info['start'],
+                    pos_info['end'],
+                    flat_positions,
+                    all_names,
+                    max_length=50,
+                )
+
+                clean_snippet = snippet
+                for other_idx, other_positions in all_brand_positions.items():
+                    if other_idx != brand_idx:
+                        for other_pos in other_positions:
+                            other_name = text_zh[other_pos['start']:other_pos['end']]
+                            clean_snippet = clean_snippet.replace(other_name, '[BRAND]')
+
+                clean_snippets.append(clean_snippet)
+
+                prefix = text_zh[max(0, pos_info['start'] - 20):pos_info['start']]
+                for num in range(1, 21):
+                    if f"{num}." in prefix or f"{num}、" in prefix:
+                        rank = num
                         break
 
+            if brand_idx not in all_brand_positions:
+                clean_snippets = []
+                rank = None
+
             mentions.append({
-                "brand_index": i,
-                "mentioned": found,
-                "snippets": snippets,
+                "brand_index": brand_idx,
+                "mentioned": len(clean_snippets) > 0,
+                "snippets": clean_snippets,
                 "rank": rank,
             })
+
+        for i, (brand_name, aliases) in enumerate(zip(brand_names, brand_aliases)):
+            if i not in all_brand_positions:
+                mentions.append({
+                    "brand_index": i,
+                    "mentioned": False,
+                    "snippets": [],
+                    "rank": None,
+                })
 
         return mentions
 

@@ -18,6 +18,7 @@ from models.database import SessionLocal
 from models.domain import PromptLanguage, RunStatus, Sentiment
 from services.brand_discovery import discover_all_brands
 from services.brand_recognition import extract_entities
+from services.product_discovery import discover_and_store_products
 from services.translater import TranslaterService
 from services.metrics_service import calculate_and_save_metrics
 from services.ollama import OllamaService
@@ -115,6 +116,12 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
             )
 
             _apply_brand_translations(all_brands, translator, self.db)
+
+            logger.info("Discovering products in response...")
+            discovered_products = discover_and_store_products(
+                self.db, vertical_id, answer_zh, all_brands
+            )
+            logger.info(f"Found {len(discovered_products)} products")
             brand_names = [b.display_name for b in all_brands]
             brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
 
