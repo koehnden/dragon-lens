@@ -1,16 +1,34 @@
 import importlib
+from unittest.mock import patch, MagicMock
 
 
-def test_prefetch_default_embedding_uses_cache_env(monkeypatch, tmp_path):
+def test_prefetch_ollama_embedding_model_calls_ollama_pull(monkeypatch):
     module = importlib.reload(importlib.import_module("scripts.prefetch_embedding_model"))
-    calls = []
 
-    def fake_ensure(model_name, cache_dir=None):
-        calls.append((model_name, cache_dir))
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = "success"
 
-    monkeypatch.setenv("EMBEDDING_CACHE_DIR", str(tmp_path))
-    monkeypatch.setattr(module, "ensure_embedding_model_available", fake_ensure)
+    with patch("subprocess.run", return_value=mock_result) as mock_run:
+        module.prefetch_ollama_embedding_model()
 
-    module.prefetch_default_embedding()
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert call_args[0] == "ollama"
+        assert call_args[1] == "pull"
+        assert "bge-small-zh-v1.5" in call_args[2]
 
-    assert calls == [(module.EMBEDDING_MODEL_NAME, str(tmp_path))]
+
+def test_prefetch_ollama_embedding_model_raises_on_failure(monkeypatch):
+    module = importlib.reload(importlib.import_module("scripts.prefetch_embedding_model"))
+
+    mock_result = MagicMock()
+    mock_result.returncode = 1
+    mock_result.stderr = "model not found"
+
+    with patch("subprocess.run", return_value=mock_result):
+        try:
+            module.prefetch_ollama_embedding_model()
+            assert False, "Should have raised RuntimeError"
+        except RuntimeError as e:
+            assert "Failed to pull Ollama model" in str(e)

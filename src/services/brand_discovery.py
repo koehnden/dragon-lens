@@ -1,8 +1,8 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from models import Brand
+from models import Brand, Vertical
 from services.brand_recognition import extract_entities
 
 
@@ -11,14 +11,26 @@ def discover_all_brands(
     vertical_id: int,
     user_brands: List[Brand],
     db: Session,
+    vertical_name: Optional[str] = None,
+    vertical_description: Optional[str] = None,
 ) -> List[Brand]:
     all_brands_map: Dict[str, Brand] = {}
+
+    if not vertical_name:
+        vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+        if vertical:
+            vertical_name = vertical.name
+            vertical_description = vertical.description
 
     for user_brand in user_brands:
         normalized_name = user_brand.display_name.lower().strip()
         all_brands_map[normalized_name] = user_brand
 
-    discovered_entities = extract_entities(text, "", {})
+    discovered_entities = extract_entities(
+        text, "", {},
+        vertical=vertical_name or "",
+        vertical_description=vertical_description or "",
+    )
 
     for canonical_name, surface_forms in discovered_entities.items():
         normalized_name = canonical_name.lower().strip()

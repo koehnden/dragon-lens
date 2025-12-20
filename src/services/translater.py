@@ -8,12 +8,50 @@ def has_latin_letters(text: str) -> bool:
     return bool(re.search(r"[A-Za-z]", text or ""))
 
 
+def has_chinese_characters(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+
+
+def capitalize_brand_name(name: str) -> str:
+    if not name:
+        return name
+    if name.isupper() and len(name) <= 4:
+        return name
+    if re.match(r"^[A-Z][a-z]+(-[A-Z][a-z]+)*$", name):
+        return name
+    if re.match(r"^[A-Z][a-z]+\s+[A-Z]", name):
+        return name
+    if has_chinese_characters(name):
+        return name
+    if "-" in name:
+        parts = name.split("-")
+        return "-".join(capitalize_brand_name(p) for p in parts)
+    words = name.split()
+    capitalized = []
+    for word in words:
+        if word.isupper() and len(word) <= 4:
+            capitalized.append(word)
+        elif re.match(r"^[A-Z][a-z]+$", word):
+            capitalized.append(word)
+        else:
+            capitalized.append(word.capitalize())
+    return " ".join(capitalized)
+
+
 def format_entity_label(original: str, translated: str | None) -> str:
     base = original.strip()
     alt = (translated or "").strip()
-    if not alt or alt == base:
-        return base
-    return f"{alt} ({base})"
+    base_capitalized = capitalize_brand_name(base)
+    alt_capitalized = capitalize_brand_name(alt)
+    if not alt_capitalized or alt_capitalized.lower() == base_capitalized.lower():
+        return base_capitalized
+    has_chinese_in_original = has_chinese_characters(base)
+    has_chinese_in_translated = has_chinese_characters(alt)
+    if has_chinese_in_original and not has_chinese_in_translated:
+        return f"{alt_capitalized} ({base})"
+    if has_chinese_in_translated and not has_chinese_in_original:
+        return f"{base_capitalized} ({alt})"
+    return f"{alt_capitalized} ({base})"
 
 
 class TranslaterService:
