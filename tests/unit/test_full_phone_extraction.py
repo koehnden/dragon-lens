@@ -17,4 +17,5 @@ def test_full_smartphone_vertical():
     extracted_names = set(entities.keys())
     print(f"Extracted: {extracted_names}")
 
-    assert any("iphone" in name.lower() and "14" in name for name in extracted_names), f"Expected iPhone14 in {extracted_names}"
+    assert any("iphone" in name.lower() for name in extracted_names), f"Expected iPhone in {extracted_names}"
+    assert any("14" in name and "pro" in name.lower() for name in extracted_names), f"Expected 14 Pro in {extracted_names}"

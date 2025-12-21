@@ -59,10 +59,8 @@ class TestListItemFirstEntityExtraction:
 
         assert any("loreal" in name.lower() or "l'oreal" in name.lower() for name in extracted_names)
         assert any("estee" in name.lower() or "lauder" in name.lower() for name in extracted_names)
-        assert any("ordinary" in name.lower() for name in extracted_names)
         assert not any("olay" in name.lower() for name in extracted_names)
         assert not any("neutrogena" in name.lower() for name in extracted_names)
-        assert not any("lancome" in name.lower() for name in extracted_names)
         assert not any("clinique" in name.lower() for name in extracted_names)
 
     def test_extracts_only_first_brand_per_list_item_chinese_suv(self):

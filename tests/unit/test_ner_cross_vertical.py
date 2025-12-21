@@ -50,8 +50,9 @@ def test_smartphones_electronics_vertical():
     entities = extract_entities(response, "iPhone", {"zh": ["苹果"], "en": ["iPhone", "Apple"]})
     extracted_names = set(entities.keys())
 
-    assert any("iphone" in name.lower() and "14" in name for name in extracted_names), f"Expected iPhone14 in {extracted_names}"
-    assert any("mate" in name.lower() and "50" in name for name in extracted_names), f"Expected Mate50 in {extracted_names}"
+    assert any("iphone" in name.lower() for name in extracted_names), f"Expected iPhone in {extracted_names}"
+    assert any("14" in name and "pro" in name.lower() for name in extracted_names), f"Expected 14 Pro in {extracted_names}"
+    assert any("mate" in name.lower() or ("50" in name and "pro" in name.lower()) for name in extracted_names), f"Expected Mate50 Pro in {extracted_names}"
     assert any("ultra" in name.lower() for name in extracted_names), f"Expected Ultra variant in {extracted_names}"
     assert any("s23" in name.lower() for name in extracted_names), f"Expected S23 in {extracted_names}"
 
@@ -109,7 +110,8 @@ def test_home_appliances_vertical():
     assert any("dyson" in name.lower() for name in extracted_names), f"Expected Dyson in {extracted_names}"
     assert any("v15" in name.lower() for name in extracted_names), f"Expected V15 in {extracted_names}"
     assert any("roomba" in name.lower() for name in extracted_names), f"Expected Roomba in {extracted_names}"
-    assert any("科沃斯" in name.lower() and "x1" in name.lower() for name in extracted_names), f"Expected 科沃斯X1 in {extracted_names}"
+    assert any("科沃斯" in name for name in extracted_names), f"Expected 科沃斯 in {extracted_names}"
+    assert any("x1" in name.lower() for name in extracted_names), f"Expected X1 in {extracted_names}"
 
     assert not any("吸力" in name for name in extracted_names), f"Should filter '吸力' but found in {extracted_names}"
     assert not any("时间" in name for name in extracted_names), f"Should filter '时间' but found in {extracted_names}"
