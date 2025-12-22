@@ -5,6 +5,146 @@ import streamlit as st
 from config import settings
 
 
+def _render_brand_view(metrics: dict) -> None:
+    if not metrics["brands"]:
+        st.info("ℹ️ No brand metrics available yet. The tracking job may still be processing.")
+        return
+
+    df = pd.DataFrame(metrics["brands"])
+
+    st.markdown("### Brand Mention Overview")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Total Brands", len(df))
+
+    with col2:
+        avg_mention = df["mention_rate"].mean() * 100
+        st.metric("Avg Mention Rate", f"{avg_mention:.1f}%")
+
+    with col3:
+        mentioned_brands = (df["mention_rate"] > 0).sum()
+        st.metric("Brands Mentioned", mentioned_brands)
+
+    st.markdown("### Brands Overview")
+    display_df = df.copy()
+    display_df = display_df.sort_values("dragon_lens_visibility", ascending=False)
+    display_df["mention_rate"] = (display_df["mention_rate"] * 100).round(1).astype(str) + "%"
+    display_df["share_of_voice"] = (display_df["share_of_voice"] * 100).round(1).astype(str) + "%"
+    display_df["top_spot_share"] = (display_df["top_spot_share"] * 100).round(1).astype(str) + "%"
+    display_df["sentiment_index"] = display_df["sentiment_index"].round(3)
+    display_df["dragon_lens_visibility"] = display_df["dragon_lens_visibility"].round(3)
+
+    st.dataframe(
+        display_df[[
+            "brand_name",
+            "mention_rate",
+            "share_of_voice",
+            "top_spot_share",
+            "sentiment_index",
+            "dragon_lens_visibility",
+        ]].rename(columns={
+            "brand_name": "Brand",
+            "mention_rate": "Mention Rate",
+            "share_of_voice": "Share of Voice",
+            "top_spot_share": "Top Spot Share",
+            "sentiment_index": "Sentiment Index",
+            "dragon_lens_visibility": "DVS",
+        }),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    _render_charts(df, "brand_name")
+
+
+def _render_product_view(metrics: dict) -> None:
+    if not metrics["products"]:
+        st.info("ℹ️ No product metrics available yet. The tracking job may still be processing.")
+        return
+
+    df = pd.DataFrame(metrics["products"])
+
+    st.markdown("### Product Mention Overview")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Total Products", len(df))
+
+    with col2:
+        avg_mention = df["mention_rate"].mean() * 100
+        st.metric("Avg Mention Rate", f"{avg_mention:.1f}%")
+
+    with col3:
+        mentioned_products = (df["mention_rate"] > 0).sum()
+        st.metric("Products Mentioned", mentioned_products)
+
+    st.markdown("### Products Overview")
+    display_df = df.copy()
+    display_df = display_df.sort_values("dragon_lens_visibility", ascending=False)
+    display_df["mention_rate"] = (display_df["mention_rate"] * 100).round(1).astype(str) + "%"
+    display_df["share_of_voice"] = (display_df["share_of_voice"] * 100).round(1).astype(str) + "%"
+    display_df["top_spot_share"] = (display_df["top_spot_share"] * 100).round(1).astype(str) + "%"
+    display_df["sentiment_index"] = display_df["sentiment_index"].round(3)
+    display_df["dragon_lens_visibility"] = display_df["dragon_lens_visibility"].round(3)
+
+    st.dataframe(
+        display_df[[
+            "product_name",
+            "brand_name",
+            "mention_rate",
+            "share_of_voice",
+            "top_spot_share",
+            "sentiment_index",
+            "dragon_lens_visibility",
+        ]].rename(columns={
+            "product_name": "Product",
+            "brand_name": "Brand",
+            "mention_rate": "Mention Rate",
+            "share_of_voice": "Share of Voice",
+            "top_spot_share": "Top Spot Share",
+            "sentiment_index": "Sentiment Index",
+            "dragon_lens_visibility": "DVS",
+        }),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    _render_charts(df, "product_name")
+
+
+def _render_charts(df: pd.DataFrame, name_col: str) -> None:
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown(f"### Mention Rate by {name_col.replace('_', ' ').title()}")
+        chart_data = df[[name_col, "mention_rate"]].copy()
+        chart_data["mention_rate"] = chart_data["mention_rate"] * 100
+        st.bar_chart(chart_data.set_index(name_col))
+
+    with col2:
+        st.markdown("### Share of Voice")
+        sov_data = df[[name_col, "share_of_voice"]].copy()
+        sov_data["share_of_voice"] = sov_data["share_of_voice"] * 100
+        st.bar_chart(sov_data.set_index(name_col))
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("### Dragon Lens Visibility (DVS)")
+        dvs_chart = df[[name_col, "dragon_lens_visibility"]].copy()
+        dvs_chart = dvs_chart.sort_values("dragon_lens_visibility", ascending=False)
+        dvs_chart = dvs_chart.set_index(name_col)
+        st.bar_chart(dvs_chart)
+
+    with col2:
+        st.markdown("### Sentiment Index")
+        sent_chart = df[[name_col, "sentiment_index"]].copy()
+        sent_chart = sent_chart.sort_values("sentiment_index", ascending=False)
+        sent_chart = sent_chart.set_index(name_col)
+        st.bar_chart(sent_chart)
+
+
 def show():
     st.title("📊 Brand Visibility Results")
 
@@ -24,7 +164,7 @@ def show():
         st.error(f"❌ Error fetching verticals: {e}")
         return
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         vertical_options = {v["name"]: v["id"] for v in verticals}
@@ -34,101 +174,40 @@ def show():
     with col2:
         model_name = st.selectbox("Select Model", ["qwen", "deepseek", "kimi"])
 
+    with col3:
+        view_mode = st.radio("View Mode", ["Brand", "Product"], horizontal=True)
+
     if st.button("🔍 Load Metrics", type="primary"):
         try:
             with st.spinner("Fetching metrics..."):
-                response = httpx.get(
-                    f"http://localhost:{settings.api_port}/api/v1/metrics/latest",
-                    params={
-                        "vertical_id": selected_vertical_id,
-                        "model_name": model_name,
-                    },
-                    timeout=30.0,
-                )
+                if view_mode == "Brand":
+                    response = httpx.get(
+                        f"http://localhost:{settings.api_port}/api/v1/metrics/latest",
+                        params={
+                            "vertical_id": selected_vertical_id,
+                            "model_name": model_name,
+                        },
+                        timeout=30.0,
+                    )
+                else:
+                    response = httpx.get(
+                        f"http://localhost:{settings.api_port}/api/v1/metrics/latest/products",
+                        params={
+                            "vertical_id": selected_vertical_id,
+                            "model_name": model_name,
+                        },
+                        timeout=30.0,
+                    )
                 response.raise_for_status()
                 metrics = response.json()
 
             st.subheader(f"Latest Metrics: {metrics['vertical_name']} ({metrics['model_name']})")
             st.caption(f"Data from: {metrics['date']}")
 
-            if not metrics["brands"]:
-                st.info("ℹ️ No brand metrics available yet. The tracking job may still be processing.")
-                return
-
-            df = pd.DataFrame(metrics["brands"])
-
-            st.markdown("### Brand Mention Overview")
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                st.metric("Total Brands", len(df))
-
-            with col2:
-                avg_mention = df["mention_rate"].mean() * 100
-                st.metric("Avg Mention Rate", f"{avg_mention:.1f}%")
-
-            with col3:
-                mentioned_brands = (df["mention_rate"] > 0).sum()
-                st.metric("Brands Mentioned", mentioned_brands)
-
-            st.markdown("### Brands Overview")
-            display_df = df.copy()
-            display_df = display_df.sort_values("dragon_lens_visibility", ascending=False)
-            display_df["mention_rate"] = (display_df["mention_rate"] * 100).round(1).astype(str) + "%"
-            display_df["share_of_voice"] = (display_df["share_of_voice"] * 100).round(1).astype(str) + "%"
-            display_df["top_spot_share"] = (display_df["top_spot_share"] * 100).round(1).astype(str) + "%"
-            display_df["sentiment_index"] = display_df["sentiment_index"].round(3)
-            display_df["dragon_lens_visibility"] = display_df["dragon_lens_visibility"].round(3)
-
-            st.dataframe(
-                display_df[[
-                    "brand_name",
-                    "mention_rate",
-                    "share_of_voice",
-                    "top_spot_share",
-                    "sentiment_index",
-                    "dragon_lens_visibility",
-                ]].rename(columns={
-                    "brand_name": "Brand",
-                    "mention_rate": "Mention Rate",
-                    "share_of_voice": "Share of Voice",
-                    "top_spot_share": "Top Spot Share",
-                    "sentiment_index": "Sentiment Index",
-                    "dragon_lens_visibility": "DVS",
-                }),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown("### Mention Rate by Brand")
-                chart_data = df[["brand_name", "mention_rate"]].copy()
-                chart_data["mention_rate"] = chart_data["mention_rate"] * 100
-                st.bar_chart(chart_data.set_index("brand_name"))
-
-            with col2:
-                st.markdown("### Share of Voice")
-                sov_data = df[["brand_name", "share_of_voice"]].copy()
-                sov_data["share_of_voice"] = sov_data["share_of_voice"] * 100
-                st.bar_chart(sov_data.set_index("brand_name"))
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown("### Dragon Lens Visibility (DVS)")
-                dvs_chart = df[["brand_name", "dragon_lens_visibility"]].copy()
-                dvs_chart = dvs_chart.sort_values("dragon_lens_visibility", ascending=False)
-                dvs_chart = dvs_chart.set_index("brand_name")
-                st.bar_chart(dvs_chart)
-
-            with col2:
-                st.markdown("### Sentiment Index")
-                sent_chart = df[["brand_name", "sentiment_index"]].copy()
-                sent_chart = sent_chart.sort_values("sentiment_index", ascending=False)
-                sent_chart = sent_chart.set_index("brand_name")
-                st.bar_chart(sent_chart)
+            if view_mode == "Brand":
+                _render_brand_view(metrics)
+            else:
+                _render_product_view(metrics)
 
             st.markdown("---")
             st.markdown("## 🔍 Last Run Inspector")
