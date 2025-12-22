@@ -1,4 +1,4 @@
-from services.ollama import OllamaService
-from services.translater import TranslaterService
+from .ollama import OllamaService
+from .translater import TranslaterService
 
 __all__ = ["OllamaService", "TranslaterService"]

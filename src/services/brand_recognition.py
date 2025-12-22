@@ -47,6 +47,7 @@ KNOWN_PRODUCTS = {
     "mi 14", "redmi", "find x", "reno",
     "air max", "ultraboost", "v15", "navigator", "crosswave", "i7", "ascent",
     "rx", "glc", "gle", "gls", "sealion",
+    "h6", "bj80",  # Added problematic examples that were misclassified
 }
 
 GENERIC_TERMS = {
@@ -334,12 +335,95 @@ async def _extract_entities_with_qwen(
         brands = result.get("brands", [])
         products = result.get("products", [])
 
+        # Step 1: Calculate confidence scores for each entity
+        brand_confidences = _calculate_confidence_scores(brands, vertical, is_brand=True)
+        product_confidences = _calculate_confidence_scores(products, vertical, is_brand=False)
+        
+        # Step 2: Identify ambiguous entities (medium/low confidence)
+        ambiguous_entities = []
+        entity_source = {}  # Track original classification
+        
+        for brand, confidence in brand_confidences.items():
+            if confidence < 0.7:  # Medium/low confidence
+                ambiguous_entities.append(brand)
+                entity_source[brand] = "brand"
+        
+        for product, confidence in product_confidences.items():
+            if confidence < 0.7:  # Medium/low confidence
+                ambiguous_entities.append(product)
+                entity_source[product] = "product"
+        
+        # Step 3: Verify ambiguous entities with Qwen
+        verified_results = {}
+        if ambiguous_entities:
+            verified_results = await _verify_ambiguous_entities_with_qwen(
+                ollama, ambiguous_entities, text, vertical, vertical_description
+            )
+        
+        # Step 4: Apply verification results and heuristics
+        corrected_brands = []
+        corrected_products = []
+        
+        # Process brands with verification results
+        for brand in brands:
+            if brand in verified_results:
+                # Use Qwen verification result
+                entity_type = verified_results[brand]
+                if entity_type == "brand":
+                    corrected_brands.append(brand)
+                elif entity_type == "product":
+                    corrected_products.append(brand)
+                # "other" entities are discarded
+            else:
+                # Use confidence-based decision
+                confidence = brand_confidences.get(brand, 0.5)
+                if confidence >= 0.6:
+                    corrected_brands.append(brand)
+                elif confidence <= 0.4:
+                    # Low confidence brand might be a product
+                    if _has_product_patterns(brand):
+                        corrected_products.append(brand)
+                    else:
+                        corrected_brands.append(brand)  # Keep original
+                else:
+                    # Medium confidence, keep original
+                    corrected_brands.append(brand)
+        
+        # Process products with verification results
+        for product in products:
+            if product in verified_results:
+                # Use Qwen verification result
+                entity_type = verified_results[product]
+                if entity_type == "product":
+                    corrected_products.append(product)
+                elif entity_type == "brand":
+                    corrected_brands.append(product)
+                # "other" entities are discarded
+            else:
+                # Use confidence-based decision
+                confidence = product_confidences.get(product, 0.5)
+                if confidence >= 0.6:
+                    corrected_products.append(product)
+                elif confidence <= 0.4:
+                    # Low confidence product might be a brand
+                    if _has_brand_patterns(product):
+                        corrected_brands.append(product)
+                    else:
+                        corrected_products.append(product)  # Keep original
+                else:
+                    # Medium confidence, keep original
+                    corrected_products.append(product)
+
+        # Remove duplicates
+        corrected_brands = list(dict.fromkeys(corrected_brands))
+        corrected_products = list(dict.fromkeys(corrected_products))
+
         candidates = [
             EntityCandidate(name=b, source="qwen", entity_type="brand")
-            for b in brands
+            for b in corrected_brands
         ] + [
             EntityCandidate(name=p, source="qwen", entity_type="product")
-            for p in products
+            for p in corrected_products
         ]
 
         filtered = _filter_by_list_position(candidates, text)
@@ -348,7 +432,7 @@ async def _extract_entities_with_qwen(
         for c in filtered:
             clusters[c.name] = [c.name]
 
-        logger.info(f"Qwen extraction: {len(brands)} brands, {len(products)} products -> {len(filtered)} after list filter")
+        logger.info(f"Qwen extraction: {len(brands)} brands, {len(products)} products -> {len(corrected_brands)} corrected brands, {len(corrected_products)} corrected products -> {len(filtered)} after list filter")
         return clusters
 
     except Exception as e:
@@ -361,7 +445,33 @@ def _build_extraction_system_prompt(vertical: str, vertical_description: str) ->
     if vertical_description:
         vertical_context += f"\nDescription: {vertical_description}"
 
-    return f"""You are an expert entity extractor for the {vertical or 'general'} industry.
+    # Determine if this is an automotive vertical
+    vertical_lower = vertical.lower()
+    # Use word boundaries or exact matches to avoid false positives like "skincare"
+    # Also handle plural forms (e.g., "vehicles", "cars")
+    automotive_keywords = ["car", "suv", "automotive", "vehicle", "auto", "truck"]
+    
+    # Check for exact word matches with word boundaries
+    is_automotive = False
+    for keyword in automotive_keywords:
+        # Match singular or plural forms
+        pattern = rf'\b{keyword}s?\b'
+        if re.search(pattern, vertical_lower):
+            is_automotive = True
+            break
+        
+        # Also check for compound words like "electric vehicles"
+        if keyword in vertical_lower:
+            # Make sure it's not part of another word like "skincare"
+            idx = vertical_lower.find(keyword)
+            # Check if it's a whole word (preceded/followed by space or start/end of string)
+            if (idx == 0 or not vertical_lower[idx-1].isalpha()) and \
+               (idx + len(keyword) == len(vertical_lower) or not vertical_lower[idx + len(keyword)].isalpha()):
+                is_automotive = True
+                break
+
+    # Base definitions and rules
+    system_prompt = f"""You are an expert entity extractor for the {vertical or 'general'} industry.
 
 TASK: Extract ALL genuine brand names and product names mentioned in the text.
 
@@ -396,12 +506,27 @@ EXTRACTION RULES:
 7. Pattern: "BrandName ModelNumber" (e.g., "Brand X1", "Brand 15 Pro"):
    - The word BEFORE the model number is usually the BRAND
    - The model number/alphanumeric code is the PRODUCT
-8. Extract BOTH the brand AND product when they appear together
+8. Extract BOTH the brand AND product when they appear together"""
+
+    # Add automotive-specific guidance
+    if is_automotive:
+        system_prompt += """
+
+AUTOMOTIVE-SPECIFIC RULES:
+- In the automotive industry, alphanumeric model codes (e.g., RAV4, H6, L9, BJ80, Q7, X5, CR-V) are PRODUCTS, not brands.
+- The brand is the manufacturer (e.g., Toyota, Haval, Li Auto, Beijing Off-Road, Audi, BMW).
+- For example: "Toyota RAV4" -> brand: "Toyota", product: "RAV4"
+- If a model code is mentioned without the brand (e.g., "RAV4"), still extract it as a PRODUCT, but note that the brand may not be mentioned in the text.
+"""
+
+    system_prompt += f"""
 
 {vertical_context}
 
 Output JSON only:
 {{"brands": ["brand1", "brand2"], "products": ["product1", "product2"]}}"""
+
+    return system_prompt
 
 
 def _build_extraction_prompt(text: str) -> str:
@@ -958,6 +1083,124 @@ def _parse_product_verification_response(response: str, candidates: List[str]) -
                 results[name] = "product"
 
     return results
+
+
+def _calculate_confidence_scores(entities: List[str], vertical: str, is_brand: bool) -> Dict[str, float]:
+    """Calculate confidence scores for entities (0.0 to 1.0)."""
+    scores = {}
+    
+    for entity in entities:
+        entity_lower = entity.lower()
+        confidence = 0.5  # Default medium confidence
+        
+        # Check for clear patterns
+        if is_brand:
+            # Brand confidence factors
+            if entity_lower in KNOWN_BRANDS:
+                confidence = 0.9
+            elif is_likely_brand(entity):
+                confidence = 0.8
+            elif re.search(r"[\u4e00-\u9fff]{2,4}$", entity) and not re.search(r"\d", entity):
+                confidence = 0.7  # Chinese brand-like names
+            elif re.match(r"^[A-Z][a-z]+$", entity) and len(entity) >= 4:
+                confidence = 0.7  # Proper noun brands
+            elif entity_lower in GENERIC_TERMS:
+                confidence = 0.2  # Generic terms are unlikely to be brands
+            elif entity_lower in KNOWN_PRODUCTS:
+                confidence = 0.3  # Known products misclassified as brands
+        else:
+            # Product confidence factors
+            if entity_lower in KNOWN_PRODUCTS:
+                confidence = 0.9
+            elif is_likely_product(entity):
+                confidence = 0.8
+            elif re.search(r"[A-Za-z]+\d+", entity) or re.search(r"\d+[A-Za-z]+", entity):
+                confidence = 0.7  # Alphanumeric patterns
+            elif re.search(r"(PLUS|Plus|Pro|Max|Ultra|Mini|EV|DM|DM-i|DM-p)", entity):
+                confidence = 0.6  # Product suffixes
+            elif entity_lower in GENERIC_TERMS:
+                confidence = 0.2  # Generic terms are unlikely to be products
+            elif entity_lower in KNOWN_BRANDS:
+                confidence = 0.3  # Known brands misclassified as products
+        
+        # Adjust for vertical context
+        vertical_lower = vertical.lower()
+        if "car" in vertical_lower or "suv" in vertical_lower or "auto" in vertical_lower:
+            # Automotive vertical: alphanumeric codes are likely products
+            if not is_brand and (re.search(r"[A-Za-z]+\d+", entity) or re.match(r"^[A-Z]\d+$", entity)):
+                confidence = min(confidence + 0.1, 0.9)
+        
+        scores[entity] = max(0.1, min(0.95, confidence))  # Clamp between 0.1 and 0.95
+    
+    return scores
+
+
+async def _verify_ambiguous_entities_with_qwen(
+    ollama,
+    ambiguous_entities: List[str],
+    text: str,
+    vertical: str = "",
+    vertical_description: str = ""
+) -> Dict[str, str]:
+    """Verify ambiguous entities with Qwen."""
+    import json
+    
+    if not ambiguous_entities:
+        return {}
+    
+    # Use existing batch verification
+    candidates = [EntityCandidate(name=e, source="ambiguous") for e in ambiguous_entities]
+    
+    batch_results = await _verify_batch_with_qwen(
+        ollama, candidates, text, vertical, vertical_description
+    )
+    
+    return batch_results
+
+
+def _has_product_patterns(name: str) -> bool:
+    """Check if name has patterns typical of products."""
+    name_lower = name.lower()
+    
+    # Quick checks
+    if name_lower in KNOWN_PRODUCTS:
+        return True
+    
+    # Pattern checks
+    if re.search(r"[A-Za-z]+\d+", name) or re.search(r"\d+[A-Za-z]+", name):
+        return True
+    if re.search(r"(PLUS|Plus|Pro|Max|Ultra|Mini|EV|DM|DM-i|DM-p)", name):
+        return True
+    if re.match(r"^[A-Z]\d+$", name):
+        return True
+    if re.match(r"^Model\s+[A-Z0-9]", name):
+        return True
+    if re.match(r"^ID\.\d+", name):
+        return True
+    
+    return False
+
+
+def _has_brand_patterns(name: str) -> bool:
+    """Check if name has patterns typical of brands."""
+    name_lower = name.lower()
+    
+    # Quick checks
+    if name_lower in KNOWN_BRANDS:
+        return True
+    
+    # Pattern checks
+    if re.match(r"^[A-Z][a-z]+$", name) and len(name) >= 4:
+        return True
+    if re.search(r"[\u4e00-\u9fff]{2,4}$", name) and not re.search(r"\d", name):
+        if not any(suffix in name for suffix in ["PLUS", "Plus", "Pro", "EV", "DM"]):
+            return True
+    
+    # Company-like patterns
+    if re.search(r"(Inc|Corp|Co|Ltd|LLC|GmbH|AG)$", name, re.IGNORECASE):
+        return True
+    
+    return False
 
 
 async def _verify_batch_with_qwen_legacy(
