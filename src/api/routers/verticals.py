@@ -90,6 +90,25 @@ async def get_vertical(
     return vertical
 
 
+@router.get("/{vertical_id}/models", response_model=List[str])
+async def get_vertical_models(
+    vertical_id: int,
+    db: Session = Depends(get_db),
+) -> List[str]:
+    vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+    if not vertical:
+        raise HTTPException(status_code=404, detail=f"Vertical {vertical_id} not found")
+
+    models = (
+        db.query(Run.model_name)
+        .filter(Run.vertical_id == vertical_id, Run.status == RunStatus.COMPLETED)
+        .distinct()
+        .all()
+    )
+
+    return sorted([m[0] for m in models])
+
+
 @router.delete("/{vertical_id}", response_model=DeleteVerticalResponse)
 async def delete_vertical(
     vertical_id: int,

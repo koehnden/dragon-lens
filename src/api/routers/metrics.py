@@ -61,52 +61,24 @@ def validate_date_range(
 @router.get("/latest", response_model=MetricsResponse)
 async def get_latest_metrics(
     vertical_id: int = Query(..., description="Vertical ID"),
-    model_name: str = Query(..., description="Model name"),
+    model_name: str = Query("all", description="Model name or 'all' for aggregated"),
     db: Session = Depends(get_db),
 ) -> MetricsResponse:
-    """
-    Get latest metrics for a vertical and model.
-
-    Args:
-        vertical_id: Vertical ID
-        model_name: Model name
-        db: Database session
-
-    Returns:
-        Latest metrics for all brands in the vertical
-
-    Raises:
-        HTTPException: If vertical not found or no data available
-    """
     vertical = get_vertical_or_raise(db, vertical_id)
 
-    latest_run = (
-        db.query(Run)
-        .filter(
-            Run.vertical_id == vertical_id,
-            Run.model_name == model_name,
-            Run.answers.any(),
-        )
-        .order_by(Run.run_time.desc())
-        .first()
-    )
+    if model_name == "all":
+        runs, display_model = _get_all_model_runs(db, vertical_id)
+    else:
+        runs, display_model = _get_single_model_runs(db, vertical_id, model_name)
 
-    if not latest_run:
-        latest_run = (
-            db.query(Run)
-            .filter(
-                Run.vertical_id == vertical_id,
-                Run.model_name == model_name,
-            )
-            .order_by(Run.run_time.desc())
-            .first()
-        )
+    if not runs:
+        detail = f"No runs found for vertical {vertical_id}"
+        if model_name != "all":
+            detail += f" and model {model_name}"
+        raise HTTPException(status_code=404, detail=detail)
 
-    if not latest_run:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No runs found for vertical {vertical_id} and model {model_name}",
-        )
+    run_ids = [r.id for r in runs]
+    latest_run_time = max(r.run_time for r in runs)
 
     prompts = db.query(Prompt).filter(Prompt.vertical_id == vertical_id).all()
     prompt_ids = [p.id for p in prompts]
@@ -114,7 +86,7 @@ async def get_latest_metrics(
     mentions = (
         db.query(BrandMention)
         .join(LLMAnswer, LLMAnswer.id == BrandMention.llm_answer_id)
-        .filter(LLMAnswer.run_id == latest_run.id)
+        .filter(LLMAnswer.run_id.in_(run_ids))
         .all()
     )
     answer_metrics = [
@@ -154,8 +126,8 @@ async def get_latest_metrics(
     return MetricsResponse(
         vertical_id=vertical_id,
         vertical_name=vertical.name,
-        model_name=model_name,
-        date=latest_run.run_time,
+        model_name=display_model,
+        date=latest_run_time,
         brands=brand_metrics,
     )
 
@@ -163,16 +135,24 @@ async def get_latest_metrics(
 @router.get("/latest/products", response_model=ProductMetricsResponse)
 async def get_latest_product_metrics(
     vertical_id: int = Query(..., description="Vertical ID"),
-    model_name: str = Query(..., description="Model name"),
+    model_name: str = Query("all", description="Model name or 'all' for aggregated"),
     db: Session = Depends(get_db),
 ) -> ProductMetricsResponse:
     vertical = get_vertical_or_raise(db, vertical_id)
 
-    latest_run = _get_latest_run(db, vertical_id, model_name)
+    if model_name == "all":
+        runs, display_model = _get_all_model_runs(db, vertical_id)
+    else:
+        runs, display_model = _get_single_model_runs(db, vertical_id, model_name)
 
-    if not latest_run:
-        detail = f"No runs found for vertical {vertical_id} and model {model_name}"
+    if not runs:
+        detail = f"No runs found for vertical {vertical_id}"
+        if model_name != "all":
+            detail += f" and model {model_name}"
         raise HTTPException(status_code=404, detail=detail)
+
+    run_ids = [r.id for r in runs]
+    latest_run_time = max(r.run_time for r in runs)
 
     products = db.query(Product).filter(Product.vertical_id == vertical_id).all()
     prompts = db.query(Prompt).filter(Prompt.vertical_id == vertical_id).all()
@@ -181,7 +161,7 @@ async def get_latest_product_metrics(
     mentions = (
         db.query(ProductMention)
         .join(LLMAnswer, LLMAnswer.id == ProductMention.llm_answer_id)
-        .filter(LLMAnswer.run_id == latest_run.id)
+        .filter(LLMAnswer.run_id.in_(run_ids))
         .all()
     )
 
@@ -223,10 +203,52 @@ async def get_latest_product_metrics(
     return ProductMetricsResponse(
         vertical_id=vertical_id,
         vertical_name=vertical.name,
-        model_name=model_name,
-        date=latest_run.run_time,
+        model_name=display_model,
+        date=latest_run_time,
         products=product_metrics,
     )
+
+
+def _get_all_model_runs(db: Session, vertical_id: int) -> tuple[list, str]:
+    runs = (
+        db.query(Run)
+        .filter(Run.vertical_id == vertical_id, Run.answers.any())
+        .order_by(Run.run_time.desc())
+        .all()
+    )
+
+    if not runs:
+        runs = (
+            db.query(Run)
+            .filter(Run.vertical_id == vertical_id)
+            .order_by(Run.run_time.desc())
+            .all()
+        )
+
+    return runs, "All Models"
+
+
+def _get_single_model_runs(db: Session, vertical_id: int, model_name: str) -> tuple[list, str]:
+    runs = (
+        db.query(Run)
+        .filter(
+            Run.vertical_id == vertical_id,
+            Run.model_name == model_name,
+            Run.answers.any(),
+        )
+        .order_by(Run.run_time.desc())
+        .all()
+    )
+
+    if not runs:
+        runs = (
+            db.query(Run)
+            .filter(Run.vertical_id == vertical_id, Run.model_name == model_name)
+            .order_by(Run.run_time.desc())
+            .all()
+        )
+
+    return runs, model_name
 
 
 def _get_latest_run(db: Session, vertical_id: int, model_name: str) -> Run | None:
