@@ -59,6 +59,9 @@ class Product(Base):
 
     vertical: Mapped["Vertical"] = relationship("Vertical")
     brand: Mapped[Optional["Brand"]] = relationship("Brand")
+    mentions: Mapped[List["ProductMention"]] = relationship(
+        "ProductMention", back_populates="product", cascade="all, delete-orphan"
+    )
 
 
 class PromptLanguage(str, enum.Enum):
@@ -126,6 +129,9 @@ class LLMAnswer(Base):
     mentions: Mapped[List["BrandMention"]] = relationship(
         "BrandMention", back_populates="llm_answer", cascade="all, delete-orphan"
     )
+    product_mentions: Mapped[List["ProductMention"]] = relationship(
+        "ProductMention", back_populates="llm_answer", cascade="all, delete-orphan"
+    )
 
 
 class Sentiment(str, enum.Enum):
@@ -150,6 +156,24 @@ class BrandMention(Base):
 
     llm_answer: Mapped["LLMAnswer"] = relationship("LLMAnswer", back_populates="mentions")
     brand: Mapped["Brand"] = relationship("Brand", back_populates="mentions")
+
+
+class ProductMention(Base):
+    __tablename__ = "product_mentions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    llm_answer_id: Mapped[int] = mapped_column(ForeignKey("llm_answers.id"), nullable=False)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    mentioned: Mapped[bool] = mapped_column(nullable=False, default=False)
+    rank: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    sentiment: Mapped[Sentiment] = mapped_column(Enum(Sentiment), nullable=False, default=Sentiment.NEUTRAL)
+    evidence_snippets: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    llm_answer: Mapped["LLMAnswer"] = relationship("LLMAnswer", back_populates="product_mentions")
+    product: Mapped["Product"] = relationship("Product", back_populates="mentions")
 
 
 class DailyMetrics(Base):
