@@ -12,6 +12,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 ENABLE_QWEN_FILTERING = os.getenv("ENABLE_QWEN_FILTERING", "true").lower() == "true"
+ENABLE_QWEN_EXTRACTION = os.getenv("ENABLE_QWEN_EXTRACTION", "true").lower() == "true"
 
 KNOWN_BRANDS = {
     "honda", "本田", "toyota", "丰田", "byd", "比亚迪", "volkswagen", "vw", "大众",
@@ -280,6 +281,9 @@ def extract_entities(
     vertical: str = "",
     vertical_description: str = "",
 ) -> Dict[str, List[str]]:
+    if ENABLE_QWEN_EXTRACTION:
+        return _run_async(_extract_entities_with_qwen(text, vertical, vertical_description))
+
     normalized_text = normalize_text_for_ner(text)
     candidates = generate_candidates(normalized_text, primary_brand, aliases)
 
@@ -303,6 +307,148 @@ def extract_entities(
         final_clusters = _simple_clustering(embedding_clusters, primary_brand, aliases)
 
     return final_clusters
+
+
+async def _extract_entities_with_qwen(
+    text: str,
+    vertical: str = "",
+    vertical_description: str = ""
+) -> Dict[str, List[str]]:
+    import json
+    from services.ollama import OllamaService
+
+    ollama = OllamaService()
+
+    system_prompt = _build_extraction_system_prompt(vertical, vertical_description)
+    prompt = _build_extraction_prompt(text)
+
+    try:
+        response = await ollama._call_ollama(
+            model=ollama.ner_model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.0,
+        )
+
+        result = _parse_extraction_response(response)
+        brands = result.get("brands", [])
+        products = result.get("products", [])
+
+        candidates = [
+            EntityCandidate(name=b, source="qwen", entity_type="brand")
+            for b in brands
+        ] + [
+            EntityCandidate(name=p, source="qwen", entity_type="product")
+            for p in products
+        ]
+
+        filtered = _filter_by_list_position(candidates, text)
+
+        clusters: Dict[str, List[str]] = {}
+        for c in filtered:
+            clusters[c.name] = [c.name]
+
+        logger.info(f"Qwen extraction: {len(brands)} brands, {len(products)} products -> {len(filtered)} after list filter")
+        return clusters
+
+    except Exception as e:
+        logger.error(f"Qwen extraction failed: {e}")
+        return {}
+
+
+def _build_extraction_system_prompt(vertical: str, vertical_description: str) -> str:
+    vertical_context = f"Industry: {vertical}" if vertical else "Industry: General"
+    if vertical_description:
+        vertical_context += f"\nDescription: {vertical_description}"
+
+    return f"""You are an expert entity extractor for the {vertical or 'general'} industry.
+
+TASK: Extract ALL genuine brand names and product names mentioned in the text.
+
+CRITICAL: Scan the ENTIRE text from start to end. Do NOT skip entities that appear:
+- At the start of sentences or list items
+- Before comparison words like "similar to", "comparable to", "vs", "better than"
+Example: "iPhone 15 is great, similar to Galaxy S24" -> Extract BOTH "iPhone 15" AND "Galaxy S24"
+
+DEFINITIONS:
+- BRAND: A company/manufacturer name that creates and sells products
+  Examples: Toyota, Apple, Nike, 比亚迪, 欧莱雅, Samsung, BMW, 兰蔻
+- PRODUCT: A specific model/item name made by a brand
+  Examples: RAV4, iPhone 15, 宋PLUS, Galaxy S24, X5, 神仙水
+
+CRITICAL - DO NOT EXTRACT:
+- Generic terms or categories (SUV, smartphone, skincare, 汽车, 护肤品)
+- Descriptive phrases (产品质量, 环保性能, advanced features, 性价比)
+- Adjectives or modifiers alone (先进, 自主, premium, best, 好用)
+- Partial phrases with prepositions (在选择, 与宝马, 和奥迪, "compared to X")
+- Feature/technology names (CarPlay, GPS, AI, 新能源, hybrid)
+- Quality descriptors (出色, excellent, 温和性好)
+- Sentence fragments or non-entity text (Top1, 车型时)
+- Rankings, numbers alone, or list markers
+
+EXTRACTION RULES:
+1. Extract the EXACT brand/product name as standalone text
+2. Do NOT include surrounding words or prepositions
+3. Products often contain model numbers/letters (X3, Q5, i7, V15, S24)
+4. Brands are proper nouns (company names)
+5. When unsure, DO NOT include - precision over recall
+6. Separate brand from product (e.g., "大众途观" -> brand: "大众", product: "途观")
+7. Pattern: "BrandName ModelNumber" (e.g., "Brand X1", "Brand 15 Pro"):
+   - The word BEFORE the model number is usually the BRAND
+   - The model number/alphanumeric code is the PRODUCT
+8. Extract BOTH the brand AND product when they appear together
+
+{vertical_context}
+
+Output JSON only:
+{{"brands": ["brand1", "brand2"], "products": ["product1", "product2"]}}"""
+
+
+def _build_extraction_prompt(text: str) -> str:
+    text_snippet = text[:2000] if len(text) > 2000 else text
+    return f"""Extract brands and products from this text:
+
+{text_snippet}
+
+Output JSON with "brands" and "products" arrays. Be STRICT - only genuine names:"""
+
+
+def _parse_extraction_response(response: str) -> Dict[str, List[str]]:
+    import json
+
+    response = response.strip()
+
+    if response.startswith("```"):
+        parts = response.split("```")
+        if len(parts) >= 2:
+            response = parts[1]
+            if response.startswith("json"):
+                response = response[4:]
+    response = response.strip()
+
+    try:
+        result = json.loads(response)
+        if isinstance(result, dict):
+            return {
+                "brands": result.get("brands", []),
+                "products": result.get("products", [])
+            }
+    except json.JSONDecodeError:
+        pass
+
+    json_match = re.search(r'\{[\s\S]*\}', response)
+    if json_match:
+        try:
+            result = json.loads(json_match.group(0))
+            if isinstance(result, dict):
+                return {
+                    "brands": result.get("brands", []),
+                    "products": result.get("products", [])
+                }
+        except json.JSONDecodeError:
+            pass
+
+    return {"brands": [], "products": []}
 
 
 COMPARISON_MARKERS = [
@@ -408,6 +554,10 @@ def _extra_is_valid(extra: str) -> bool:
             continue
         if word in VALID_EXTRA_TERMS:
             continue
+        if word.isdigit():
+            continue
+        if re.match(r"^\d+[a-z]{0,2}$", word):
+            continue
         return False
     return True
 
@@ -431,63 +581,56 @@ def _extract_first_brand_and_product_from_item(
     item: str, candidates: List[EntityCandidate]
 ) -> Dict[str, str | None]:
     result: Dict[str, str | None] = {"brand": None, "product": None}
-    item_lower = item.lower()
 
-    known_brand_positions: List[Tuple[int, int, str]] = []
-    known_product_positions: List[Tuple[int, int, str]] = []
+    primary_region = _get_primary_region(item)
+    primary_region_lower = primary_region.lower()
 
-    for brand in KNOWN_BRANDS:
-        pos = item_lower.find(brand.lower())
-        if pos != -1:
-            known_brand_positions.append((pos, -len(brand), brand))
+    candidate_brands: List[Tuple[int, int, str]] = []
+    candidate_products: List[Tuple[int, int, str]] = []
 
-    for product in KNOWN_PRODUCTS:
-        pos = item_lower.find(product.lower())
-        if pos != -1:
-            known_product_positions.append((pos, -len(product), product))
+    for candidate in candidates:
+        name = candidate.name
+        name_lower = name.lower()
+        pos = primary_region_lower.find(name_lower)
+        if pos == -1:
+            continue
 
-    if known_brand_positions:
-        known_brand_positions.sort(key=lambda x: (x[0], x[1]))
-        result["brand"] = known_brand_positions[0][2]
+        is_brand = candidate.entity_type == "brand"
+        is_product = candidate.entity_type == "product"
 
-    if known_product_positions:
-        known_product_positions.sort(key=lambda x: (x[0], x[1]))
-        result["product"] = known_product_positions[0][2]
+        if is_brand:
+            candidate_brands.append((pos, -len(name), name))
+        elif is_product:
+            candidate_products.append((pos, -len(name), name))
+        elif _looks_like_product(name):
+            candidate_products.append((pos, -len(name), name))
+        else:
+            candidate_brands.append((pos, -len(name), name))
 
-    if result["brand"] is None or result["product"] is None:
-        candidate_brand_positions: List[Tuple[int, int, str]] = []
-        candidate_product_positions: List[Tuple[int, int, str]] = []
+    if candidate_brands:
+        candidate_brands.sort(key=lambda x: (x[0], x[1]))
+        result["brand"] = candidate_brands[0][2]
 
-        for candidate in candidates:
-            name = candidate.name
-            name_lower = name.lower()
-            pos = item_lower.find(name_lower)
-            if pos == -1:
-                continue
+    if candidate_products:
+        candidate_products.sort(key=lambda x: (x[0], x[1]))
+        result["product"] = candidate_products[0][2]
 
-            if name_lower in KNOWN_BRANDS or name_lower in KNOWN_PRODUCTS:
-                continue
+    if result["brand"] is None:
+        for brand in KNOWN_BRANDS:
+            pos = primary_region_lower.find(brand.lower())
+            if pos != -1:
+                result["brand"] = brand
+                break
 
-            is_brand = candidate.entity_type == "brand"
-            is_product = candidate.entity_type == "product"
-
-            if is_brand and result["brand"] is None:
-                candidate_brand_positions.append((pos, -len(name), name))
-            elif is_product and result["product"] is None:
-                candidate_product_positions.append((pos, -len(name), name))
-            elif not is_brand and not is_product:
-                if _looks_like_product(name) and result["product"] is None:
-                    candidate_product_positions.append((pos, -len(name), name))
-                elif result["brand"] is None:
-                    candidate_brand_positions.append((pos, -len(name), name))
-
-        if result["brand"] is None and candidate_brand_positions:
-            candidate_brand_positions.sort(key=lambda x: (x[0], x[1]))
-            result["brand"] = candidate_brand_positions[0][2]
-
-        if result["product"] is None and candidate_product_positions:
-            candidate_product_positions.sort(key=lambda x: (x[0], x[1]))
-            result["product"] = candidate_product_positions[0][2]
+    if result["product"] is None:
+        known_products: List[Tuple[int, int, str]] = []
+        for product in KNOWN_PRODUCTS:
+            pos = primary_region_lower.find(product.lower())
+            if pos != -1:
+                known_products.append((pos, -len(product), product))
+        if known_products:
+            known_products.sort(key=lambda x: (x[0], x[1]))
+            result["product"] = known_products[0][2]
 
     return result
 
@@ -717,7 +860,7 @@ Output JSON array only:"""
             model=ollama.ner_model,
             prompt=prompt,
             system_prompt=system_prompt,
-            temperature=0.1,
+            temperature=0.0,
         )
         return _parse_brand_verification_response(response, candidates)
     except Exception as e:
@@ -777,7 +920,7 @@ Output JSON array only:"""
             model=ollama.ner_model,
             prompt=prompt,
             system_prompt=system_prompt,
-            temperature=0.1,
+            temperature=0.0,
         )
         return _parse_product_verification_response(response, candidates)
     except Exception as e:
@@ -872,7 +1015,7 @@ Output JSON array only:"""
             model=ollama.ner_model,
             prompt=prompt,
             system_prompt=system_prompt,
-            temperature=0.1,
+            temperature=0.0,
         )
 
         parsed = _parse_batch_json_response(response)
@@ -1165,7 +1308,7 @@ Classify this candidate based ONLY on the evidence above. Output JSON only:"""
             model=ollama.ner_model,
             prompt=prompt,
             system_prompt=system_prompt,
-            temperature=0.1,
+            temperature=0.0,
         )
 
         result = _parse_json_response(response)
@@ -1363,7 +1506,7 @@ Examples:
             model=ollama.ner_model,
             prompt=prompt,
             system_prompt=system_prompt,
-            temperature=0.1,
+            temperature=0.0,
         )
 
         result = response.strip()

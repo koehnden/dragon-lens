@@ -10,6 +10,8 @@ from models import (
     Brand,
     BrandMention,
     LLMAnswer,
+    Product,
+    ProductMention,
     Prompt,
     Run,
     Vertical,
@@ -122,6 +124,11 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
                 self.db, vertical_id, answer_zh, all_brands
             )
             logger.info(f"Found {len(discovered_products)} products")
+
+            _create_product_mentions(
+                self.db, llm_answer, discovered_products, answer_zh, ollama_service, translator
+            )
+
             brand_names = [b.display_name for b in all_brands]
             brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
 
@@ -252,3 +259,67 @@ def _ensure_brand(vertical_id: int, canonical_name: str, aliases: dict) -> Brand
         session.refresh(brand)
     session.close()
     return brand
+
+
+def _create_product_mentions(
+    db: Session,
+    llm_answer: LLMAnswer,
+    products: List[Product],
+    answer_zh: str,
+    ollama_service,
+    translator,
+) -> None:
+    if not products:
+        return
+
+    logger.info(f"Creating product mentions for {len(products)} products...")
+
+    product_names = [p.display_name for p in products]
+    mentions_data = asyncio.run(
+        ollama_service.extract_brands(answer_zh, product_names, [[] for _ in products])
+    )
+
+    for mention_data in mentions_data:
+        if not mention_data["mentioned"]:
+            continue
+
+        product = products[mention_data["brand_index"]]
+
+        sentiment_str = "neutral"
+        if mention_data["snippets"]:
+            snippet = mention_data["snippets"][0]
+            sentiment_str = asyncio.run(ollama_service.classify_sentiment(snippet))
+            logger.info(f"Product {product.display_name} sentiment: {sentiment_str}")
+
+        sentiment = _map_sentiment(sentiment_str)
+
+        en_snippets = _translate_snippets(mention_data["snippets"], translator)
+
+        mention = ProductMention(
+            llm_answer_id=llm_answer.id,
+            product_id=product.id,
+            mentioned=True,
+            rank=mention_data["rank"],
+            sentiment=sentiment,
+            evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
+        )
+        db.add(mention)
+
+    db.flush()
+    logger.info(f"Product mentions created for {len(products)} products")
+
+
+def _map_sentiment(sentiment_str: str) -> Sentiment:
+    if sentiment_str == "positive":
+        return Sentiment.POSITIVE
+    if sentiment_str == "negative":
+        return Sentiment.NEGATIVE
+    return Sentiment.NEUTRAL
+
+
+def _translate_snippets(snippets: List[str], translator) -> List[str]:
+    en_snippets = []
+    for snippet in snippets:
+        en_snippet = translator.translate_text_sync(snippet, "Chinese", "English")
+        en_snippets.append(en_snippet)
+    return en_snippets

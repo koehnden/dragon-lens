@@ -82,12 +82,32 @@ class BrandMetrics(BaseModel):
     dragon_lens_visibility: float
 
 
+class ProductMetrics(BaseModel):
+    product_id: int
+    product_name: str
+    brand_id: Optional[int]
+    brand_name: str
+    mention_rate: float
+    share_of_voice: float
+    top_spot_share: float
+    sentiment_index: float
+    dragon_lens_visibility: float
+
+
 class MetricsResponse(BaseModel):
     vertical_id: int
     vertical_name: str
     model_name: str
     date: datetime
     brands: List[BrandMetrics]
+
+
+class ProductMetricsResponse(BaseModel):
+    vertical_id: int
+    vertical_name: str
+    model_name: str
+    date: datetime
+    products: List[ProductMetrics]
 
 
 class RunResponse(BaseModel):

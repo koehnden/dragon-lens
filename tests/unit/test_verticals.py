@@ -237,3 +237,59 @@ def test_delete_vertical_cascades_prompts(client: TestClient, db_session):
 
     remaining_prompts = db_session.query(Prompt).filter(Prompt.vertical_id == vertical.id).all()
     assert len(remaining_prompts) == 0
+
+
+def test_get_vertical_models_empty(client, db_session):
+    from models import Vertical
+
+    vertical = Vertical(name="Empty Vertical", description="No runs")
+    db_session.add(vertical)
+    db_session.commit()
+
+    response = client.get(f"/api/v1/verticals/{vertical.id}/models")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_get_vertical_models_with_runs(client, db_session):
+    from models import Run, Vertical
+    from models.domain import RunStatus
+
+    vertical = Vertical(name="Test Vertical", description="With runs")
+    db_session.add(vertical)
+    db_session.flush()
+
+    run1 = Run(vertical_id=vertical.id, model_name="qwen", status=RunStatus.COMPLETED)
+    run2 = Run(vertical_id=vertical.id, model_name="deepseek", status=RunStatus.COMPLETED)
+    run3 = Run(vertical_id=vertical.id, model_name="qwen", status=RunStatus.COMPLETED)
+    db_session.add_all([run1, run2, run3])
+    db_session.commit()
+
+    response = client.get(f"/api/v1/verticals/{vertical.id}/models")
+    assert response.status_code == 200
+    models = response.json()
+    assert sorted(models) == ["deepseek", "qwen"]
+
+
+def test_get_vertical_models_excludes_pending(client, db_session):
+    from models import Run, Vertical
+    from models.domain import RunStatus
+
+    vertical = Vertical(name="Test Vertical", description="With runs")
+    db_session.add(vertical)
+    db_session.flush()
+
+    run1 = Run(vertical_id=vertical.id, model_name="qwen", status=RunStatus.COMPLETED)
+    run2 = Run(vertical_id=vertical.id, model_name="deepseek", status=RunStatus.PENDING)
+    db_session.add_all([run1, run2])
+    db_session.commit()
+
+    response = client.get(f"/api/v1/verticals/{vertical.id}/models")
+    assert response.status_code == 200
+    models = response.json()
+    assert models == ["qwen"]
+
+
+def test_get_vertical_models_not_found(client, db_session):
+    response = client.get("/api/v1/verticals/9999/models")
+    assert response.status_code == 404
