@@ -7,7 +7,7 @@ from config import settings
 
 def _render_brand_view(metrics: dict) -> None:
     if not metrics["brands"]:
-        st.info("ℹ️ No brand metrics available yet. The tracking job may still be processing.")
+        st.info("No brand metrics available yet. The tracking job may still be processing.")
         return
 
     df = pd.DataFrame(metrics["brands"])
@@ -60,7 +60,7 @@ def _render_brand_view(metrics: dict) -> None:
 
 def _render_product_view(metrics: dict) -> None:
     if not metrics["products"]:
-        st.info("ℹ️ No product metrics available yet. The tracking job may still be processing.")
+        st.info("No product metrics available yet. The tracking job may still be processing.")
         return
 
     df = pd.DataFrame(metrics["products"])
@@ -145,8 +145,37 @@ def _render_charts(df: pd.DataFrame, name_col: str) -> None:
         st.bar_chart(sent_chart)
 
 
+def _fetch_available_models(vertical_id: int) -> list[str]:
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/verticals/{vertical_id}/models",
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError:
+        return []
+
+
+def _fetch_metrics(vertical_id: int, model_name: str, view_mode: str) -> dict | None:
+    endpoint = "/api/v1/metrics/latest"
+    if view_mode == "Product":
+        endpoint = "/api/v1/metrics/latest/products"
+
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}{endpoint}",
+            params={"vertical_id": vertical_id, "model_name": model_name},
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError:
+        return None
+
+
 def show():
-    st.title("📊 Brand Visibility Results")
+    st.title("Brand Visibility Results")
 
     try:
         response = httpx.get(
@@ -157,186 +186,182 @@ def show():
         verticals = response.json()
 
         if not verticals:
-            st.warning("⚠️ No verticals found. Please create a tracking job first.")
+            st.warning("No verticals found. Please create a tracking job first.")
             return
 
     except httpx.HTTPError as e:
-        st.error(f"❌ Error fetching verticals: {e}")
+        st.error(f"Error fetching verticals: {e}")
         return
 
-    col1, col2, col3 = st.columns(3)
+    vertical_options = {v["name"]: v["id"] for v in verticals}
+    selected_vertical_name = st.selectbox("Select Vertical", list(vertical_options.keys()))
+    selected_vertical_id = vertical_options[selected_vertical_name]
+
+    available_models = _fetch_available_models(selected_vertical_id)
+
+    if not available_models:
+        st.info("No completed runs found for this vertical yet.")
+        return
+
+    model_options = ["All"] + available_models
+
+    col1, col2 = st.columns(2)
 
     with col1:
-        vertical_options = {v["name"]: v["id"] for v in verticals}
-        selected_vertical_name = st.selectbox("Select Vertical", list(vertical_options.keys()))
-        selected_vertical_id = vertical_options[selected_vertical_name]
+        selected_model = st.selectbox("LLM Model", model_options, index=0)
 
     with col2:
-        model_name = st.selectbox("Select Model", ["qwen", "deepseek", "kimi"])
-
-    with col3:
         view_mode = st.radio("View Mode", ["Brand", "Product"], horizontal=True)
 
-    if st.button("🔍 Load Metrics", type="primary"):
-        try:
-            with st.spinner("Fetching metrics..."):
-                if view_mode == "Brand":
-                    response = httpx.get(
-                        f"http://localhost:{settings.api_port}/api/v1/metrics/latest",
-                        params={
-                            "vertical_id": selected_vertical_id,
-                            "model_name": model_name,
-                        },
-                        timeout=30.0,
-                    )
-                else:
-                    response = httpx.get(
-                        f"http://localhost:{settings.api_port}/api/v1/metrics/latest/products",
-                        params={
-                            "vertical_id": selected_vertical_id,
-                            "model_name": model_name,
-                        },
-                        timeout=30.0,
-                    )
-                response.raise_for_status()
-                metrics = response.json()
+    model_param = "all" if selected_model == "All" else selected_model
 
-            st.subheader(f"Latest Metrics: {metrics['vertical_name']} ({metrics['model_name']})")
-            st.caption(f"Data from: {metrics['date']}")
+    with st.spinner("Loading metrics..."):
+        metrics = _fetch_metrics(selected_vertical_id, model_param, view_mode)
 
-            if view_mode == "Brand":
-                _render_brand_view(metrics)
-            else:
-                _render_product_view(metrics)
+    if not metrics:
+        st.warning("No data found for this vertical and model combination.")
+        st.info("Make sure a tracking job has been run and completed.")
+        return
 
-            st.markdown("---")
-            st.markdown("## 🔍 Last Run Inspector")
-            st.caption("View raw answers and extracted brand mentions from the most recent run")
+    st.subheader(f"Latest Metrics: {metrics['vertical_name']} ({metrics['model_name']})")
+    st.caption(f"Data from: {metrics['date']}")
 
-            try:
-                runs_response = httpx.get(
-                    f"http://localhost:{settings.api_port}/api/v1/tracking/runs",
-                    params={
-                        "vertical_id": selected_vertical_id,
-                        "model_name": model_name,
-                        "limit": 1,
-                    },
-                    timeout=10.0,
-                )
-                runs_response.raise_for_status()
-                runs = runs_response.json()
+    if view_mode == "Brand":
+        _render_brand_view(metrics)
+    else:
+        _render_product_view(metrics)
 
-                if not runs:
-                    st.info("ℹ️ No runs found for this vertical and model.")
-                else:
-                    latest_run_id = runs[0]["id"]
-                    details_response = httpx.get(
-                        f"http://localhost:{settings.api_port}/api/v1/tracking/runs/{latest_run_id}/details",
-                        timeout=30.0,
-                    )
-                    details_response.raise_for_status()
-                    run_details = details_response.json()
+    st.markdown("---")
+    st.markdown("## Last Run Inspector")
+    st.caption("View raw answers and extracted brand mentions from the most recent run")
 
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Run ID", run_details["id"])
-                    with col2:
-                        st.metric("Status", run_details["status"])
-                    with col3:
-                        st.metric("Prompts Answered", len(run_details["answers"]))
+    _render_run_inspector(selected_vertical_id, model_param)
 
-                    if not run_details["answers"]:
-                        st.info("ℹ️ No answers available for this run yet. The job may still be processing.")
-                    else:
-                        for i, answer in enumerate(run_details["answers"], 1):
-                            with st.expander(f"📝 Prompt & Answer {i}", expanded=(i == 1)):
-                                st.markdown("#### Prompt")
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.markdown("**Chinese:**")
-                                    st.write(answer.get("prompt_text_zh") or "_No Chinese prompt_")
-                                with col2:
-                                    st.markdown("**English:**")
-                                    st.write(answer.get("prompt_text_en") or "_No English prompt_")
 
-                                st.markdown("---")
-                                st.markdown("#### LLM Answer")
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.markdown("**Chinese Answer:**")
-                                    st.text_area(
-                                        "Chinese",
-                                        answer["raw_answer_zh"],
-                                        height=150,
-                                        key=f"answer_zh_{i}",
-                                        label_visibility="collapsed",
-                                    )
-                                with col2:
-                                    st.markdown("**English Translation:**")
-                                    st.text_area(
-                                        "English",
-                                        answer.get("raw_answer_en") or "_Translation not available_",
-                                        height=150,
-                                        key=f"answer_en_{i}",
-                                        label_visibility="collapsed",
-                                    )
+def _render_run_inspector(vertical_id: int, model_name: str) -> None:
+    try:
+        params = {"vertical_id": vertical_id, "limit": 1}
+        if model_name != "all":
+            params["model_name"] = model_name
 
-                                st.markdown("---")
-                                st.markdown("#### 🏷️ Brand Mentions Detected")
+        runs_response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/tracking/runs",
+            params=params,
+            timeout=10.0,
+        )
+        runs_response.raise_for_status()
+        runs = runs_response.json()
 
-                                if not answer["mentions"]:
-                                    st.info("No brand mentions detected in this answer.")
-                                else:
-                                    mentioned_brands = [m for m in answer["mentions"] if m["mentioned"]]
-                                    if not mentioned_brands:
-                                        st.info("No brands were mentioned in this answer.")
-                                    else:
-                                        for mention in mentioned_brands:
-                                            sentiment_emoji = {
-                                                "positive": "😊",
-                                                "neutral": "😐",
-                                                "negative": "😟",
-                                            }.get(mention["sentiment"], "")
+        if not runs:
+            st.info("No runs found for this vertical and model.")
+            return
 
-                                            rank_text = f"Rank #{mention['rank']}" if mention.get("rank") else "No rank"
-                                            st.markdown(
-                                                f"**{mention['brand_name']}** {sentiment_emoji} "
-                                                f"| {mention['sentiment'].upper()} | {rank_text}"
-                                            )
+        latest_run_id = runs[0]["id"]
+        details_response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/tracking/runs/{latest_run_id}/details",
+            timeout=30.0,
+        )
+        details_response.raise_for_status()
+        run_details = details_response.json()
 
-                                            if mention.get("evidence_snippets"):
-                                                zh_snippets = mention["evidence_snippets"].get("zh", [])
-                                                en_snippets = mention["evidence_snippets"].get("en", [])
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Run ID", run_details["id"])
+        with col2:
+            st.metric("Status", run_details["status"])
+        with col3:
+            st.metric("Prompts Answered", len(run_details["answers"]))
 
-                                                if zh_snippets or en_snippets:
-                                                    col1, col2 = st.columns(2)
-                                                    with col1:
-                                                        if zh_snippets:
-                                                            st.caption("Evidence (Chinese):")
-                                                            for snippet in zh_snippets:
-                                                                st.markdown(f"> {snippet}")
-                                                    with col2:
-                                                        if en_snippets:
-                                                            st.caption("Evidence (English):")
-                                                            for snippet in en_snippets:
-                                                                st.markdown(f"> {snippet}")
+        if not run_details["answers"]:
+            st.info("No answers available for this run yet. The job may still be processing.")
+            return
 
-                                            st.markdown("---")
+        for i, answer in enumerate(run_details["answers"], 1):
+            with st.expander(f"Prompt & Answer {i}", expanded=(i == 1)):
+                _render_answer_details(answer, i)
 
-            except httpx.HTTPError as e:
-                st.error(f"❌ Error fetching run details: {e}")
-                if hasattr(e, "response") and e.response:
-                    st.error(f"Details: {e.response.text}")
-            except Exception as e:
-                st.error(f"❌ Unexpected error loading run inspector: {e}")
+    except httpx.HTTPError as e:
+        st.error(f"Error fetching run details: {e}")
+    except Exception as e:
+        st.error(f"Unexpected error loading run inspector: {e}")
 
-        except httpx.HTTPError as e:
-            if hasattr(e, "response") and e.response and e.response.status_code == 404:
-                st.warning(f"⚠️ No data found for this vertical and model combination.")
-                st.info("Make sure a tracking job has been run and completed.")
-            else:
-                st.error(f"❌ Error fetching metrics: {e}")
-                if hasattr(e, "response") and e.response:
-                    st.error(f"Details: {e.response.text}")
-        except Exception as e:
-            st.error(f"❌ Unexpected error: {e}")
+
+def _render_answer_details(answer: dict, index: int) -> None:
+    st.markdown("#### Prompt")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Chinese:**")
+        st.write(answer.get("prompt_text_zh") or "_No Chinese prompt_")
+    with col2:
+        st.markdown("**English:**")
+        st.write(answer.get("prompt_text_en") or "_No English prompt_")
+
+    st.markdown("---")
+    st.markdown("#### LLM Answer")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Chinese Answer:**")
+        st.text_area(
+            "Chinese",
+            answer["raw_answer_zh"],
+            height=150,
+            key=f"answer_zh_{index}",
+            label_visibility="collapsed",
+        )
+    with col2:
+        st.markdown("**English Translation:**")
+        st.text_area(
+            "English",
+            answer.get("raw_answer_en") or "_Translation not available_",
+            height=150,
+            key=f"answer_en_{index}",
+            label_visibility="collapsed",
+        )
+
+    st.markdown("---")
+    st.markdown("#### Brand Mentions Detected")
+
+    if not answer["mentions"]:
+        st.info("No brand mentions detected in this answer.")
+        return
+
+    mentioned_brands = [m for m in answer["mentions"] if m["mentioned"]]
+    if not mentioned_brands:
+        st.info("No brands were mentioned in this answer.")
+        return
+
+    for mention in mentioned_brands:
+        _render_mention(mention)
+
+
+def _render_mention(mention: dict) -> None:
+    sentiment_emoji = {
+        "positive": "😊",
+        "neutral": "😐",
+        "negative": "😟",
+    }.get(mention["sentiment"], "")
+
+    rank_text = f"Rank #{mention['rank']}" if mention.get("rank") else "No rank"
+    st.markdown(
+        f"**{mention['brand_name']}** {sentiment_emoji} "
+        f"| {mention['sentiment'].upper()} | {rank_text}"
+    )
+
+    if mention.get("evidence_snippets"):
+        zh_snippets = mention["evidence_snippets"].get("zh", [])
+        en_snippets = mention["evidence_snippets"].get("en", [])
+
+        if zh_snippets or en_snippets:
+            col1, col2 = st.columns(2)
+            with col1:
+                if zh_snippets:
+                    st.caption("Evidence (Chinese):")
+                    for snippet in zh_snippets:
+                        st.markdown(f"> {snippet}")
+            with col2:
+                if en_snippets:
+                    st.caption("Evidence (English):")
+                    for snippet in en_snippets:
+                        st.markdown(f"> {snippet}")
+
+    st.markdown("---")
