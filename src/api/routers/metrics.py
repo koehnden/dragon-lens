@@ -11,6 +11,8 @@ from models import (
     BrandMention,
     DailyMetrics,
     LLMAnswer,
+    Product,
+    ProductMention,
     Prompt,
     Run,
     RunMetrics,
@@ -18,7 +20,14 @@ from models import (
     get_db,
 )
 from metrics.metrics import AnswerMetrics, visibility_metrics
-from models.schemas import AllRunMetricsResponse, BrandMetrics, MetricsResponse, RunMetricsResponse
+from models.schemas import (
+    AllRunMetricsResponse,
+    BrandMetrics,
+    MetricsResponse,
+    ProductMetrics,
+    ProductMetricsResponse,
+    RunMetricsResponse,
+)
 from services.translater import format_entity_label
 
 router = APIRouter()
@@ -149,6 +158,114 @@ async def get_latest_metrics(
         date=latest_run.run_time,
         brands=brand_metrics,
     )
+
+
+@router.get("/latest/products", response_model=ProductMetricsResponse)
+async def get_latest_product_metrics(
+    vertical_id: int = Query(..., description="Vertical ID"),
+    model_name: str = Query(..., description="Model name"),
+    db: Session = Depends(get_db),
+) -> ProductMetricsResponse:
+    vertical = get_vertical_or_raise(db, vertical_id)
+
+    latest_run = _get_latest_run(db, vertical_id, model_name)
+
+    if not latest_run:
+        detail = f"No runs found for vertical {vertical_id} and model {model_name}"
+        raise HTTPException(status_code=404, detail=detail)
+
+    products = db.query(Product).filter(Product.vertical_id == vertical_id).all()
+    prompts = db.query(Prompt).filter(Prompt.vertical_id == vertical_id).all()
+    prompt_ids = [p.id for p in prompts]
+
+    mentions = (
+        db.query(ProductMention)
+        .join(LLMAnswer, LLMAnswer.id == ProductMention.llm_answer_id)
+        .filter(LLMAnswer.run_id == latest_run.id)
+        .all()
+    )
+
+    answer_metrics = _build_product_answer_metrics(mentions)
+
+    product_metrics = []
+    product_names = [p.display_name for p in products]
+    for product in products:
+        competitors = [n for n in product_names if n != product.display_name]
+        metrics = visibility_metrics(
+            prompt_ids=prompt_ids,
+            mentions=answer_metrics,
+            brand=product.display_name,
+            competitor_brands=competitors,
+        )
+
+        brand_name = ""
+        if product.brand:
+            brand_name = format_entity_label(
+                product.brand.original_name, product.brand.translated_name
+            )
+
+        product_metrics.append(
+            ProductMetrics(
+                product_id=product.id,
+                product_name=format_entity_label(
+                    product.original_name, product.translated_name
+                ),
+                brand_id=product.brand_id,
+                brand_name=brand_name,
+                mention_rate=metrics["mention_rate"],
+                share_of_voice=metrics["share_of_voice"],
+                top_spot_share=metrics["top_spot_share"],
+                sentiment_index=metrics["sentiment_index"],
+                dragon_lens_visibility=metrics["dragon_lens_visibility"],
+            )
+        )
+
+    return ProductMetricsResponse(
+        vertical_id=vertical_id,
+        vertical_name=vertical.name,
+        model_name=model_name,
+        date=latest_run.run_time,
+        products=product_metrics,
+    )
+
+
+def _get_latest_run(db: Session, vertical_id: int, model_name: str) -> Run | None:
+    latest_run = (
+        db.query(Run)
+        .filter(
+            Run.vertical_id == vertical_id,
+            Run.model_name == model_name,
+            Run.answers.any(),
+        )
+        .order_by(Run.run_time.desc())
+        .first()
+    )
+
+    if not latest_run:
+        latest_run = (
+            db.query(Run)
+            .filter(
+                Run.vertical_id == vertical_id,
+                Run.model_name == model_name,
+            )
+            .order_by(Run.run_time.desc())
+            .first()
+        )
+
+    return latest_run
+
+
+def _build_product_answer_metrics(mentions: list) -> list:
+    return [
+        AnswerMetrics(
+            prompt_id=m.llm_answer.prompt_id,
+            brand=m.product.display_name,
+            rank=m.rank,
+            sentiment=m.sentiment.value,
+        )
+        for m in mentions
+        if m.mentioned
+    ]
 
 
 @router.get("/daily")
