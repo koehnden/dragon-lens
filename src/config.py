@@ -43,5 +43,7 @@ class Settings(BaseSettings):
 
     streamlit_port: int = 8501
 
+    encryption_secret_key: str = "ENCRYPTION_SECRET_KEY_NOT_SET_PLEASE_SET_IN_ENV"
+
 
 settings = Settings()

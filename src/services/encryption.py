@@ -10,14 +10,24 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+from src.config import settings
+
 logger = logging.getLogger(__name__)
 
 
 class EncryptionService:
     def __init__(self, secret_key: Optional[str] = None):
-        self.secret_key = secret_key or os.getenv("ENCRYPTION_SECRET_KEY")
-        if not self.secret_key:
-            raise ValueError("ENCRYPTION_SECRET_KEY environment variable is required")
+        self.secret_key = secret_key or os.getenv("ENCRYPTION_SECRET_KEY") or settings.encryption_secret_key
+        
+        # Check if the secret key is the default placeholder
+        if self.secret_key == "ENCRYPTION_SECRET_KEY_NOT_SET_PLEASE_SET_IN_ENV":
+            raise ValueError(
+                "ENCRYPTION_SECRET_KEY is not configured. "
+                "Please set ENCRYPTION_SECRET_KEY environment variable or add it to your .env file. "
+                "This is required for secure API key storage. "
+                "You can generate a secure key with: "
+                "python -c 'import secrets; print(secrets.token_hex(32))'"
+            )
         
         self.salt = b"dragon_lens_salt"  # In production, this should be unique per key
         self._fernet = self._create_fernet()
