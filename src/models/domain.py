@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from models.database import Base
+from src.models.database import Base
 
 
 class Vertical(Base):
@@ -99,6 +99,7 @@ class Run(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, default="qwen")
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[RunStatus] = mapped_column(Enum(RunStatus), nullable=False, default=RunStatus.PENDING)
     run_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -115,10 +116,13 @@ class LLMAnswer(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
     prompt_id: Mapped[int] = mapped_column(ForeignKey("prompts.id"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, default="qwen")
+    model_name: Mapped[str] = mapped_column(String(255), nullable=False)
     raw_answer_zh: Mapped[str] = mapped_column(Text, nullable=False)
     raw_answer_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tokens_in: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     tokens_out: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    latency: Mapped[Optional[float]] = mapped_column(Float, nullable=True, comment="Response latency in seconds")
     cost_estimate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -182,6 +186,7 @@ class DailyMetrics(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, default="qwen")
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
     prompt_id: Mapped[int] = mapped_column(ForeignKey("prompts.id"), nullable=False)
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
@@ -209,3 +214,19 @@ class RunMetrics(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class APIKey(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    encrypted_key: Mapped[str] = mapped_column(Text, nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=True)

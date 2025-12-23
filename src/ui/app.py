@@ -8,7 +8,7 @@ st.set_page_config(
 
 page = st.sidebar.radio(
     "Navigate",
-    ["Setup & Start", "View Results", "Runs History"],
+    ["Setup & Start", "View Results", "Runs History", "API Keys"],
 )
 
 if page == "Setup & Start":
@@ -20,3 +20,6 @@ elif page == "View Results":
 elif page == "Runs History":
     from ui.pages import history
     history.show()
+elif page == "API Keys":
+    from ui.pages import api_keys
+    api_keys.show()

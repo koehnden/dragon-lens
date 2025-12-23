@@ -61,12 +61,14 @@ class TrackingJobCreate(BaseModel):
     vertical_description: Optional[str] = None
     brands: List[BrandCreate]
     prompts: List[PromptCreate]
-    model_name: str = Field(default="qwen", description="Model to use (qwen, deepseek, kimi)")
+    provider: str = Field(default="qwen", description="LLM provider (qwen, deepseek, kimi)")
+    model_name: str = Field(default="qwen2.5:7b-instruct-q4_0", description="Specific model name (e.g., deepseek-chat, deepseek-reasoner)")
 
 
 class TrackingJobResponse(BaseModel):
     run_id: int
     vertical_id: int
+    provider: str
     model_name: str
     status: str
     message: str
@@ -113,6 +115,7 @@ class ProductMetricsResponse(BaseModel):
 class RunResponse(BaseModel):
     id: int
     vertical_id: int
+    provider: str
     model_name: str
     status: str
     run_time: datetime
@@ -137,8 +140,14 @@ class LLMAnswerResponse(BaseModel):
     id: int
     prompt_text_zh: Optional[str]
     prompt_text_en: Optional[str]
+    provider: str
+    model_name: str
     raw_answer_zh: str
     raw_answer_en: Optional[str]
+    tokens_in: Optional[int]
+    tokens_out: Optional[int]
+    latency: Optional[float]
+    cost_estimate: Optional[float]
     mentions: List[BrandMentionResponse]
     created_at: datetime
 
@@ -149,6 +158,7 @@ class RunDetailedResponse(BaseModel):
     id: int
     vertical_id: int
     vertical_name: str
+    provider: str
     model_name: str
     status: str
     run_time: datetime
@@ -176,6 +186,7 @@ class AllRunMetricsResponse(BaseModel):
     run_id: int
     vertical_id: int
     vertical_name: str
+    provider: str
     model_name: str
     run_time: datetime
     metrics: List[RunMetricsResponse]
@@ -188,6 +199,26 @@ class DeleteVerticalResponse(BaseModel):
     deleted: bool
     deleted_runs_count: int
     message: str
+
+
+class APIKeyCreate(BaseModel):
+    provider: str = Field(..., description="LLM provider (deepseek, kimi)")
+    api_key: str = Field(..., min_length=1, description="API key to encrypt and store")
+
+
+class APIKeyUpdate(BaseModel):
+    api_key: Optional[str] = Field(None, min_length=1, description="New API key (optional)")
+    is_active: Optional[bool] = Field(None, description="Active status")
+
+
+class APIKeyResponse(BaseModel):
+    id: int
+    provider: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class DeleteJobsResponse(BaseModel):

@@ -84,19 +84,38 @@ def show():
     prompt_language_code = "zh" if prompt_language == "Chinese (中文)" else "en"
     prompts = parse_prompt_entries(prompts_text, prompt_language_code)
 
-    st.header("4. Model Selection")
-    model_name = st.selectbox(
-        "Select LLM Model",
-        ["qwen", "deepseek", "kimi"],
-        help="Choose which Chinese LLM to query",
-    )
-
-    if model_name == "qwen":
-        st.info("✅ Qwen runs locally via Ollama (no API key needed)")
-    elif model_name == "deepseek":
-        st.warning("⚠️ DeepSeek requires API key in .env file")
-    elif model_name == "kimi":
-        st.warning("⚠️ Kimi requires API key in .env file (V2 feature)")
+    st.header("4. LLM Configuration")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        provider = st.selectbox(
+            "LLM Provider",
+            ["qwen", "deepseek", "kimi"],
+            help="Choose which Chinese LLM provider to use",
+        )
+    
+    with col2:
+        if provider == "qwen":
+            model_name = st.selectbox(
+                "Qwen Model",
+                ["qwen2.5:7b-instruct-q4_0", "qwen2.5:14b-instruct-q4_0", "qwen2.5:32b-instruct-q4_0"],
+                help="Select specific Qwen model via Ollama",
+            )
+            st.info("✅ Qwen runs locally via Ollama (no API key needed)")
+        elif provider == "deepseek":
+            model_name = st.selectbox(
+                "DeepSeek Model",
+                ["deepseek-chat", "deepseek-reasoner"],
+                help="Select DeepSeek model variant",
+            )
+            st.warning("⚠️ DeepSeek requires API key (configure in API Keys page)")
+        elif provider == "kimi":
+            model_name = st.selectbox(
+                "Kimi Model",
+                ["kimi2"],
+                help="Select Kimi model variant",
+            )
+            st.warning("⚠️ Kimi requires API key (configure in API Keys page)")
 
     st.markdown("---")
     if st.button("🚀 Start Tracking", type="primary", use_container_width=True):
@@ -117,6 +136,7 @@ def show():
             "vertical_description": vertical_description or None,
             "brands": brands,
             "prompts": prompts,
+            "provider": provider,
             "model_name": model_name,
         }
 
@@ -147,6 +167,7 @@ def show():
             "vertical_description": vertical_description or None,
             "brands": brands,
             "prompts": prompts,
+            "provider": provider,
             "model_name": model_name,
         }
         st.json(payload)

@@ -1,5 +1,6 @@
-from models.database import Base, get_db, init_db
-from models.domain import (
+from src.models.database import Base, get_db, init_db
+from src.models.domain import (
+    APIKey,
     Brand,
     BrandMention,
     DailyMetrics,
@@ -16,6 +17,7 @@ from models.domain import (
 )
 
 __all__ = [
+    "APIKey",
     "Base",
     "get_db",
     "init_db",
