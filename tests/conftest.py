@@ -30,7 +30,11 @@ os.environ.setdefault("ENABLE_EMBEDDING_CLUSTERING", "false")
 os.environ.setdefault("ENABLE_LLM_CLUSTERING", "false")
 os.environ.setdefault("RUN_TASKS_INLINE", "true")
 
-from api.routers import metrics, tracking, verticals
+try:
+    from api.routers import metrics, tracking, verticals
+except ImportError:
+    from src.api.routers import metrics, tracking, verticals
+
 from models import Base, get_db
 
 @pytest.fixture(scope="function")

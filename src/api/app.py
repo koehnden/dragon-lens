@@ -5,7 +5,11 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import api_keys, metrics, tracking, verticals
+try:
+    from api.routers import api_keys, metrics, tracking, verticals
+except ImportError:
+    from src.api.routers import api_keys, metrics, tracking, verticals
+
 from config import settings
 from models import init_db
 from services.brand_recognition import OLLAMA_EMBEDDING_MODEL, ENABLE_EMBEDDING_CLUSTERING
@@ -30,7 +34,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict this
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
