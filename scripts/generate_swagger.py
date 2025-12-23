@@ -6,10 +6,8 @@ import json
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
-    # When package is installed, api is a top-level module
     from api import app
 except ImportError:
-    # When running from source, api is under src
     from src.api import app
 
 if __name__ == "__main__":

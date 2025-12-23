@@ -19,7 +19,6 @@ class EncryptionService:
     def __init__(self, secret_key: Optional[str] = None):
         self.secret_key = secret_key or os.getenv("ENCRYPTION_SECRET_KEY") or settings.encryption_secret_key
         
-        # Check if the secret key is the default placeholder
         if self.secret_key == "ENCRYPTION_SECRET_KEY_NOT_SET_PLEASE_SET_IN_ENV":
             raise ValueError(
                 "ENCRYPTION_SECRET_KEY is not configured. "
@@ -29,7 +28,7 @@ class EncryptionService:
                 "python -c 'import secrets; print(secrets.token_hex(32))'"
             )
         
-        self.salt = b"dragon_lens_salt"  # In production, this should be unique per key
+        self.salt = b"dragon_lens_salt"
         self._fernet = self._create_fernet()
 
     def _create_fernet(self) -> Fernet:
