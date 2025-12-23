@@ -103,6 +103,7 @@ async def create_tracking_job(
 
     run = Run(
         vertical_id=vertical.id,
+        provider=job.provider,
         model_name=job.model_name,
         status=RunStatus.PENDING,
     )
@@ -116,6 +117,7 @@ async def create_tracking_job(
         return TrackingJobResponse(
             run_id=run.id,
             vertical_id=vertical.id,
+            provider=job.provider,
             model_name=job.model_name,
             status=run.status.value,
             message="Tracking job queued for inline processing."
@@ -125,7 +127,7 @@ async def create_tracking_job(
 
     enqueue_message = "Tracking job created successfully. Processing will start shortly."
     try:
-        run_vertical_analysis.delay(vertical.id, job.model_name, run.id)
+        run_vertical_analysis.delay(vertical.id, job.provider, job.model_name, run.id)
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.warning(
             "Failed to enqueue vertical analysis for run %s: %s", run.id, exc
@@ -140,6 +142,7 @@ async def create_tracking_job(
     return TrackingJobResponse(
         run_id=run.id,
         vertical_id=vertical.id,
+        provider=job.provider,
         model_name=job.model_name,
         status=run.status.value,
         message=enqueue_message,
@@ -240,6 +243,7 @@ async def delete_tracking_jobs(
 @router.get("/runs", response_model=List[RunResponse])
 async def list_runs(
     vertical_id: int | None = None,
+    provider: str | None = None,
     model_name: str | None = None,
     skip: int = 0,
     limit: int = 100,
@@ -250,6 +254,7 @@ async def list_runs(
 
     Args:
         vertical_id: Filter by vertical ID
+        provider: Filter by LLM provider (qwen, deepseek, kimi)
         model_name: Filter by model name
         skip: Number of records to skip
         limit: Maximum number of records to return
@@ -262,6 +267,8 @@ async def list_runs(
 
     if vertical_id:
         query = query.filter(Run.vertical_id == vertical_id)
+    if provider:
+        query = query.filter(Run.provider == provider)
     if model_name:
         query = query.filter(Run.model_name == model_name)
 
@@ -346,8 +353,14 @@ async def get_run_details(
                 id=llm_answer.id,
                 prompt_text_zh=prompt.text_zh if prompt else None,
                 prompt_text_en=prompt.text_en if prompt else None,
+                provider=llm_answer.provider,
+                model_name=llm_answer.model_name,
                 raw_answer_zh=llm_answer.raw_answer_zh,
                 raw_answer_en=llm_answer.raw_answer_en,
+                tokens_in=llm_answer.tokens_in,
+                tokens_out=llm_answer.tokens_out,
+                latency=llm_answer.latency,
+                cost_estimate=llm_answer.cost_estimate,
                 mentions=mentions_data,
                 created_at=llm_answer.created_at,
             )
@@ -357,6 +370,7 @@ async def get_run_details(
         id=run.id,
         vertical_id=run.vertical_id,
         vertical_name=vertical.name if vertical else "Unknown",
+        provider=run.provider,
         model_name=run.model_name,
         status=run.status.value,
         run_time=run.run_time,

@@ -5,7 +5,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import metrics, tracking, verticals
+from api.routers import api_keys, metrics, tracking, verticals
 from config import settings
 from models import init_db
 from services.brand_recognition import OLLAMA_EMBEDDING_MODEL, ENABLE_EMBEDDING_CLUSTERING
@@ -39,6 +39,7 @@ app.add_middleware(
 app.include_router(verticals.router, prefix="/api/v1/verticals", tags=["verticals"])
 app.include_router(tracking.router, prefix="/api/v1/tracking", tags=["tracking"])
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
+app.include_router(api_keys.router, prefix="/api/v1", tags=["api-keys"])
 
 
 @app.get("/")

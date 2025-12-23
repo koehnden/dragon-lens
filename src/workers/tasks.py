@@ -6,7 +6,7 @@ from typing import List
 from celery import Task
 from sqlalchemy.orm import Session
 
-from models import (
+from src.models import (
     Brand,
     BrandMention,
     LLMAnswer,
@@ -16,14 +16,14 @@ from models import (
     Run,
     Vertical,
 )
-from models.database import SessionLocal
-from models.domain import PromptLanguage, RunStatus, Sentiment
-from services.brand_discovery import discover_all_brands
-from services.brand_recognition import extract_entities
-from services.product_discovery import discover_and_store_products
-from services.translater import TranslaterService
-from services.metrics_service import calculate_and_save_metrics
-from services.ollama import OllamaService
+from src.models.database import SessionLocal
+from src.models.domain import PromptLanguage, RunStatus, Sentiment
+from src.services.brand_discovery import discover_all_brands
+from src.services.brand_recognition import extract_entities
+from src.services.product_discovery import discover_and_store_products
+from src.services.translater import TranslaterService
+from src.services.metrics_service import calculate_and_save_metrics
+from src.services.remote_llms import LLMRouter
 from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -45,8 +45,8 @@ class DatabaseTask(Task):
 
 
 @celery_app.task(base=DatabaseTask, bind=True)
-def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str, run_id: int):
-    logger.info(f"Starting vertical analysis: vertical={vertical_id}, model={model_name}, run={run_id}")
+def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, model_name: str, run_id: int):
+    logger.info(f"Starting vertical analysis: vertical={vertical_id}, provider={provider}, model={model_name}, run={run_id}")
 
     try:
         run = self.db.query(Run).filter(Run.id == run_id).first()
@@ -68,8 +68,8 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
         if not brands:
             raise ValueError(f"No brands found for vertical {vertical_id}")
 
-        ollama_service = OllamaService()
-        translator = TranslaterService(ollama_service)
+        llm_router = LLMRouter(self.db)
+        translator = TranslaterService()
         _apply_brand_translations(brands, translator, self.db)
 
         for prompt in prompts:
@@ -87,9 +87,9 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
                 logger.warning(f"Prompt {prompt.id} has no text, skipping")
                 continue
 
-            logger.info(f"Querying Qwen with prompt: {prompt_text_zh[:100]}...")
-            answer_zh, tokens_in, tokens_out = asyncio.run(
-                ollama_service.query_main_model(prompt_text_zh)
+            logger.info(f"Querying {provider}/{model_name} with prompt: {prompt_text_zh[:100]}...")
+            answer_zh, tokens_in, tokens_out, latency = asyncio.run(
+                llm_router.query(provider, model_name, prompt_text_zh)
             )
             logger.info(f"Received answer: {answer_zh[:100]}...")
 
@@ -99,14 +99,19 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
                 answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English")
                 logger.info(f"Translated answer: {answer_en[:100]}...")
 
+            cost_estimate = _calculate_cost_estimate(provider, tokens_in, tokens_out)
+            
             llm_answer = LLMAnswer(
                 run_id=run_id,
                 prompt_id=prompt.id,
+                provider=provider,
+                model_name=model_name,
                 raw_answer_zh=answer_zh,
                 raw_answer_en=answer_en,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
-                cost_estimate=0.0,
+                latency=latency,
+                cost_estimate=cost_estimate,
             )
             self.db.add(llm_answer)
             self.db.flush()
@@ -126,13 +131,15 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
             logger.info(f"Found {len(discovered_products)} products")
 
             _create_product_mentions(
-                self.db, llm_answer, discovered_products, answer_zh, ollama_service, translator
+                self.db, llm_answer, discovered_products, answer_zh, translator
             )
 
             brand_names = [b.display_name for b in all_brands]
             brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
 
             logger.info(f"Extracting brand mentions for {len(all_brands)} brands...")
+            from src.services.ollama import OllamaService
+            ollama_service = OllamaService()
             mentions = asyncio.run(
                 ollama_service.extract_brands(answer_zh, brand_names, brand_aliases)
             )
@@ -261,60 +268,29 @@ def _ensure_brand(vertical_id: int, canonical_name: str, aliases: dict) -> Brand
     return brand
 
 
-def _create_product_mentions(
-    db: Session,
-    llm_answer: LLMAnswer,
-    products: List[Product],
-    answer_zh: str,
-    ollama_service,
-    translator,
-) -> None:
-    if not products:
-        return
-
-    logger.info(f"Creating product mentions for {len(products)} products...")
-
-    product_names = [p.display_name for p in products]
-    mentions_data = asyncio.run(
-        ollama_service.extract_brands(answer_zh, product_names, [[] for _ in products])
-    )
-
-    for mention_data in mentions_data:
-        if not mention_data["mentioned"]:
-            continue
-
-        product = products[mention_data["brand_index"]]
-
-        sentiment_str = "neutral"
-        if mention_data["snippets"]:
-            snippet = mention_data["snippets"][0]
-            sentiment_str = asyncio.run(ollama_service.classify_sentiment(snippet))
-            logger.info(f"Product {product.display_name} sentiment: {sentiment_str}")
-
-        sentiment = _map_sentiment(sentiment_str)
-
-        en_snippets = _translate_snippets(mention_data["snippets"], translator)
-
-        mention = ProductMention(
-            llm_answer_id=llm_answer.id,
-            product_id=product.id,
-            mentioned=True,
-            rank=mention_data["rank"],
-            sentiment=sentiment,
-            evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
-        )
-        db.add(mention)
-
-    db.flush()
-    logger.info(f"Product mentions created for {len(products)} products")
-
-
 def _map_sentiment(sentiment_str: str) -> Sentiment:
     if sentiment_str == "positive":
         return Sentiment.POSITIVE
     if sentiment_str == "negative":
         return Sentiment.NEGATIVE
     return Sentiment.NEUTRAL
+
+
+def _calculate_cost_estimate(provider: str, tokens_in: int, tokens_out: int) -> float:
+    if provider == "deepseek":
+        # DeepSeek pricing: $0.14 per 1M tokens input, $0.28 per 1M tokens output
+        cost_per_million_input = 0.14
+        cost_per_million_output = 0.28
+        cost = (tokens_in / 1_000_000) * cost_per_million_input + (tokens_out / 1_000_000) * cost_per_million_output
+        return round(cost, 6)
+    elif provider == "qwen":
+        # Local Qwen via Ollama is free
+        return 0.0
+    elif provider == "kimi":
+        # Kimi pricing would go here when implemented
+        return 0.0
+    else:
+        return 0.0
 
 
 def _translate_snippets(snippets: List[str], translator) -> List[str]:
