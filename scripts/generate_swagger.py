@@ -5,7 +5,12 @@ import json
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.api import app
+try:
+    # When package is installed, api is a top-level module
+    from api import app
+except ImportError:
+    # When running from source, api is under src
+    from src.api import app
 
 if __name__ == "__main__":
     openapi_schema = app.openapi()
