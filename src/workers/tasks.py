@@ -6,7 +6,7 @@ from typing import List
 from celery import Task
 from sqlalchemy.orm import Session
 
-from src.models import (
+from models import (
     Brand,
     BrandMention,
     LLMAnswer,
@@ -16,14 +16,14 @@ from src.models import (
     Run,
     Vertical,
 )
-from src.models.database import SessionLocal
-from src.models.domain import PromptLanguage, RunStatus, Sentiment
-from src.services.brand_discovery import discover_all_brands
-from src.services.brand_recognition import extract_entities
-from src.services.product_discovery import discover_and_store_products
-from src.services.translater import TranslaterService
-from src.services.metrics_service import calculate_and_save_metrics
-from src.services.remote_llms import LLMRouter
+from models.database import SessionLocal
+from models.domain import PromptLanguage, RunStatus, Sentiment
+from services.brand_discovery import discover_all_brands
+from services.brand_recognition import extract_entities
+from services.product_discovery import discover_and_store_products
+from services.translater import TranslaterService
+from services.metrics_service import calculate_and_save_metrics
+from services.remote_llms import LLMRouter
 from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -138,7 +138,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
 
             logger.info(f"Extracting brand mentions for {len(all_brands)} brands...")
-            from src.services.ollama import OllamaService
+            from services.ollama import OllamaService
             ollama_service = OllamaService()
             mentions = asyncio.run(
                 ollama_service.extract_brands(answer_zh, brand_names, brand_aliases)

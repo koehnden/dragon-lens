@@ -7,13 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from src.models import APIKey, get_db
-from src.models.schemas import (
+from models import APIKey, get_db
+from models.schemas import (
     APIKeyCreate,
     APIKeyResponse,
     APIKeyUpdate,
 )
-from src.services.encryption import EncryptionService, APIKeyManager
+from services.encryption import EncryptionService, APIKeyManager
 
 logger = logging.getLogger(__name__)
 
