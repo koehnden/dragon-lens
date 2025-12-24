@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.models.database import Base
+from models.database import Base
 
 
 class Vertical(Base):
@@ -19,9 +19,9 @@ class Vertical(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    brands: Mapped[List["Brand"]] = relationship("src.models.domain.Brand", back_populates="vertical", cascade="all, delete-orphan")
-    prompts: Mapped[List["Prompt"]] = relationship("src.models.domain.Prompt", back_populates="vertical", cascade="all, delete-orphan")
-    runs: Mapped[List["Run"]] = relationship("src.models.domain.Run", back_populates="vertical", cascade="all, delete-orphan")
+    brands: Mapped[List["Brand"]] = relationship("Brand", back_populates="vertical", cascade="all, delete-orphan")
+    prompts: Mapped[List["Prompt"]] = relationship("Prompt", back_populates="vertical", cascade="all, delete-orphan")
+    runs: Mapped[List["Run"]] = relationship("Run", back_populates="vertical", cascade="all, delete-orphan")
 
 
 class Brand(Base):
@@ -41,7 +41,7 @@ class Brand(Base):
 
     vertical: Mapped["Vertical"] = relationship(Vertical, back_populates="brands")
     mentions: Mapped[List["BrandMention"]] = relationship(
-        "src.models.domain.BrandMention", back_populates="brand", cascade="all, delete-orphan"
+        "BrandMention", back_populates="brand", cascade="all, delete-orphan"
     )
 
 
@@ -63,7 +63,7 @@ class Product(Base):
     vertical: Mapped["Vertical"] = relationship(Vertical)
     brand: Mapped[Optional["Brand"]] = relationship(Brand)
     mentions: Mapped[List["ProductMention"]] = relationship(
-        "src.models.domain.ProductMention", back_populates="product", cascade="all, delete-orphan"
+        "ProductMention", back_populates="product", cascade="all, delete-orphan"
     )
 
 
@@ -88,7 +88,7 @@ class Prompt(Base):
     )
 
     vertical: Mapped["Vertical"] = relationship(Vertical, back_populates="prompts")
-    answers: Mapped[List["LLMAnswer"]] = relationship("src.models.domain.LLMAnswer", back_populates="prompt", cascade="all, delete-orphan")
+    answers: Mapped[List["LLMAnswer"]] = relationship("LLMAnswer", back_populates="prompt", cascade="all, delete-orphan")
 
 
 class RunStatus(str, enum.Enum):
@@ -112,7 +112,7 @@ class Run(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     vertical: Mapped["Vertical"] = relationship(Vertical, back_populates="runs")
-    answers: Mapped[List["LLMAnswer"]] = relationship("src.models.domain.LLMAnswer", back_populates="run", cascade="all, delete-orphan")
+    answers: Mapped[List["LLMAnswer"]] = relationship("LLMAnswer", back_populates="run", cascade="all, delete-orphan")
 
 
 class LLMAnswer(Base):
@@ -137,10 +137,10 @@ class LLMAnswer(Base):
     run: Mapped["Run"] = relationship(Run, back_populates="answers")
     prompt: Mapped["Prompt"] = relationship(Prompt, back_populates="answers")
     mentions: Mapped[List["BrandMention"]] = relationship(
-        "src.models.domain.BrandMention", back_populates="llm_answer", cascade="all, delete-orphan"
+        "BrandMention", back_populates="llm_answer", cascade="all, delete-orphan"
     )
     product_mentions: Mapped[List["ProductMention"]] = relationship(
-        "src.models.domain.ProductMention", back_populates="llm_answer", cascade="all, delete-orphan"
+        "ProductMention", back_populates="llm_answer", cascade="all, delete-orphan"
     )
 
 

@@ -7,8 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routers import api_keys, metrics, tracking, verticals
 from src.config import settings
-from src.models import init_db
-from src.services.brand_recognition import OLLAMA_EMBEDDING_MODEL, ENABLE_EMBEDDING_CLUSTERING
+from models import init_db
+from services.brand_recognition import OLLAMA_EMBEDDING_MODEL, ENABLE_EMBEDDING_CLUSTERING
 
 logger = logging.getLogger(__name__)
 

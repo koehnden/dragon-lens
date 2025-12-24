@@ -6,8 +6,8 @@ import httpx
 from sqlalchemy.orm import Session
 
 from config import settings
-from src.models import APIKey
-from src.services.encryption import EncryptionService
+from models import APIKey
+from services.encryption import EncryptionService
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ class KimiService:
 
 class LLMRouter:
     def __init__(self, db=None):
-        from src.services.ollama import OllamaService
+        from services.ollama import OllamaService
 
         self.db = db
         self.ollama = OllamaService()
