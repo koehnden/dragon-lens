@@ -271,7 +271,7 @@ clean: ## Clean up temporary files and logs
 	@rm -f dragonlens.db
 	@echo "$(GREEN)✓ Cleanup complete$(NC)"
 
-clear: ## Full reset: kill all workers, flush Redis, delete SQLite, clear caches
+clear: ## Full reset: kill all workers, flush Redis, clear database data (keep prompt results), clear caches
 	@echo "$(YELLOW)Performing full system reset...$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 1: Killing ALL Celery processes...$(NC)"
@@ -298,9 +298,11 @@ clear: ## Full reset: kill all workers, flush Redis, delete SQLite, clear caches
 	@docker exec $$(docker ps -q -f name=redis) redis-cli FLUSHALL 2>/dev/null || redis-cli FLUSHALL 2>/dev/null || echo "$(YELLOW)  Redis not running or not accessible$(NC)"
 	@echo "$(GREEN)✓ Redis flushed$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Step 4: Deleting SQLite database...$(NC)"
-	@rm -f dragonlens.db dragonlens.db-journal dragonlens.db-wal dragonlens.db-shm
-	@echo "$(GREEN)✓ Database deleted$(NC)"
+	@echo "$(YELLOW)Step 4: Clearing database data (keeping prompt results)...$(NC)"
+	@echo "$(YELLOW)  By default, keeping prompt results (LLM answers) to avoid re-running expensive LLM calls$(NC)"
+	@echo "$(YELLOW)  Use 'make clear-all' to delete everything including prompt results$(NC)"
+	@poetry run python scripts/clear_data.py
+	@echo "$(GREEN)✓ Database data cleared (prompt results preserved)$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 5: Clearing Python caches...$(NC)"
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -309,6 +311,58 @@ clear: ## Full reset: kill all workers, flush Redis, delete SQLite, clear caches
 	@echo "$(GREEN)✓ Caches cleared$(NC)"
 	@echo ""
 	@echo "$(GREEN)✓ Full reset complete!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Next steps:$(NC)"
+	@echo "  1. Run 'make run' to start all services fresh"
+	@echo "  2. Run 'make example' to create a test job"
+	@echo ""
+
+clear-all: ## Clear ALL data including prompt results (LLM answers)
+	@echo "$(YELLOW)Performing complete data reset (including prompt results)...$(NC)"
+	@echo ""
+	@echo "$(RED)WARNING: This will delete ALL data including LLM answers which are expensive to regenerate!$(NC)"
+	@echo ""
+	@read -p "Are you sure? Type 'yes' to continue: " confirm; \
+	if [ "$$confirm" != "yes" ]; then \
+		echo "$(YELLOW)Operation cancelled.$(NC)"; \
+		exit 0; \
+	fi
+	@echo ""
+	@echo "$(YELLOW)Step 1: Killing ALL Celery processes...$(NC)"
+	@pkill -9 -f "celery" 2>/dev/null || true
+	@pkill -9 -f "workers.celery_app" 2>/dev/null || true
+	@pkill -9 -f "billiard" 2>/dev/null || true
+	@pkill -9 -f "ForkPoolWorker" 2>/dev/null || true
+	@rm -f .celery.pid
+	@sleep 1
+	@REMAINING=$$(pgrep -f "celery|billiard" 2>/dev/null | wc -l | tr -d ' '); \
+	if [ "$$REMAINING" -gt 0 ]; then \
+		echo "$(YELLOW)  Killing $$REMAINING remaining worker(s)...$(NC)"; \
+		pkill -9 -f "celery|billiard" 2>/dev/null || true; \
+		sleep 1; \
+	fi
+	@echo "$(GREEN)✓ Celery processes killed$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Step 2: Killing API and Streamlit...$(NC)"
+	@if [ -f .api.pid ]; then kill -9 $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid; fi
+	@if [ -f .streamlit.pid ]; then kill -9 $$(cat .streamlit.pid) 2>/dev/null || true; rm -f .streamlit.pid; fi
+	@echo "$(GREEN)✓ API and Streamlit stopped$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Step 3: Flushing Redis (clearing all queued tasks)...$(NC)"
+	@docker exec $$(docker ps -q -f name=redis) redis-cli FLUSHALL 2>/dev/null || redis-cli FLUSHALL 2>/dev/null || echo "$(YELLOW)  Redis not running or not accessible$(NC)"
+	@echo "$(GREEN)✓ Redis flushed$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Step 4: Clearing ALL database data including prompt results...$(NC)"
+	@poetry run python scripts/clear_data.py --clear-prompts-results --yes
+	@echo "$(GREEN)✓ Database data cleared (including prompt results)$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Step 5: Clearing Python caches...$(NC)"
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find . -name "*.pyc" -delete 2>/dev/null || true
+	@rm -f $(API_LOG) $(CELERY_LOG) $(STREAMLIT_LOG)
+	@echo "$(GREEN)✓ Caches cleared$(NC)"
+	@echo ""
+	@echo "$(GREEN)✓ Complete reset finished!$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Next steps:$(NC)"
 	@echo "  1. Run 'make run' to start all services fresh"
@@ -400,48 +454,48 @@ watch: ## Watch service status and recent logs (refreshes every 2s)
 		sleep 2; \
 	done
 
-example: ## Run an example SUV tracking job with VW brand
+example: ## Run an example SUV tracking job with VW brand (reuses prompt results by default)
 	@echo "$(YELLOW)Running example SUV tracking job...$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Step 1: Cleaning up existing 'SUV Cars' jobs and vertical...$(NC)"
-	@DELETE_JOBS_RESPONSE=$$(curl -s -X DELETE "http://localhost:$(API_PORT)/api/v1/tracking/jobs?vertical_name=SUV%20Cars"); \
-	DELETED_COUNT=$$(echo "$$DELETE_JOBS_RESPONSE" | jq -r '.deleted_count // 0' 2>/dev/null || echo "0"); \
-	if [ "$$DELETED_COUNT" -gt 0 ]; then \
-		echo "$(GREEN)✓ Deleted $$DELETED_COUNT existing job(s)$(NC)"; \
-		VERTICAL_IDS=$$(echo "$$DELETE_JOBS_RESPONSE" | jq -r '.vertical_ids[]?' 2>/dev/null); \
-		for VID in $$VERTICAL_IDS; do \
-			DELETE_V_RESPONSE=$$(curl -s -X DELETE http://localhost:$(API_PORT)/api/v1/verticals/$$VID); \
-			if echo "$$DELETE_V_RESPONSE" | jq -e '.deleted' > /dev/null 2>&1; then \
-				echo "$(GREEN)✓ Deleted vertical (ID: $$VID)$(NC)"; \
-			else \
-				echo "$(YELLOW)  Could not delete vertical $$VID (may have other data)$(NC)"; \
-			fi; \
-		done; \
-	else \
-		echo "$(GREEN)✓ No existing jobs found$(NC)"; \
-	fi
+	@echo "$(YELLOW)By default, reuses existing prompt results to avoid expensive LLM calls$(NC)"
+	@echo "$(YELLOW)Use 'make example-fresh' to run from scratch$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Step 2: Creating new tracking job for 'SUV Cars' with VW brand...$(NC)"
-	@RESPONSE=$$(curl -s -w "\n%{http_code}" -X POST http://localhost:$(API_PORT)/api/v1/tracking/jobs \
-		-H "Content-Type: application/json" \
-		-d @examples/suv_example.json); \
-	HTTP_CODE=$$(echo "$$RESPONSE" | tail -n1); \
-	BODY=$$(echo "$$RESPONSE" | sed '$$d'); \
-	if [ "$$HTTP_CODE" = "201" ]; then \
-		echo "$$BODY" | jq .; \
-		echo ""; \
-		echo "$(GREEN)✓ Example tracking job created!$(NC)"; \
-	else \
-		echo "$(RED)✗ Failed to create tracking job (HTTP $$HTTP_CODE)$(NC)"; \
-		echo "$$BODY"; \
-		exit 1; \
-	fi
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen
+
+example-fresh: ## Run example from scratch (delete existing data, don't reuse prompt results)
+	@echo "$(YELLOW)Running example SUV tracking job from scratch...$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Next steps:$(NC)"
-	@echo "  View runs:    curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
-	@echo "  Check status: curl http://localhost:$(API_PORT)/api/v1/tracking/runs/1 | jq"
-	@echo "  View in UI:   http://localhost:$(STREAMLIT_PORT)"
+	@echo "$(RED)WARNING: This will delete existing 'SUV Cars' data and make new LLM calls$(NC)"
 	@echo ""
+	@poetry run python scripts/run_example_with_reuse.py --no-reuse-prompt-results --provider=qwen
+
+example-deepseek-chat: ## Run example with DeepSeek Chat model
+	@echo "$(YELLOW)Running example with DeepSeek Chat model...$(NC)"
+	@echo ""
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat
+
+example-deepseek-reasoner: ## Run example with DeepSeek Reasoner model
+	@echo "$(YELLOW)Running example with DeepSeek Reasoner model...$(NC)"
+	@echo ""
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner
+
+example-all: ## Run example with all three models (qwen, deepseek-chat, deepseek-reasoner)
+	@echo "$(YELLOW)Running example with all three models...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)1. Running with Qwen...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen
+	@echo ""
+	@echo "$(YELLOW)2. Running with DeepSeek Chat...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat
+	@echo ""
+	@echo "$(YELLOW)3. Running with DeepSeek Reasoner...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner
+	@echo ""
+	@echo "$(GREEN)✓ All three models completed!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)View results:$(NC)"
+	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
+	@echo "  http://localhost:$(STREAMLIT_PORT)"
 
 dev: ## Start services in development mode (with auto-reload)
 	@echo "$(YELLOW)Starting development environment...$(NC)"

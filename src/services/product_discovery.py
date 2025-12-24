@@ -2,8 +2,8 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from models import Brand, Product
-from services.brand_recognition import (
+from src.models import Brand, Product
+from src.services.brand_recognition import (
     KNOWN_BRANDS,
     KNOWN_PRODUCTS,
     GENERIC_TERMS,
