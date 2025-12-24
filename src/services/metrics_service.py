@@ -2,8 +2,8 @@ from typing import List
 
 from sqlalchemy.orm import Session
 
-from metrics.metrics import AnswerMetrics, visibility_metrics
-from models import Brand, BrandMention, LLMAnswer, Prompt, Run, RunMetrics
+from src.metrics.metrics import AnswerMetrics, visibility_metrics
+from src.models import Brand, BrandMention, LLMAnswer, Prompt, Run, RunMetrics
 
 
 def calculate_and_save_metrics(db: Session, run_id: int) -> None:

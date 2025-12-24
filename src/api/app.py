@@ -5,14 +5,10 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-try:
-    from api.routers import api_keys, metrics, tracking, verticals
-except ImportError:
-    from src.api.routers import api_keys, metrics, tracking, verticals
-
-from config import settings
-from models import init_db
-from services.brand_recognition import OLLAMA_EMBEDDING_MODEL, ENABLE_EMBEDDING_CLUSTERING
+from src.api.routers import api_keys, metrics, tracking, verticals
+from src.config import settings
+from src.models import init_db
+from src.services.brand_recognition import OLLAMA_EMBEDDING_MODEL, ENABLE_EMBEDDING_CLUSTERING
 
 logger = logging.getLogger(__name__)
 

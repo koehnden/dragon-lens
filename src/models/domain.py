@@ -10,6 +10,7 @@ from src.models.database import Base
 
 class Vertical(Base):
     __tablename__ = "verticals"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
@@ -18,13 +19,14 @@ class Vertical(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    brands: Mapped[List["Brand"]] = relationship("Brand", back_populates="vertical", cascade="all, delete-orphan")
-    prompts: Mapped[List["Prompt"]] = relationship("Prompt", back_populates="vertical", cascade="all, delete-orphan")
-    runs: Mapped[List["Run"]] = relationship("Run", back_populates="vertical", cascade="all, delete-orphan")
+    brands: Mapped[List["Brand"]] = relationship("src.models.domain.Brand", back_populates="vertical", cascade="all, delete-orphan")
+    prompts: Mapped[List["Prompt"]] = relationship("src.models.domain.Prompt", back_populates="vertical", cascade="all, delete-orphan")
+    runs: Mapped[List["Run"]] = relationship("src.models.domain.Run", back_populates="vertical", cascade="all, delete-orphan")
 
 
 class Brand(Base):
     __tablename__ = "brands"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
@@ -37,14 +39,15 @@ class Brand(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    vertical: Mapped["Vertical"] = relationship("Vertical", back_populates="brands")
+    vertical: Mapped["Vertical"] = relationship(Vertical, back_populates="brands")
     mentions: Mapped[List["BrandMention"]] = relationship(
-        "BrandMention", back_populates="brand", cascade="all, delete-orphan"
+        "src.models.domain.BrandMention", back_populates="brand", cascade="all, delete-orphan"
     )
 
 
 class Product(Base):
     __tablename__ = "products"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
@@ -57,10 +60,10 @@ class Product(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    vertical: Mapped["Vertical"] = relationship("Vertical")
-    brand: Mapped[Optional["Brand"]] = relationship("Brand")
+    vertical: Mapped["Vertical"] = relationship(Vertical)
+    brand: Mapped[Optional["Brand"]] = relationship(Brand)
     mentions: Mapped[List["ProductMention"]] = relationship(
-        "ProductMention", back_populates="product", cascade="all, delete-orphan"
+        "src.models.domain.ProductMention", back_populates="product", cascade="all, delete-orphan"
     )
 
 
@@ -71,6 +74,7 @@ class PromptLanguage(str, enum.Enum):
 
 class Prompt(Base):
     __tablename__ = "prompts"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
@@ -83,8 +87,8 @@ class Prompt(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    vertical: Mapped["Vertical"] = relationship("Vertical", back_populates="prompts")
-    answers: Mapped[List["LLMAnswer"]] = relationship("LLMAnswer", back_populates="prompt", cascade="all, delete-orphan")
+    vertical: Mapped["Vertical"] = relationship(Vertical, back_populates="prompts")
+    answers: Mapped[List["LLMAnswer"]] = relationship("src.models.domain.LLMAnswer", back_populates="prompt", cascade="all, delete-orphan")
 
 
 class RunStatus(str, enum.Enum):
@@ -96,6 +100,7 @@ class RunStatus(str, enum.Enum):
 
 class Run(Base):
     __tablename__ = "runs"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
@@ -106,12 +111,13 @@ class Run(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    vertical: Mapped["Vertical"] = relationship("Vertical", back_populates="runs")
-    answers: Mapped[List["LLMAnswer"]] = relationship("LLMAnswer", back_populates="run", cascade="all, delete-orphan")
+    vertical: Mapped["Vertical"] = relationship(Vertical, back_populates="runs")
+    answers: Mapped[List["LLMAnswer"]] = relationship("src.models.domain.LLMAnswer", back_populates="run", cascade="all, delete-orphan")
 
 
 class LLMAnswer(Base):
     __tablename__ = "llm_answers"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
@@ -128,13 +134,13 @@ class LLMAnswer(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    run: Mapped["Run"] = relationship("Run", back_populates="answers")
-    prompt: Mapped["Prompt"] = relationship("Prompt", back_populates="answers")
+    run: Mapped["Run"] = relationship(Run, back_populates="answers")
+    prompt: Mapped["Prompt"] = relationship(Prompt, back_populates="answers")
     mentions: Mapped[List["BrandMention"]] = relationship(
-        "BrandMention", back_populates="llm_answer", cascade="all, delete-orphan"
+        "src.models.domain.BrandMention", back_populates="llm_answer", cascade="all, delete-orphan"
     )
     product_mentions: Mapped[List["ProductMention"]] = relationship(
-        "ProductMention", back_populates="llm_answer", cascade="all, delete-orphan"
+        "src.models.domain.ProductMention", back_populates="llm_answer", cascade="all, delete-orphan"
     )
 
 
@@ -146,6 +152,7 @@ class Sentiment(str, enum.Enum):
 
 class BrandMention(Base):
     __tablename__ = "brand_mentions"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     llm_answer_id: Mapped[int] = mapped_column(ForeignKey("llm_answers.id"), nullable=False)
@@ -158,12 +165,13 @@ class BrandMention(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    llm_answer: Mapped["LLMAnswer"] = relationship("LLMAnswer", back_populates="mentions")
-    brand: Mapped["Brand"] = relationship("Brand", back_populates="mentions")
+    llm_answer: Mapped["LLMAnswer"] = relationship(LLMAnswer, back_populates="mentions")
+    brand: Mapped["Brand"] = relationship(Brand, back_populates="mentions")
 
 
 class ProductMention(Base):
     __tablename__ = "product_mentions"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     llm_answer_id: Mapped[int] = mapped_column(ForeignKey("llm_answers.id"), nullable=False)
@@ -176,12 +184,13 @@ class ProductMention(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    llm_answer: Mapped["LLMAnswer"] = relationship("LLMAnswer", back_populates="product_mentions")
-    product: Mapped["Product"] = relationship("Product", back_populates="mentions")
+    llm_answer: Mapped["LLMAnswer"] = relationship(LLMAnswer, back_populates="product_mentions")
+    product: Mapped["Product"] = relationship(Product, back_populates="mentions")
 
 
 class DailyMetrics(Base):
     __tablename__ = "daily_metrics"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -202,6 +211,7 @@ class DailyMetrics(Base):
 
 class RunMetrics(Base):
     __tablename__ = "run_metrics"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
@@ -218,6 +228,7 @@ class RunMetrics(Base):
 
 class APIKey(Base):
     __tablename__ = "api_keys"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     provider: Mapped[str] = mapped_column(String(50), nullable=False, index=True)

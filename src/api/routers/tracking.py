@@ -9,9 +9,9 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, sessionmaker
 
-from models import Brand, BrandMention, LLMAnswer, Prompt, Run, Vertical, get_db
-from models.domain import PromptLanguage, RunStatus, Sentiment
-from models.schemas import (
+from src.models import Brand, BrandMention, LLMAnswer, Prompt, Run, Vertical, get_db
+from src.models.domain import PromptLanguage, RunStatus, Sentiment
+from src.models.schemas import (
     BrandMentionResponse,
     DeleteJobsResponse,
     LLMAnswerResponse,
@@ -20,8 +20,8 @@ from models.schemas import (
     TrackingJobCreate,
     TrackingJobResponse,
 )
-from services.translater import TranslaterService, format_entity_label
-from services.metrics_service import calculate_and_save_metrics
+from src.services.translater import TranslaterService, format_entity_label
+from src.services.metrics_service import calculate_and_save_metrics
 
 logger = logging.getLogger(__name__)
 
