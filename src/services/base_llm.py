@@ -6,11 +6,17 @@ from typing import Optional
 import httpx
 from sqlalchemy.orm import Session
 
+from config import settings
 from models import APIKey
 from models.domain import LLMProvider
 from services.encryption import EncryptionService
 
 logger = logging.getLogger(__name__)
+
+ENV_API_KEYS = {
+    LLMProvider.DEEPSEEK: lambda: settings.deepseek_api_key,
+    LLMProvider.KIMI: lambda: settings.kimi_api_key,
+}
 
 
 class BaseLLMService(ABC):
@@ -32,22 +38,25 @@ class BaseLLMService(ABC):
         if self._api_key:
             return self._api_key
 
-        if not self.db:
-            raise ValueError("Database session required when api_key not provided")
+        env_key_getter = ENV_API_KEYS.get(self.provider)
+        if env_key_getter:
+            env_key = env_key_getter()
+            if env_key:
+                return env_key
 
-        api_key_record = (
-            self.db.query(APIKey)
-            .filter(
-                APIKey.provider == self.provider.value,
-                APIKey.is_active == True,
+        if self.db:
+            api_key_record = (
+                self.db.query(APIKey)
+                .filter(
+                    APIKey.provider == self.provider.value,
+                    APIKey.is_active == True,
+                )
+                .first()
             )
-            .first()
-        )
+            if api_key_record:
+                return self._get_encryption_service().decrypt(api_key_record.encrypted_key)
 
-        if not api_key_record:
-            raise ValueError(f"No active {self.provider.value} API key found")
-
-        return self._get_encryption_service().decrypt(api_key_record.encrypted_key)
+        raise ValueError(f"No active {self.provider.value} API key found")
 
     def _build_headers(self, api_key: str) -> dict:
         return {

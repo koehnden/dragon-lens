@@ -140,10 +140,16 @@ def create_tracking_job(example_file: Path, provider: str, model_name: str) -> b
 
 
 def check_api_key_configured(provider: str) -> bool:
-    """Check if API key is configured for the provider."""
     if provider == "qwen":
-        return True  # Qwen uses Ollama locally, no API key needed
-    
+        return True
+
+    env_keys = {
+        "deepseek": settings.deepseek_api_key,
+        "kimi": settings.kimi_api_key,
+    }
+    if env_keys.get(provider):
+        return True
+
     try:
         response = requests.get(
             f"http://localhost:{settings.api_port}/api/v1/api-keys",
@@ -158,9 +164,8 @@ def check_api_key_configured(provider: str) -> bool:
 
 
 def parse_provider_and_model(provider_arg: str) -> tuple[str, str]:
-    """Parse provider argument into (provider, model_name)."""
     mapping = {
-        "qwen": ("qwen", "qwen2.5:7b"),
+        "qwen": ("qwen", "qwen2.5:7b-instruct-q4_0"),
         "deepseek-chat": ("deepseek", "deepseek-chat"),
         "deepseek-reasoner": ("deepseek", "deepseek-reasoner"),
         "kimi-8k": ("kimi", "moonshot-v1-8k"),
@@ -171,23 +176,31 @@ def parse_provider_and_model(provider_arg: str) -> tuple[str, str]:
 
 
 def prompt_for_api_key_if_needed(provider: str, api_key_arg: Optional[str]) -> Optional[str]:
-    """Prompt for API key if needed and not provided."""
     if provider == "qwen":
         return None
-    
+
     if api_key_arg:
         return api_key_arg
-    
+
+    env_keys = {
+        "deepseek": settings.deepseek_api_key,
+        "kimi": settings.kimi_api_key,
+    }
+    if env_keys.get(provider):
+        print(f"✓ API key for {provider} found in .env")
+        return None
+
     if check_api_key_configured(provider):
-        print(f"✓ API key for {provider} is already configured")
+        print(f"✓ API key for {provider} configured in database")
         return None
     
+    env_var_name = f"{provider.upper()}_API_KEY"
     print(f"⚠  No API key configured for {provider}")
-    print(f"   DeepSeek models require an API key to run.")
+    print(f"   Remote models require an API key to run.")
     print(f"   You can:")
     print(f"   1. Configure it via the UI: http://localhost:{settings.streamlit_port}")
     print(f"   2. Pass it with --api-key YOUR_KEY")
-    print(f"   3. Add it to your .env file: DEEPSEEK_API_KEY=your_key")
+    print(f"   3. Add it to your .env file: {env_var_name}=your_key")
     print()
     
     try:
