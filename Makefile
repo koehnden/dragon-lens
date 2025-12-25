@@ -479,8 +479,23 @@ example-deepseek-reasoner: ## Run example with DeepSeek Reasoner model
 	@echo ""
 	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner
 
-example-all: ## Run example with all three models (qwen, deepseek-chat, deepseek-reasoner)
-	@echo "$(YELLOW)Running example with all three models...$(NC)"
+example-kimi-8k: ## Run example with Kimi 8K model
+	@echo "$(YELLOW)Running example with Kimi 8K model...$(NC)"
+	@echo ""
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k
+
+example-kimi-32k: ## Run example with Kimi 32K model
+	@echo "$(YELLOW)Running example with Kimi 32K model...$(NC)"
+	@echo ""
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-32k
+
+example-kimi-128k: ## Run example with Kimi 128K model
+	@echo "$(YELLOW)Running example with Kimi 128K model...$(NC)"
+	@echo ""
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-128k
+
+example-all: ## Run example with all models (qwen, deepseek-chat, deepseek-reasoner, kimi-8k, kimi-32k, kimi-128k)
+	@echo "$(YELLOW)Running example with all models...$(NC)"
 	@echo ""
 	@echo "$(YELLOW)1. Running with Qwen...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=qwen
@@ -491,7 +506,16 @@ example-all: ## Run example with all three models (qwen, deepseek-chat, deepseek
 	@echo "$(YELLOW)3. Running with DeepSeek Reasoner...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner
 	@echo ""
-	@echo "$(GREEN)✓ All three models completed!$(NC)"
+	@echo "$(YELLOW)4. Running with Kimi 8K...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k
+	@echo ""
+	@echo "$(YELLOW)5. Running with Kimi 32K...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-32k
+	@echo ""
+	@echo "$(YELLOW)6. Running with Kimi 128K...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-128k
+	@echo ""
+	@echo "$(GREEN)✓ All 6 models completed!$(NC)"
 	@echo ""
 	@echo "$(YELLOW)View results:$(NC)"
 	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
