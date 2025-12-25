@@ -277,6 +277,37 @@ def _map_sentiment(sentiment_str: str) -> Sentiment:
     return Sentiment.NEUTRAL
 
 
+def _create_product_mentions(
+    db: Session,
+    llm_answer: LLMAnswer,
+    products: List[Product],
+    answer_zh: str,
+    translator: TranslaterService,
+) -> None:
+    for product in products:
+        snippet = _extract_product_snippet(answer_zh, product.display_name)
+        en_snippet = translator.translate_text_sync(snippet, "Chinese", "English") if snippet else ""
+
+        mention = ProductMention(
+            llm_answer_id=llm_answer.id,
+            product_id=product.id,
+            mentioned=True,
+            sentiment=Sentiment.NEUTRAL,
+            evidence_snippets={"zh": [snippet] if snippet else [], "en": [en_snippet] if en_snippet else []},
+        )
+        db.add(mention)
+    db.flush()
+
+
+def _extract_product_snippet(text: str, product_name: str, max_len: int = 100) -> str:
+    idx = text.lower().find(product_name.lower())
+    if idx == -1:
+        return ""
+    start = max(0, idx - 30)
+    end = min(len(text), idx + len(product_name) + 50)
+    return text[start:end]
+
+
 def _translate_snippets(snippets: List[str], translator) -> List[str]:
     en_snippets = []
     for snippet in snippets:
