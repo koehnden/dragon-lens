@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Tuple
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models import Brand, Product, Vertical
@@ -23,8 +24,12 @@ def discover_all_brands(
             vertical_description = vertical.description
 
     for user_brand in user_brands:
-        normalized_name = user_brand.display_name.lower().strip()
-        all_brands_map[normalized_name] = user_brand
+        canonical_name = _canonicalize_brand_name(user_brand.display_name)
+        normalized_key = canonical_name.lower().strip()
+        all_brands_map[normalized_key] = user_brand
+        original_key = user_brand.display_name.lower().strip()
+        if original_key != normalized_key:
+            all_brands_map[original_key] = user_brand
 
     extraction_result = extract_entities(
         text, "", {},
@@ -33,13 +38,18 @@ def discover_all_brands(
     )
 
     for brand_name in extraction_result.brands.keys():
-        normalized_name = brand_name.lower().strip()
+        canonical_name = _canonicalize_brand_name(brand_name)
+        normalized_key = canonical_name.lower().strip()
 
-        if normalized_name in all_brands_map:
+        if normalized_key in all_brands_map:
+            continue
+
+        original_key = brand_name.lower().strip()
+        if original_key in all_brands_map:
             continue
 
         brand = _get_or_create_discovered_brand(db, vertical_id, brand_name)
-        all_brands_map[normalized_name] = brand
+        all_brands_map[normalized_key] = brand
 
     return list(all_brands_map.values())
 
@@ -67,17 +77,26 @@ def discover_brands_and_products(
     all_brands_map: Dict[str, Brand] = {}
 
     for user_brand in user_brands:
-        normalized_name = user_brand.display_name.lower().strip()
-        all_brands_map[normalized_name] = user_brand
+        canonical_name = _canonicalize_brand_name(user_brand.display_name)
+        normalized_key = canonical_name.lower().strip()
+        all_brands_map[normalized_key] = user_brand
+        original_key = user_brand.display_name.lower().strip()
+        if original_key != normalized_key:
+            all_brands_map[original_key] = user_brand
 
     for brand_name in extraction_result.brands.keys():
-        normalized_name = brand_name.lower().strip()
+        canonical_name = _canonicalize_brand_name(brand_name)
+        normalized_key = canonical_name.lower().strip()
 
-        if normalized_name in all_brands_map:
+        if normalized_key in all_brands_map:
+            continue
+
+        original_key = brand_name.lower().strip()
+        if original_key in all_brands_map:
             continue
 
         brand = _get_or_create_discovered_brand(db, vertical_id, brand_name)
-        all_brands_map[normalized_name] = brand
+        all_brands_map[normalized_key] = brand
 
     return list(all_brands_map.values()), extraction_result
 
@@ -143,11 +162,14 @@ def _get_or_create_discovered_brand(
     vertical_id: int,
     brand_name: str,
 ) -> Brand:
+    normalized_name = brand_name.strip()
+    canonical_name = _canonicalize_brand_name(normalized_name)
+
     existing = (
         db.query(Brand)
         .filter(
             Brand.vertical_id == vertical_id,
-            Brand.display_name == brand_name,
+            func.lower(Brand.display_name) == canonical_name.lower(),
         )
         .first()
     )
@@ -155,10 +177,22 @@ def _get_or_create_discovered_brand(
     if existing:
         return existing
 
+    existing_by_original = (
+        db.query(Brand)
+        .filter(
+            Brand.vertical_id == vertical_id,
+            func.lower(Brand.display_name) == normalized_name.lower(),
+        )
+        .first()
+    )
+
+    if existing_by_original:
+        return existing_by_original
+
     brand = Brand(
         vertical_id=vertical_id,
-        display_name=brand_name,
-        original_name=brand_name,
+        display_name=canonical_name,
+        original_name=normalized_name,
         translated_name=None,
         aliases={"zh": [], "en": []},
         is_user_input=False,
@@ -167,3 +201,127 @@ def _get_or_create_discovered_brand(
     db.flush()
 
     return brand
+
+
+BRAND_ALIAS_MAP = {
+    "vw": "Volkswagen",
+    "volkswagen": "Volkswagen",
+    "大众": "Volkswagen",
+    "大眾": "Volkswagen",
+    "上汽大众": "Volkswagen",
+    "一汽大众": "Volkswagen",
+    "toyota": "Toyota",
+    "丰田": "Toyota",
+    "豐田": "Toyota",
+    "tesla": "Tesla",
+    "特斯拉": "Tesla",
+    "byd": "BYD",
+    "比亚迪": "BYD",
+    "比亞迪": "BYD",
+    "honda": "Honda",
+    "本田": "Honda",
+    "bmw": "BMW",
+    "宝马": "BMW",
+    "寶馬": "BMW",
+    "mercedes": "Mercedes-Benz",
+    "mercedes-benz": "Mercedes-Benz",
+    "奔驰": "Mercedes-Benz",
+    "賓士": "Mercedes-Benz",
+    "audi": "Audi",
+    "奥迪": "Audi",
+    "奧迪": "Audi",
+    "porsche": "Porsche",
+    "保时捷": "Porsche",
+    "保時捷": "Porsche",
+    "ford": "Ford",
+    "福特": "Ford",
+    "chevrolet": "Chevrolet",
+    "雪佛兰": "Chevrolet",
+    "nissan": "Nissan",
+    "日产": "Nissan",
+    "日產": "Nissan",
+    "hyundai": "Hyundai",
+    "现代": "Hyundai",
+    "現代": "Hyundai",
+    "kia": "Kia",
+    "起亚": "Kia",
+    "起亞": "Kia",
+    "lexus": "Lexus",
+    "雷克萨斯": "Lexus",
+    "volvo": "Volvo",
+    "沃尔沃": "Volvo",
+    "mazda": "Mazda",
+    "马自达": "Mazda",
+    "馬自達": "Mazda",
+    "subaru": "Subaru",
+    "斯巴鲁": "Subaru",
+    "geely": "Geely",
+    "吉利": "Geely",
+    "nio": "NIO",
+    "蔚来": "NIO",
+    "蔚來": "NIO",
+    "xpeng": "XPeng",
+    "小鹏": "XPeng",
+    "小鵬": "XPeng",
+    "li auto": "Li Auto",
+    "理想": "Li Auto",
+    "apple": "Apple",
+    "苹果": "Apple",
+    "蘋果": "Apple",
+    "samsung": "Samsung",
+    "三星": "Samsung",
+    "huawei": "Huawei",
+    "华为": "Huawei",
+    "華為": "Huawei",
+    "xiaomi": "Xiaomi",
+    "小米": "Xiaomi",
+    "oppo": "OPPO",
+    "vivo": "vivo",
+    "oneplus": "OnePlus",
+    "一加": "OnePlus",
+    "loreal": "L'Oréal",
+    "l'oreal": "L'Oréal",
+    "欧莱雅": "L'Oréal",
+    "歐萊雅": "L'Oréal",
+    "lancome": "Lancôme",
+    "兰蔻": "Lancôme",
+    "蘭蔻": "Lancôme",
+    "estee lauder": "Estée Lauder",
+    "雅诗兰黛": "Estée Lauder",
+    "shiseido": "Shiseido",
+    "资生堂": "Shiseido",
+    "dyson": "Dyson",
+    "戴森": "Dyson",
+    "irobot": "iRobot",
+    "ecovacs": "Ecovacs",
+    "科沃斯": "Ecovacs",
+    "roborock": "Roborock",
+    "石头": "Roborock",
+    "dreame": "Dreame",
+    "追觅": "Dreame",
+}
+
+
+def _canonicalize_brand_name(name: str) -> str:
+    name = name.strip()
+    if not name:
+        return name
+
+    name_lower = name.lower()
+    if name_lower in BRAND_ALIAS_MAP:
+        return BRAND_ALIAS_MAP[name_lower]
+
+    if name.isupper() and len(name) <= 4:
+        return name.upper()
+
+    if name.isascii() and name.islower():
+        return name.title()
+
+    return name
+
+
+def _get_canonical_lookup_name(name: str) -> str:
+    name_lower = name.lower().strip()
+    if name_lower in BRAND_ALIAS_MAP:
+        return BRAND_ALIAS_MAP[name_lower]
+    return name.strip()
