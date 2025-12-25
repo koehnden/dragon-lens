@@ -390,15 +390,15 @@ async def _extract_entities_with_qwen(
         
         # Step 2: Identify ambiguous entities (medium/low confidence)
         ambiguous_entities = []
-        entity_source = {}  # Track original classification
-        
+        entity_source = {}
+
         for brand, confidence in brand_confidences.items():
-            if confidence < 0.7:  # Medium/low confidence
+            if confidence < 0.8:
                 ambiguous_entities.append(brand)
                 entity_source[brand] = "brand"
-        
+
         for product, confidence in product_confidences.items():
-            if confidence < 0.7:  # Medium/low confidence
+            if confidence < 0.8:
                 ambiguous_entities.append(product)
                 entity_source[product] = "product"
         
@@ -748,12 +748,14 @@ def _add_all_entities_from_text(
     for candidate in candidates:
         name_lower = candidate.name.lower()
         if name_lower in text_lower:
-            if candidate.entity_type == "brand" or name_lower in KNOWN_BRANDS:
+            if candidate.entity_type == "brand" or name_lower in BRAND_HINTS:
                 brands.add(name_lower)
-            elif candidate.entity_type == "product" or name_lower in KNOWN_PRODUCTS:
+            elif candidate.entity_type == "product" or name_lower in PRODUCT_HINTS:
                 products.add(name_lower)
-            else:
+            elif _has_brand_patterns(candidate.name):
                 brands.add(name_lower)
+            elif _has_product_patterns(candidate.name):
+                products.add(name_lower)
 
 
 def _extract_first_brand_and_product_from_item(
@@ -781,9 +783,9 @@ def _extract_first_brand_and_product_from_item(
             candidate_brands.append((pos, -len(name), name))
         elif is_product:
             candidate_products.append((pos, -len(name), name))
-        elif _looks_like_product(name):
+        elif _looks_like_product(name) or _has_product_patterns(name):
             candidate_products.append((pos, -len(name), name))
-        else:
+        elif _has_brand_patterns(name):
             candidate_brands.append((pos, -len(name), name))
 
     if candidate_brands:
