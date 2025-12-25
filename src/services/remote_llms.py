@@ -3,9 +3,9 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from src.config import settings
-from src.models.domain import LLMProvider
-from src.services.base_llm import BaseLLMService
+from config import settings
+from models.domain import LLMProvider
+from services.base_llm import BaseLLMService
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ class LLMRouter:
         model = model_name.lower()
 
         if provider_enum == LLMProvider.QWEN:
-            from src.services.ollama import OllamaService
+            from services.ollama import OllamaService
             ollama = OllamaService()
             return await ollama.query_main_model(prompt_zh, model)
 

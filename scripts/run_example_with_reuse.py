@@ -157,6 +157,19 @@ def check_api_key_configured(provider: str) -> bool:
     return False
 
 
+def parse_provider_and_model(provider_arg: str) -> tuple[str, str]:
+    """Parse provider argument into (provider, model_name)."""
+    mapping = {
+        "qwen": ("qwen", "qwen2.5:7b"),
+        "deepseek-chat": ("deepseek", "deepseek-chat"),
+        "deepseek-reasoner": ("deepseek", "deepseek-reasoner"),
+        "kimi-8k": ("kimi", "moonshot-v1-8k"),
+        "kimi-32k": ("kimi", "moonshot-v1-32k"),
+        "kimi-128k": ("kimi", "moonshot-v1-128k"),
+    }
+    return mapping.get(provider_arg, (provider_arg, provider_arg))
+
+
 def prompt_for_api_key_if_needed(provider: str, api_key_arg: Optional[str]) -> Optional[str]:
     """Prompt for API key if needed and not provided."""
     if provider == "qwen":
@@ -207,7 +220,7 @@ def main() -> None:
     parser.add_argument(
         "--provider",
         default="qwen",
-        choices=["qwen", "deepseek-chat", "deepseek-reasoner"],
+        choices=["qwen", "deepseek-chat", "deepseek-reasoner", "kimi-8k", "kimi-32k", "kimi-128k"],
         help="LLM provider to use. Default: qwen"
     )
     parser.add_argument(
@@ -230,23 +243,26 @@ def main() -> None:
     
     with open(example_file, "r") as f:
         example_data = json.load(f)
-    
+
     vertical_name = example_data.get("vertical_name", "SUV Cars")
-    model_name = args.model_name or args.provider
-    
+
+    provider, model_name = parse_provider_and_model(args.provider)
+    if args.model_name:
+        model_name = args.model_name
+
     print("=" * 60)
     print("DragonLens Example Runner")
     print("=" * 60)
     print(f"Vertical: {vertical_name}")
-    print(f"Provider: {args.provider}")
+    print(f"Provider: {provider}")
     print(f"Model: {model_name}")
     print(f"Reuse prompt results: {args.reuse_prompt_results}")
     print()
-    
-    api_key = prompt_for_api_key_if_needed(args.provider, args.api_key)
-    
+
+    api_key = prompt_for_api_key_if_needed(provider, args.api_key)
+
     if api_key:
-        if not configure_api_key(args.provider, api_key):
+        if not configure_api_key(provider, api_key):
             print("⚠  Continuing without API key configuration...")
     
     vertical_id = check_existing_vertical(vertical_name)
@@ -270,7 +286,7 @@ def main() -> None:
                 print("⚠ Could not delete existing vertical, attempting to create new job anyway...")
     
     print("Creating new tracking job...")
-    if create_tracking_job(example_file, args.provider, model_name):
+    if create_tracking_job(example_file, provider, model_name):
         print("✅ Tracking job created successfully!")
         print()
         print("Next steps:")

@@ -1,4 +1,4 @@
-from src.models.domain import LLMProvider
+from models.domain import LLMProvider
 
 PRICING = {
     LLMProvider.QWEN: {},

@@ -1,8 +1,8 @@
 import httpx
 import streamlit as st
 
-from src.config import settings
-from src.models.domain import LLMProvider
+from config import settings
+from models.domain import LLMProvider
 
 
 def show():

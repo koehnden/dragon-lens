@@ -6,9 +6,9 @@ from typing import Optional
 import httpx
 from sqlalchemy.orm import Session
 
-from src.models import APIKey
-from src.models.domain import LLMProvider
-from src.services.encryption import EncryptionService
+from models import APIKey
+from models.domain import LLMProvider
+from services.encryption import EncryptionService
 
 logger = logging.getLogger(__name__)
 

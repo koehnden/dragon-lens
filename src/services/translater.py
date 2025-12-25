@@ -1,7 +1,9 @@
 import asyncio
 import re
+from typing import TYPE_CHECKING
 
-from services.ollama import OllamaService
+if TYPE_CHECKING:
+    from services.ollama import OllamaService
 
 
 def has_latin_letters(text: str) -> bool:
@@ -55,8 +57,11 @@ def format_entity_label(original: str, translated: str | None) -> str:
 
 
 class TranslaterService:
-    def __init__(self, ollama_service: OllamaService | None = None):
-        self.ollama = ollama_service or OllamaService()
+    def __init__(self, ollama_service: "OllamaService | None" = None):
+        if ollama_service is None:
+            from services.ollama import OllamaService
+            ollama_service = OllamaService()
+        self.ollama = ollama_service
 
     async def translate_entity(self, name: str) -> str:
         if has_latin_letters(name):
@@ -103,7 +108,7 @@ def _text_system_prompt(source_lang: str, target_lang: str) -> str:
 
 
 async def _translate_with_guardrails(
-    service: OllamaService,
+    service: "OllamaService",
     fallback: str,
     prompt: str,
     system_prompt: str,
