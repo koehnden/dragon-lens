@@ -23,6 +23,7 @@ from services.brand_recognition import extract_entities
 from services.product_discovery import discover_and_store_products
 from services.translater import TranslaterService
 from services.metrics_service import calculate_and_save_metrics
+from services.pricing import calculate_cost
 from services.remote_llms import LLMRouter
 from workers.celery_app import celery_app
 
@@ -99,7 +100,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                 answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English")
                 logger.info(f"Translated answer: {answer_en[:100]}...")
 
-            cost_estimate = _calculate_cost_estimate(provider, tokens_in, tokens_out)
+            cost_estimate = calculate_cost(provider, model_name, tokens_in, tokens_out)
             
             llm_answer = LLMAnswer(
                 run_id=run_id,
@@ -274,23 +275,6 @@ def _map_sentiment(sentiment_str: str) -> Sentiment:
     if sentiment_str == "negative":
         return Sentiment.NEGATIVE
     return Sentiment.NEUTRAL
-
-
-def _calculate_cost_estimate(provider: str, tokens_in: int, tokens_out: int) -> float:
-    if provider == "deepseek":
-        # DeepSeek pricing: $0.14 per 1M tokens input, $0.28 per 1M tokens output
-        cost_per_million_input = 0.14
-        cost_per_million_output = 0.28
-        cost = (tokens_in / 1_000_000) * cost_per_million_input + (tokens_out / 1_000_000) * cost_per_million_output
-        return round(cost, 6)
-    elif provider == "qwen":
-        # Local Qwen via Ollama is free
-        return 0.0
-    elif provider == "kimi":
-        # Kimi pricing would go here when implemented
-        return 0.0
-    else:
-        return 0.0
 
 
 def _translate_snippets(snippets: List[str], translator) -> List[str]:

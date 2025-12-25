@@ -1,9 +1,8 @@
-"""API Key Management UI."""
-
 import httpx
 import streamlit as st
 
-from config import settings
+from src.config import settings
+from src.models.domain import LLMProvider
 
 
 def show():
@@ -28,11 +27,13 @@ def show():
 
     st.header("Add New API Key")
 
+    remote_providers = [p.value for p in LLMProvider if p != LLMProvider.QWEN]
+
     col1, col2 = st.columns(2)
     with col1:
         provider = st.selectbox(
             "Provider",
-            ["deepseek", "kimi"],
+            remote_providers,
             help="Select the LLM provider",
         )
 
@@ -137,7 +138,7 @@ def show():
         - `deepseek-reasoner`: Enhanced reasoning capabilities
         """)
 
-    with st.expander("Kimi API"):
+    with st.expander("Kimi API (Moonshot AI)"):
         st.markdown("""
         **Getting an API Key:**
         1. Visit [Moonshot AI Platform](https://platform.moonshot.cn/)
@@ -145,7 +146,17 @@ def show():
         3. Navigate to API Keys section
         4. Create a new API key
         
-        **Note:** Kimi integration is planned for V2
+        **Pricing (per 1K tokens):**
+        - `moonshot-v1-8k`: $0.012 (input & output)
+        - `moonshot-v1-32k`: $0.024 (input & output)
+        - `moonshot-v1-128k`: $0.06 (input & output)
+        
+        **Models:**
+        - `moonshot-v1-8k`: Standard model with 8K context
+        - `moonshot-v1-32k`: Extended context model (32K)
+        - `moonshot-v1-128k`: Long context model (128K)
+        
+        **Note:** Kimi integration is now available in V1!
         """)
 
     st.markdown("---")

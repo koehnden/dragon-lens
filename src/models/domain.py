@@ -72,6 +72,12 @@ class PromptLanguage(str, enum.Enum):
     ZH = "zh"
 
 
+class LLMProvider(str, enum.Enum):
+    QWEN = "qwen"
+    DEEPSEEK = "deepseek"
+    KIMI = "kimi"
+
+
 class Prompt(Base):
     __tablename__ = "prompts"
     __table_args__ = {'extend_existing': True}

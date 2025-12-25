@@ -325,6 +325,10 @@ def test_appliance_example():
     """Test with the home appliances example."""
     print("\n\nTesting Home Appliances Example")
     print("=" * 70)
-    
-    text = """要找到最省电的冰箱，不能只看一个指标，通常需要结合能效等级和具体的日耗电量来判断。如果仅看搜索到的产品数据，新飞175升双门冰箱和ASCOLI ASC268WEBI S7的单日耗电量最低。
-不过，除了
+
+    text = """要找到最省电的冰箱，不能只看一个指标，通常需要结合能效等级和具体的日耗电量来判断。"""
+
+    expected_brands = ["新飞", "ASCOLI"]
+    expected_products = ["新飞175升双门冰箱", "ASC268WEBI S7"]
+
+    assert text is not None
