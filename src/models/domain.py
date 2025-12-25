@@ -10,6 +10,7 @@ from models.database import Base
 
 class Vertical(Base):
     __tablename__ = "verticals"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
@@ -25,6 +26,7 @@ class Vertical(Base):
 
 class Brand(Base):
     __tablename__ = "brands"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
@@ -37,7 +39,7 @@ class Brand(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    vertical: Mapped["Vertical"] = relationship("Vertical", back_populates="brands")
+    vertical: Mapped["Vertical"] = relationship(Vertical, back_populates="brands")
     mentions: Mapped[List["BrandMention"]] = relationship(
         "BrandMention", back_populates="brand", cascade="all, delete-orphan"
     )
@@ -45,6 +47,7 @@ class Brand(Base):
 
 class Product(Base):
     __tablename__ = "products"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
@@ -57,8 +60,8 @@ class Product(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    vertical: Mapped["Vertical"] = relationship("Vertical")
-    brand: Mapped[Optional["Brand"]] = relationship("Brand")
+    vertical: Mapped["Vertical"] = relationship(Vertical)
+    brand: Mapped[Optional["Brand"]] = relationship(Brand)
     mentions: Mapped[List["ProductMention"]] = relationship(
         "ProductMention", back_populates="product", cascade="all, delete-orphan"
     )
@@ -69,8 +72,15 @@ class PromptLanguage(str, enum.Enum):
     ZH = "zh"
 
 
+class LLMProvider(str, enum.Enum):
+    QWEN = "qwen"
+    DEEPSEEK = "deepseek"
+    KIMI = "kimi"
+
+
 class Prompt(Base):
     __tablename__ = "prompts"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
@@ -83,7 +93,7 @@ class Prompt(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    vertical: Mapped["Vertical"] = relationship("Vertical", back_populates="prompts")
+    vertical: Mapped["Vertical"] = relationship(Vertical, back_populates="prompts")
     answers: Mapped[List["LLMAnswer"]] = relationship("LLMAnswer", back_populates="prompt", cascade="all, delete-orphan")
 
 
@@ -96,36 +106,42 @@ class RunStatus(str, enum.Enum):
 
 class Run(Base):
     __tablename__ = "runs"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, default="qwen")
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[RunStatus] = mapped_column(Enum(RunStatus), nullable=False, default=RunStatus.PENDING)
     run_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    vertical: Mapped["Vertical"] = relationship("Vertical", back_populates="runs")
+    vertical: Mapped["Vertical"] = relationship(Vertical, back_populates="runs")
     answers: Mapped[List["LLMAnswer"]] = relationship("LLMAnswer", back_populates="run", cascade="all, delete-orphan")
 
 
 class LLMAnswer(Base):
     __tablename__ = "llm_answers"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
     prompt_id: Mapped[int] = mapped_column(ForeignKey("prompts.id"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, default="qwen")
+    model_name: Mapped[str] = mapped_column(String(255), nullable=False)
     raw_answer_zh: Mapped[str] = mapped_column(Text, nullable=False)
     raw_answer_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tokens_in: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     tokens_out: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    latency: Mapped[Optional[float]] = mapped_column(Float, nullable=True, comment="Response latency in seconds")
     cost_estimate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    run: Mapped["Run"] = relationship("Run", back_populates="answers")
-    prompt: Mapped["Prompt"] = relationship("Prompt", back_populates="answers")
+    run: Mapped["Run"] = relationship(Run, back_populates="answers")
+    prompt: Mapped["Prompt"] = relationship(Prompt, back_populates="answers")
     mentions: Mapped[List["BrandMention"]] = relationship(
         "BrandMention", back_populates="llm_answer", cascade="all, delete-orphan"
     )
@@ -142,6 +158,7 @@ class Sentiment(str, enum.Enum):
 
 class BrandMention(Base):
     __tablename__ = "brand_mentions"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     llm_answer_id: Mapped[int] = mapped_column(ForeignKey("llm_answers.id"), nullable=False)
@@ -154,12 +171,13 @@ class BrandMention(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    llm_answer: Mapped["LLMAnswer"] = relationship("LLMAnswer", back_populates="mentions")
-    brand: Mapped["Brand"] = relationship("Brand", back_populates="mentions")
+    llm_answer: Mapped["LLMAnswer"] = relationship(LLMAnswer, back_populates="mentions")
+    brand: Mapped["Brand"] = relationship(Brand, back_populates="mentions")
 
 
 class ProductMention(Base):
     __tablename__ = "product_mentions"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     llm_answer_id: Mapped[int] = mapped_column(ForeignKey("llm_answers.id"), nullable=False)
@@ -172,16 +190,18 @@ class ProductMention(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    llm_answer: Mapped["LLMAnswer"] = relationship("LLMAnswer", back_populates="product_mentions")
-    product: Mapped["Product"] = relationship("Product", back_populates="mentions")
+    llm_answer: Mapped["LLMAnswer"] = relationship(LLMAnswer, back_populates="product_mentions")
+    product: Mapped["Product"] = relationship(Product, back_populates="mentions")
 
 
 class DailyMetrics(Base):
     __tablename__ = "daily_metrics"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, default="qwen")
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
     prompt_id: Mapped[int] = mapped_column(ForeignKey("prompts.id"), nullable=False)
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
@@ -197,6 +217,7 @@ class DailyMetrics(Base):
 
 class RunMetrics(Base):
     __tablename__ = "run_metrics"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
@@ -209,3 +230,20 @@ class RunMetrics(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class APIKey(Base):
+    __tablename__ = "api_keys"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    encrypted_key: Mapped[str] = mapped_column(Text, nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=True)

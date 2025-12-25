@@ -1,9 +1,11 @@
 from models.database import Base, get_db, init_db
 from models.domain import (
+    APIKey,
     Brand,
     BrandMention,
     DailyMetrics,
     LLMAnswer,
+    LLMProvider,
     Product,
     ProductMention,
     Prompt,
@@ -16,6 +18,7 @@ from models.domain import (
 )
 
 __all__ = [
+    "APIKey",
     "Base",
     "get_db",
     "init_db",
@@ -23,6 +26,7 @@ __all__ = [
     "Brand",
     "Prompt",
     "PromptLanguage",
+    "LLMProvider",
     "Run",
     "RunStatus",
     "LLMAnswer",

@@ -1,91 +1,85 @@
 import logging
 from typing import Optional
 
-import httpx
+from sqlalchemy.orm import Session
 
 from config import settings
+from models.domain import LLMProvider
+from services.base_llm import BaseLLMService
 
 logger = logging.getLogger(__name__)
 
 
-class DeepSeekService:
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or settings.deepseek_api_key
+class DeepSeekService(BaseLLMService):
+    provider = LLMProvider.DEEPSEEK
+    default_model = "deepseek-chat"
+
+    def __init__(self, db: Optional[Session] = None, api_key: Optional[str] = None):
+        super().__init__(db, api_key)
         self.api_base = settings.deepseek_api_base
 
-    async def query(self, prompt_zh: str) -> tuple[str, int, int]:
-        if not self.api_key:
-            raise ValueError("DeepSeek API key is not configured")
-
-        url = f"{self.api_base}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        payload = {
-            "model": "deepseek-chat",
-            "messages": [
-                {"role": "user", "content": prompt_zh}
-            ],
+    def _build_payload(self, messages: list[dict], model_name: str) -> dict:
+        return {
+            "model": model_name,
+            "messages": messages,
             "temperature": 0.7,
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            try:
-                response = await client.post(url, json=payload, headers=headers)
-                response.raise_for_status()
-                result = response.json()
 
-                answer = result["choices"][0]["message"]["content"]
-                usage = result.get("usage", {})
-                tokens_in = usage.get("prompt_tokens", 0)
-                tokens_out = usage.get("completion_tokens", 0)
+class KimiService(BaseLLMService):
+    provider = LLMProvider.KIMI
+    default_model = "moonshot-v1-8k"
 
-                return answer, tokens_in, tokens_out
-
-            except httpx.HTTPError as e:
-                logger.error(f"DeepSeek API error: {e}")
-                raise
-
-
-class KimiService:
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or settings.kimi_api_key
+    def __init__(self, db: Optional[Session] = None, api_key: Optional[str] = None):
+        super().__init__(db, api_key)
         self.api_base = settings.kimi_api_base
 
-    async def query(
-        self,
-        prompt_zh: str,
-        enable_web_search: bool = False,
-    ) -> tuple[str, int, int]:
-        if not self.api_key:
-            raise ValueError("Kimi API key is not configured")
+    def _build_messages(self, prompt_zh: str) -> list[dict]:
+        return [
+            {"role": "system", "content": "你是一个中文助手，请用中文回答所有问题。"},
+            {"role": "user", "content": prompt_zh},
+        ]
 
-        raise NotImplementedError("Kimi integration not yet implemented")
+    def _build_payload(self, messages: list[dict], model_name: str) -> dict:
+        return {
+            "model": model_name,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 2000,
+        }
 
 
 class LLMRouter:
-    def __init__(self):
-        from services.ollama import OllamaService
+    def __init__(self, db: Optional[Session] = None):
+        self.db = db
+        self._services: dict[LLMProvider, BaseLLMService] = {}
 
-        self.ollama = OllamaService()
-        self.deepseek = DeepSeekService()
-        self.kimi = KimiService()
+    def _get_service(self, provider: LLMProvider) -> BaseLLMService:
+        if provider not in self._services:
+            self._services[provider] = self._create_service(provider)
+        return self._services[provider]
+
+    def _create_service(self, provider: LLMProvider) -> BaseLLMService:
+        if provider == LLMProvider.DEEPSEEK:
+            return DeepSeekService(self.db)
+        if provider == LLMProvider.KIMI:
+            return KimiService(self.db)
+        raise ValueError(f"No remote service for provider: {provider}")
 
     async def query(
         self,
+        provider: str,
         model_name: str,
         prompt_zh: str,
         enable_web_search: bool = False,
-    ) -> tuple[str, int, int]:
-        model_name = model_name.lower()
+    ) -> tuple[str, int, int, float]:
+        provider_enum = LLMProvider(provider.lower())
+        model = model_name.lower()
 
-        if model_name == "qwen":
-            return await self.ollama.query_main_model(prompt_zh)
-        elif model_name == "deepseek":
-            return await self.deepseek.query(prompt_zh)
-        elif model_name == "kimi":
-            return await self.kimi.query(prompt_zh, enable_web_search=enable_web_search)
-        else:
-            raise ValueError(f"Unsupported model: {model_name}")
+        if provider_enum == LLMProvider.QWEN:
+            from services.ollama import OllamaService
+            ollama = OllamaService()
+            return await ollama.query_main_model(prompt_zh, model)
+
+        service = self._get_service(provider_enum)
+        return await service.query(prompt_zh, model)
