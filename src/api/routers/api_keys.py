@@ -176,6 +176,24 @@ async def update_api_key(
         api_key.key_hash = key_hash
 
     if api_key_update.is_active is not None:
+        if api_key_update.is_active:
+            existing_active_key = (
+                db.query(APIKey)
+                .filter(
+                    APIKey.provider == api_key.provider,
+                    APIKey.is_active == True,
+                    APIKey.id != api_key.id,
+                )
+                .first()
+            )
+            if existing_active_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"An active API key already exists for provider "
+                        f"'{api_key.provider}'. Please deactivate it first."
+                    ),
+                )
         api_key.is_active = api_key_update.is_active
 
     db.commit()
