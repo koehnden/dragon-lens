@@ -80,6 +80,17 @@ class ExtractedEntities:
     product_confidence: float = 0.0
 
 
+@dataclass
+class ExtractionResult:
+    brands: Dict[str, List[str]]
+    products: Dict[str, List[str]]
+
+    def all_entities(self) -> Dict[str, List[str]]:
+        combined = dict(self.brands)
+        combined.update(self.products)
+        return combined
+
+
 def is_likely_brand(name: str) -> bool:
     name_lower = name.lower().strip()
     if name_lower in KNOWN_BRANDS:
@@ -281,7 +292,7 @@ def extract_entities(
     aliases: Dict[str, List[str]],
     vertical: str = "",
     vertical_description: str = "",
-) -> Dict[str, List[str]]:
+) -> ExtractionResult:
     if ENABLE_QWEN_EXTRACTION:
         return _run_async(_extract_entities_with_qwen(text, vertical, vertical_description))
 
@@ -307,14 +318,15 @@ def extract_entities(
     else:
         final_clusters = _simple_clustering(embedding_clusters, primary_brand, aliases)
 
-    return final_clusters
+    brands, products = _split_clusters_by_type(final_clusters, filtered_candidates)
+    return ExtractionResult(brands=brands, products=products)
 
 
 async def _extract_entities_with_qwen(
     text: str,
     vertical: str = "",
     vertical_description: str = ""
-) -> Dict[str, List[str]]:
+) -> ExtractionResult:
     import json
     from services.ollama import OllamaService
 
@@ -428,16 +440,21 @@ async def _extract_entities_with_qwen(
 
         filtered = _filter_by_list_position(candidates, text)
 
-        clusters: Dict[str, List[str]] = {}
-        for c in filtered:
-            clusters[c.name] = [c.name]
+        brand_clusters: Dict[str, List[str]] = {}
+        product_clusters: Dict[str, List[str]] = {}
 
-        logger.info(f"Qwen extraction: {len(brands)} brands, {len(products)} products -> {len(corrected_brands)} corrected brands, {len(corrected_products)} corrected products -> {len(filtered)} after list filter")
-        return clusters
+        for c in filtered:
+            if c.entity_type == "brand":
+                brand_clusters[c.name] = [c.name]
+            elif c.entity_type == "product":
+                product_clusters[c.name] = [c.name]
+
+        logger.info(f"Qwen extraction: {len(brands)} brands, {len(products)} products -> {len(corrected_brands)} corrected brands, {len(corrected_products)} corrected products -> {len(brand_clusters)} brands, {len(product_clusters)} products after list filter")
+        return ExtractionResult(brands=brand_clusters, products=product_clusters)
 
     except Exception as e:
         logger.error(f"Qwen extraction failed: {e}")
-        return {}
+        return ExtractionResult(brands={}, products={})
 
 
 def _build_extraction_system_prompt(vertical: str, vertical_description: str) -> str:
@@ -2079,6 +2096,28 @@ def _load_optional_model(module_name: str, attr: str):
         return None
     module_obj = importlib.import_module(module_name)
     return getattr(module_obj, attr, None)
+
+
+def _split_clusters_by_type(
+    clusters: Dict[str, List[str]],
+    candidates: List[EntityCandidate]
+) -> Tuple[Dict[str, List[str]], Dict[str, List[str]]]:
+    candidate_types = {c.name.lower(): c.entity_type for c in candidates}
+
+    brands: Dict[str, List[str]] = {}
+    products: Dict[str, List[str]] = {}
+
+    for name, surface_forms in clusters.items():
+        entity_type = candidate_types.get(name.lower(), "unknown")
+
+        if entity_type == "product" or is_likely_product(name):
+            products[name] = surface_forms
+        elif entity_type == "brand" or is_likely_brand(name):
+            brands[name] = surface_forms
+        else:
+            brands[name] = surface_forms
+
+    return brands, products
 
 
 def canonicalize_entities(candidates: List[EntityCandidate], primary_brand: str, aliases: Dict[str, List[str]], alias_table: Dict[str, str] | None = None, text: str = "") -> Dict[str, List[str]]:
