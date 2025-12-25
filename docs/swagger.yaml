@@ -545,6 +545,213 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/api-keys:
+    post:
+      tags:
+      - api-keys
+      summary: Create API Key
+      description: "Store an API key for a specific provider.\n\nThe API key will be encrypted before storage.\nOnly one active API key per provider is allowed."
+      operationId: create_api_key_api_v1_api_keys_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/APIKeyCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIKeyResponse'
+        '400':
+          description: Bad Request - Active key already exists for provider
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - api-keys
+      summary: List API Keys
+      description: "List API keys with optional filters."
+      operationId: list_api_keys_api_v1_api_keys_get
+      parameters:
+      - name: provider
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider
+        description: Filter by provider (qwen, deepseek, kimi)
+      - name: active_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
+          title: Active Only
+        description: Only return active keys
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/APIKeyResponse'
+                title: Response List Api Keys Api V1 Api Keys Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/api-keys/{key_id}:
+    get:
+      tags:
+      - api-keys
+      summary: Get API Key
+      description: "Get details of a specific API key."
+      operationId: get_api_key_api_v1_api_keys__key_id__get
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Key Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIKeyResponse'
+        '404':
+          description: API key not found
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - api-keys
+      summary: Update API Key
+      description: "Update an API key.\n\nCan update the API key value or toggle active status."
+      operationId: update_api_key_api_v1_api_keys__key_id__put
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Key Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/APIKeyUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIKeyResponse'
+        '404':
+          description: API key not found
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - api-keys
+      summary: Delete API Key
+      description: "Delete an API key."
+      operationId: delete_api_key_api_v1_api_keys__key_id__delete
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Key Id
+      responses:
+        '204':
+          description: API key deleted successfully
+        '404':
+          description: API key not found
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/api-keys/{key_id}/decrypt:
+    get:
+      tags:
+      - api-keys
+      summary: Decrypt API Key
+      description: "Decrypt and return an API key (admin only).\n\nRequires authentication."
+      operationId: decrypt_api_key_api_v1_api_keys__key_id__decrypt_get
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Key Id
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    title: Id
+                  provider:
+                    type: string
+                    title: Provider
+                  api_key:
+                    type: string
+                    title: Api Key
+                  is_active:
+                    type: boolean
+                    title: Is Active
+                required:
+                - id
+                - provider
+                - api_key
+                - is_active
+                title: DecryptedAPIKey
+        '401':
+          description: Unauthorized
+        '404':
+          description: API key not found
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /:
     get:
       summary: Root
@@ -567,6 +774,66 @@ paths:
               schema: {}
 components:
   schemas:
+    APIKeyCreate:
+      properties:
+        provider:
+          type: string
+          enum: [qwen, deepseek, kimi]
+          title: Provider
+          description: LLM provider
+        api_key:
+          type: string
+          minLength: 1
+          title: Api Key
+          description: API key value (will be encrypted)
+      type: object
+      required:
+      - provider
+      - api_key
+      title: APIKeyCreate
+    APIKeyResponse:
+      properties:
+        id:
+          type: integer
+          title: Id
+        provider:
+          type: string
+          title: Provider
+        is_active:
+          type: boolean
+          title: Is Active
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - provider
+      - is_active
+      - created_at
+      - updated_at
+      title: APIKeyResponse
+    APIKeyUpdate:
+      properties:
+        api_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key
+          description: New API key value (optional)
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Active
+          description: Active status (optional)
+      type: object
+      title: APIKeyUpdate
     BrandCreate:
       properties:
         display_name:
@@ -754,6 +1021,9 @@ components:
         vertical_id:
           type: integer
           title: Vertical Id
+        provider:
+          type: string
+          title: Provider
         model_name:
           type: string
           title: Model Name
@@ -779,6 +1049,7 @@ components:
       required:
       - id
       - vertical_id
+      - provider
       - model_name
       - status
       - run_time
@@ -806,11 +1077,16 @@ components:
             $ref: '#/components/schemas/PromptCreate'
           type: array
           title: Prompts
+        provider:
+          type: string
+          title: Provider
+          description: LLM provider (qwen, deepseek, kimi)
+          default: qwen
         model_name:
           type: string
           title: Model Name
-          description: Model to use (qwen, deepseek, kimi)
-          default: qwen
+          description: Specific model name (e.g., deepseek-chat, deepseek-reasoner)
+          default: qwen2.5:7b-instruct-q4_0
       type: object
       required:
       - vertical_name
@@ -825,6 +1101,9 @@ components:
         vertical_id:
           type: integer
           title: Vertical Id
+        provider:
+          type: string
+          title: Provider
         model_name:
           type: string
           title: Model Name
@@ -838,6 +1117,7 @@ components:
       required:
       - run_id
       - vertical_id
+      - provider
       - model_name
       - status
       - message
@@ -943,3 +1223,33 @@ components:
       - deleted_runs_count
       - message
       title: DeleteVerticalResponse
+    ErrorResponse:
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              title: Code
+            message:
+              type: string
+              title: Message
+            details:
+              anyOf:
+              - type: object
+              - type: 'null'
+              title: Details
+          required:
+          - code
+          - message
+          title: Error
+      type: object
+      required:
+      - error
+      title: ErrorResponse
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Bearer token for admin authentication

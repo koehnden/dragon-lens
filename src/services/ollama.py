@@ -1,11 +1,12 @@
 import logging
+import time
 from typing import Optional
 
 import httpx
 
-from config import settings
-from services.sentiment_analysis import get_sentiment_service
-from services.brand_recognition import (
+from src.config import settings
+from src.services.sentiment_analysis import get_sentiment_service
+from src.services.brand_recognition import (
     is_list_format,
     split_into_list_items,
     extract_snippet_with_list_awareness,
@@ -96,17 +97,21 @@ class OllamaService:
         else:
             return "neutral"
 
-    async def query_main_model(self, prompt_zh: str) -> tuple[str, int, int]:
+    async def query_main_model(self, prompt_zh: str, model_name: Optional[str] = None) -> tuple[str, int, int, float]:
+        model_to_use = model_name or self.main_model
+        start_time = time.time()
+        
         response = await self._call_ollama(
-            model=self.main_model,
+            model=model_to_use,
             prompt=prompt_zh,
             temperature=0.7,
         )
-
+        
+        latency = time.time() - start_time
         tokens_in = len(prompt_zh) // 2
         tokens_out = len(response) // 2
 
-        return response, tokens_in, tokens_out
+        return response, tokens_in, tokens_out, latency
 
     async def extract_brands(
         self,
