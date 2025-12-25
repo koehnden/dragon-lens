@@ -1,9 +1,9 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from models import Brand, Vertical
-from services.brand_recognition import extract_entities
+from models import Brand, Product, Vertical
+from services.brand_recognition import extract_entities, ExtractionResult
 
 
 def discover_all_brands(
@@ -26,25 +26,60 @@ def discover_all_brands(
         normalized_name = user_brand.display_name.lower().strip()
         all_brands_map[normalized_name] = user_brand
 
-    discovered_entities = extract_entities(
+    extraction_result = extract_entities(
         text, "", {},
         vertical=vertical_name or "",
         vertical_description=vertical_description or "",
     )
 
-    for canonical_name, surface_forms in discovered_entities.items():
-        normalized_name = canonical_name.lower().strip()
+    for brand_name in extraction_result.brands.keys():
+        normalized_name = brand_name.lower().strip()
 
         if normalized_name in all_brands_map:
             continue
 
-        if _is_brand_like(canonical_name, surface_forms):
-            brand = _get_or_create_discovered_brand(
-                db, vertical_id, canonical_name
-            )
-            all_brands_map[normalized_name] = brand
+        brand = _get_or_create_discovered_brand(db, vertical_id, brand_name)
+        all_brands_map[normalized_name] = brand
 
     return list(all_brands_map.values())
+
+
+def discover_brands_and_products(
+    text: str,
+    vertical_id: int,
+    user_brands: List[Brand],
+    db: Session,
+    vertical_name: Optional[str] = None,
+    vertical_description: Optional[str] = None,
+) -> Tuple[List[Brand], ExtractionResult]:
+    if not vertical_name:
+        vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+        if vertical:
+            vertical_name = vertical.name
+            vertical_description = vertical.description
+
+    extraction_result = extract_entities(
+        text, "", {},
+        vertical=vertical_name or "",
+        vertical_description=vertical_description or "",
+    )
+
+    all_brands_map: Dict[str, Brand] = {}
+
+    for user_brand in user_brands:
+        normalized_name = user_brand.display_name.lower().strip()
+        all_brands_map[normalized_name] = user_brand
+
+    for brand_name in extraction_result.brands.keys():
+        normalized_name = brand_name.lower().strip()
+
+        if normalized_name in all_brands_map:
+            continue
+
+        brand = _get_or_create_discovered_brand(db, vertical_id, brand_name)
+        all_brands_map[normalized_name] = brand
+
+    return list(all_brands_map.values()), extraction_result
 
 
 def _is_brand_like(canonical_name: str, surface_forms: List[str]) -> bool:

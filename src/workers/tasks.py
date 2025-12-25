@@ -214,9 +214,9 @@ def extract_brand_mentions(answer_text: str, brands: List[dict]) -> List[dict]:
         return []
     primary = brands[0]
     aliases = primary.get("aliases") or {"zh": [], "en": []}
-    canonical = extract_entities(answer_text, primary.get("display_name", ""), aliases)
+    result = extract_entities(answer_text, primary.get("display_name", ""), aliases)
     mentions = []
-    for name, surfaces in canonical.items():
+    for name, surfaces in result.brands.items():
         mentions.append({"canonical": name, "mentions": surfaces})
     return mentions
 
@@ -243,9 +243,9 @@ def _detect_mentions(answer_text: str, brands: List[Brand]) -> dict[int, List[st
     if not brands:
         return {}
     primary = brands[0]
-    canonical = extract_entities(answer_text, primary.display_name, primary.aliases)
+    result = extract_entities(answer_text, primary.display_name, primary.aliases)
     mention_map: dict[int, List[str]] = {}
-    for canonical_name, surfaces in canonical.items():
+    for canonical_name, surfaces in result.brands.items():
         brand = _ensure_brand(primary.vertical_id, canonical_name, primary.aliases)
         mention_map[brand.id] = surfaces
     return mention_map
