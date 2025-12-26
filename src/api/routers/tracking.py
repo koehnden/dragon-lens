@@ -71,6 +71,8 @@ async def create_tracking_job(
     Returns:
         Tracking job response with run ID
     """
+    from sqlalchemy import func as sqla_func
+
     translator = TranslaterService()
     vertical = db.query(Vertical).filter(Vertical.name == job.vertical_name).first()
     if not vertical:
@@ -82,6 +84,17 @@ async def create_tracking_job(
         db.flush()
 
     for brand_data in job.brands:
+        existing_brand = (
+            db.query(Brand)
+            .filter(
+                Brand.vertical_id == vertical.id,
+                sqla_func.lower(Brand.display_name) == brand_data.display_name.lower(),
+            )
+            .first()
+        )
+        if existing_brand:
+            continue
+
         translated_name = await translator.translate_entity(brand_data.display_name)
         brand = Brand(
             vertical_id=vertical.id,
@@ -92,22 +105,27 @@ async def create_tracking_job(
         )
         db.add(brand)
 
+    run = Run(
+        vertical_id=vertical.id,
+        provider=job.provider,
+        model_name=job.model_name,
+        status=RunStatus.PENDING,
+        reuse_answers=job.reuse_answers,
+        web_search_enabled=job.web_search_enabled,
+    )
+    db.add(run)
+    db.flush()
+
     for prompt_data in job.prompts:
         prompt = Prompt(
             vertical_id=vertical.id,
+            run_id=run.id,
             text_en=prompt_data.text_en,
             text_zh=prompt_data.text_zh,
             language_original=PromptLanguage(prompt_data.language_original),
         )
         db.add(prompt)
 
-    run = Run(
-        vertical_id=vertical.id,
-        provider=job.provider,
-        model_name=job.model_name,
-        status=RunStatus.PENDING,
-    )
-    db.add(run)
     db.commit()
     db.refresh(run)
 

@@ -111,15 +111,21 @@ def configure_api_key(provider: str, api_key: str) -> bool:
         return False
 
 
-def create_tracking_job(example_file: Path, provider: str, model_name: str) -> bool:
+def create_tracking_job(
+    example_file: Path,
+    provider: str,
+    model_name: str,
+    reuse_answers: bool = False,
+) -> bool:
     """Create a new tracking job."""
     try:
         with open(example_file, "r") as f:
             example_data = json.load(f)
-        
+
         example_data["provider"] = provider
         example_data["model_name"] = model_name
-        
+        example_data["reuse_answers"] = reuse_answers
+
         response = requests.post(
             f"http://localhost:{settings.api_port}/api/v1/tracking/jobs",
             json=example_data,
@@ -246,10 +252,26 @@ def main() -> None:
         default=None,
         help="API key for DeepSeek models (if not already configured)"
     )
-    
+    parser.add_argument(
+        "--example-file",
+        default=None,
+        help="Path to example JSON file. Default: examples/suv_example.json"
+    )
+    parser.add_argument(
+        "--reuse-answers",
+        action="store_true",
+        default=False,
+        help="Reuse answers from previous runs with same prompt/model. Default: False"
+    )
+
     args = parser.parse_args()
-    
-    example_file = Path(__file__).parent.parent / "examples" / "suv_example.json"
+
+    if args.example_file:
+        example_file = Path(args.example_file)
+        if not example_file.is_absolute():
+            example_file = Path(__file__).parent.parent / args.example_file
+    else:
+        example_file = Path(__file__).parent.parent / "examples" / "suv_example.json"
     if not example_file.exists():
         logger.error(f"Example file not found: {example_file}")
         sys.exit(1)
@@ -299,7 +321,7 @@ def main() -> None:
                 print("⚠ Could not delete existing vertical, attempting to create new job anyway...")
     
     print("Creating new tracking job...")
-    if create_tracking_job(example_file, provider, model_name):
+    if create_tracking_job(example_file, provider, model_name, args.reuse_answers):
         print("✅ Tracking job created successfully!")
         print()
         print("Next steps:")
