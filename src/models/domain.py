@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models.database import Base
@@ -84,6 +84,7 @@ class Prompt(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    run_id: Mapped[Optional[int]] = mapped_column(ForeignKey("runs.id"), nullable=True)
     text_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     text_zh: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     language_original: Mapped[PromptLanguage] = mapped_column(
@@ -94,6 +95,7 @@ class Prompt(Base):
     )
 
     vertical: Mapped["Vertical"] = relationship(Vertical, back_populates="prompts")
+    run: Mapped[Optional["Run"]] = relationship("Run", back_populates="prompts", foreign_keys=[run_id])
     answers: Mapped[List["LLMAnswer"]] = relationship("LLMAnswer", back_populates="prompt", cascade="all, delete-orphan")
 
 
@@ -113,11 +115,14 @@ class Run(Base):
     provider: Mapped[str] = mapped_column(String(50), nullable=False, default="qwen")
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[RunStatus] = mapped_column(Enum(RunStatus), nullable=False, default=RunStatus.PENDING)
+    reuse_answers: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    web_search_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     run_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     vertical: Mapped["Vertical"] = relationship(Vertical, back_populates="runs")
+    prompts: Mapped[List["Prompt"]] = relationship("Prompt", back_populates="run", foreign_keys="[Prompt.run_id]")
     answers: Mapped[List["LLMAnswer"]] = relationship("LLMAnswer", back_populates="run", cascade="all, delete-orphan")
 
 

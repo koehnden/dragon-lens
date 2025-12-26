@@ -18,6 +18,7 @@ from models import (
 )
 from models.database import SessionLocal
 from models.domain import PromptLanguage, RunStatus, Sentiment
+from services.answer_reuse import find_reusable_answer
 from services.brand_discovery import discover_all_brands
 from services.brand_recognition import extract_entities
 from services.product_discovery import discover_and_store_products
@@ -61,9 +62,9 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
         if not vertical:
             raise ValueError(f"Vertical {vertical_id} not found")
 
-        prompts = self.db.query(Prompt).filter(Prompt.vertical_id == vertical_id).all()
+        prompts = self.db.query(Prompt).filter(Prompt.run_id == run_id).all()
         if not prompts:
-            raise ValueError(f"No prompts found for vertical {vertical_id}")
+            raise ValueError(f"No prompts found for run {run_id}")
 
         brands = self.db.query(Brand).filter(Brand.vertical_id == vertical_id).all()
         if not brands:
@@ -88,19 +89,29 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                 logger.warning(f"Prompt {prompt.id} has no text, skipping")
                 continue
 
-            logger.info(f"Querying {provider}/{model_name} with prompt: {prompt_text_zh[:100]}...")
-            answer_zh, tokens_in, tokens_out, latency = asyncio.run(
-                llm_router.query(provider, model_name, prompt_text_zh)
-            )
-            logger.info(f"Received answer: {answer_zh[:100]}...")
+            reusable = find_reusable_answer(self.db, run, prompt_text_zh)
+            if reusable:
+                logger.info(f"Reusing answer from previous run for prompt {prompt.id}")
+                answer_zh = reusable.raw_answer_zh
+                answer_en = reusable.raw_answer_en
+                tokens_in = reusable.tokens_in
+                tokens_out = reusable.tokens_out
+                latency = reusable.latency
+                cost_estimate = reusable.cost_estimate
+            else:
+                logger.info(f"Querying {provider}/{model_name} with prompt: {prompt_text_zh[:100]}...")
+                answer_zh, tokens_in, tokens_out, latency = asyncio.run(
+                    llm_router.query(provider, model_name, prompt_text_zh)
+                )
+                logger.info(f"Received answer: {answer_zh[:100]}...")
 
-            answer_en = None
-            if answer_zh:
-                logger.info("Translating answer to English...")
-                answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English")
-                logger.info(f"Translated answer: {answer_en[:100]}...")
+                answer_en = None
+                if answer_zh:
+                    logger.info("Translating answer to English...")
+                    answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English")
+                    logger.info(f"Translated answer: {answer_en[:100]}...")
 
-            cost_estimate = calculate_cost(provider, model_name, tokens_in, tokens_out)
+                cost_estimate = calculate_cost(provider, model_name, tokens_in, tokens_out)
             
             llm_answer = LLMAnswer(
                 run_id=run_id,
