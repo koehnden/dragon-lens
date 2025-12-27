@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     deepseek_api_base: str = "https://api.deepseek.com/v1"
 
     kimi_api_key: Optional[str] = None
-    kimi_api_base: str = "https://api.moonshot.cn/v1"
+    kimi_api_base: str = "https://api.moonshot.ai/v1"
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model_translation: str = "qwen2.5:7b-instruct-q4_0"
