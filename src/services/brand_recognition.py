@@ -463,12 +463,21 @@ async def _extract_entities_with_qwen(
         corrected_brands = list(dict.fromkeys(corrected_brands))
         corrected_products = list(dict.fromkeys(corrected_products))
 
+        validated_brands, validated_products = await _run_negative_validation(
+            ollama,
+            corrected_brands,
+            corrected_products,
+            text,
+            vertical,
+            vertical_description,
+        )
+
         candidates = [
             EntityCandidate(name=b, source="qwen", entity_type="brand")
-            for b in corrected_brands
+            for b in validated_brands
         ] + [
             EntityCandidate(name=p, source="qwen", entity_type="product")
-            for p in corrected_products
+            for p in validated_products
         ]
 
         filtered = _filter_by_list_position(candidates, text)
@@ -610,6 +619,340 @@ def _parse_extraction_response(response: str) -> Dict[str, List[str]]:
         "products": parsed.get("products", []),
         "relationships": {},
     }
+
+
+def _build_brand_validation_system_prompt(vertical: str, vertical_description: str) -> str:
+    vertical_context = f"Industry: {vertical}" if vertical else "General market"
+    if vertical_description:
+        vertical_context += f" ({vertical_description})"
+
+    return f"""You are a strict quality control expert validating BRAND extractions for the {vertical_context} industry.
+
+YOUR ROLE: Act as a skeptical reviewer. Your job is to REJECT entities that are NOT genuine brands. When in doubt, REJECT.
+
+TASK: For each candidate, determine if it is a genuine BRAND (company/manufacturer) - ACCEPT or REJECT.
+
+---
+
+WHAT IS A BRAND (ACCEPT):
+A brand is a COMPANY or MANUFACTURER name - an organization that creates and sells products.
+- Examples: Toyota, Apple, Nike, 比亚迪, Samsung, L'Oreal, Huawei, BMW, 华为, Adidas
+- Must be a proper noun representing a business entity
+- The company behind products, not the products themselves
+
+---
+
+CRITICAL: REJECT PRODUCTS - This is the most common error!
+Products are NOT brands. Products are specific items MADE BY brands.
+- RAV4, Camry, Corolla → These are Toyota PRODUCTS, not brands. REJECT.
+- iPhone, MacBook, iPad → These are Apple PRODUCTS, not brands. REJECT.
+- Model Y, Model 3 → These are Tesla PRODUCTS, not brands. REJECT.
+- 宋PLUS, 汉EV, 秦Pro → These are BYD PRODUCTS, not brands. REJECT.
+- Galaxy S24, Note → These are Samsung PRODUCTS, not brands. REJECT.
+- Air Jordan, Air Max → These are Nike PRODUCTS, not brands. REJECT.
+
+How to identify products vs brands:
+- Products often have: model numbers (X5, S24), version suffixes (Pro, Plus, Max, EV, DM-i), or are specific item names
+- Brands are company names that appear BEFORE products (e.g., "Toyota RAV4" → Toyota=brand, RAV4=product)
+
+---
+
+ALSO REJECT these non-brand categories:
+
+1. GENERIC TERMS: Category names
+   - SUV, sedan, smartphone, laptop, 汽车, 手机, 护肤品, electric vehicle
+
+2. FEATURES/SPECIFICATIONS: Technical attributes
+   - CarPlay, GPS, AWD, hybrid, 续航, 马力, OLED, 5G
+
+3. QUALITY DESCRIPTORS: Evaluative terms
+   - premium, best, 高端, 性价比高, 舒适, 安全, luxury
+
+4. INDUSTRY JARGON: Technical terms
+   - 新能源, 纯电动, all-wheel drive, turbocharged
+
+5. PARTIAL/INCOMPLETE: Fragments
+   - "在选择", "与奥迪", "Top1", "最好的"
+
+6. MODIFIERS ALONE: Suffixes without product name
+   - Pro, Max, Plus, Ultra, Mini, EV, DM-i (standalone)
+
+7. ACTIONS/VERBS: Action words
+   - 推荐, 选择, 购买, 比较
+
+---
+
+VALIDATION RULES:
+1. Be CONSERVATIVE: If not 95% certain it's a company name, REJECT
+2. ASK YOURSELF: "Is this a company that makes products, or is this a product itself?"
+3. CONTEXT CHECK: Does it make sense as a manufacturer in {vertical_context}?
+
+---
+
+OUTPUT FORMAT (JSON only):
+{{
+  "validations": [
+    {{"entity": "Toyota", "decision": "ACCEPT", "reason": "Japanese automotive manufacturer"}},
+    {{"entity": "RAV4", "decision": "REJECT", "reason": "Product model by Toyota, not a brand"}},
+    {{"entity": "性价比", "decision": "REJECT", "reason": "Quality descriptor, not a company name"}}
+  ]
+}}"""
+
+
+def _build_product_validation_system_prompt(vertical: str, vertical_description: str) -> str:
+    vertical_context = f"Industry: {vertical}" if vertical else "General market"
+    if vertical_description:
+        vertical_context += f" ({vertical_description})"
+
+    return f"""You are a strict quality control expert validating PRODUCT extractions for the {vertical_context} industry.
+
+YOUR ROLE: Act as a skeptical reviewer. Your job is to REJECT entities that are NOT genuine products. When in doubt, REJECT.
+
+TASK: For each candidate, determine if it is a genuine PRODUCT (specific model/item) - ACCEPT or REJECT.
+
+---
+
+WHAT IS A PRODUCT (ACCEPT):
+A product is a SPECIFIC MODEL or ITEM made by a brand/company.
+- Examples: iPhone 15, Model Y, 宋PLUS, Galaxy S24, RAV4, Air Jordan 1, MacBook Pro
+- Usually has: model numbers, version identifiers, or distinctive product line names
+- Something you can buy as a specific item
+
+---
+
+CRITICAL: REJECT BRANDS - This is a common error!
+Brands are COMPANIES, not products. Don't confuse the manufacturer with what they make.
+- Toyota, Honda, BMW → These are COMPANIES that make cars. REJECT.
+- Apple, Samsung, Huawei → These are COMPANIES that make phones. REJECT.
+- Nike, Adidas → These are COMPANIES that make shoes. REJECT.
+- 比亚迪, 蔚来, 理想 → These are COMPANIES that make EVs. REJECT.
+
+How to identify brands vs products:
+- Brands are company/manufacturer names
+- Products are specific items WITH distinguishing identifiers (numbers, suffixes, model names)
+- "Tesla Model Y" → Tesla=brand (REJECT), Model Y=product (ACCEPT)
+
+---
+
+ALSO REJECT these non-product categories:
+
+1. GENERIC TERMS: Category names, not specific products
+   - SUV, sedan, smartphone, 汽车, 手机 (these are categories, not specific products)
+
+2. FEATURES/SPECIFICATIONS: Technical attributes
+   - CarPlay, GPS, AWD, OLED, 5G, 续航, 马力
+
+3. QUALITY DESCRIPTORS: Evaluative terms
+   - premium, best, 高端, 性价比高, luxury, 舒适
+
+4. INDUSTRY JARGON: Technical terms
+   - 新能源, 纯电动, all-wheel drive, turbocharged
+
+5. PARTIAL/INCOMPLETE: Fragments
+   - "在选择", "与奥迪", "Top1", incomplete names
+
+6. MODIFIERS ALONE: Suffixes without the base product
+   - Pro, Max, Plus, Ultra, Mini, EV (must be attached to a product name)
+
+---
+
+VALIDATION RULES:
+1. Be CONSERVATIVE: If not 95% certain it's a specific product, REJECT
+2. ASK YOURSELF: "Can I buy this specific item? Does it have a model number or distinctive name?"
+3. CONTEXT CHECK: Does it make sense as a purchasable product in {vertical_context}?
+
+---
+
+OUTPUT FORMAT (JSON only):
+{{
+  "validations": [
+    {{"entity": "Model Y", "decision": "ACCEPT", "reason": "Specific Tesla electric vehicle model"}},
+    {{"entity": "Tesla", "decision": "REJECT", "reason": "Company/brand name, not a product"}},
+    {{"entity": "SUV", "decision": "REJECT", "reason": "Generic vehicle category, not a specific product"}}
+  ]
+}}"""
+
+
+def _build_brand_validation_prompt(brands: List[str], text_snippet: str, vertical: str) -> str:
+    import json
+    entities_json = json.dumps(brands, ensure_ascii=False)
+
+    return f"""Validate these extracted BRAND candidates from {vertical or 'general'} industry text.
+
+SOURCE TEXT (for context):
+\"\"\"{text_snippet}\"\"\"
+
+BRAND CANDIDATES TO VALIDATE:
+{entities_json}
+
+For EACH candidate, decide: ACCEPT (genuine company/manufacturer) or REJECT (product, generic term, or other).
+
+Remember: Products like "RAV4", "iPhone", "Model Y" are NOT brands - they are products made BY brands.
+
+Be STRICT. When uncertain, REJECT.
+
+Output JSON with "validations" array:"""
+
+
+def _build_product_validation_prompt(products: List[str], text_snippet: str, vertical: str) -> str:
+    import json
+    entities_json = json.dumps(products, ensure_ascii=False)
+
+    return f"""Validate these extracted PRODUCT candidates from {vertical or 'general'} industry text.
+
+SOURCE TEXT (for context):
+\"\"\"{text_snippet}\"\"\"
+
+PRODUCT CANDIDATES TO VALIDATE:
+{entities_json}
+
+For EACH candidate, decide: ACCEPT (genuine specific product/model) or REJECT (brand, generic term, or other).
+
+Remember: Company names like "Toyota", "Apple", "Nike" are NOT products - they are brands that MAKE products.
+
+Be STRICT. When uncertain, REJECT.
+
+Output JSON with "validations" array:"""
+
+
+async def _validate_brands(
+    ollama,
+    brands: List[str],
+    text: str,
+    vertical: str,
+    vertical_description: str,
+) -> List[str]:
+    if not brands:
+        return []
+
+    system_prompt = _build_brand_validation_system_prompt(vertical, vertical_description)
+    text_snippet = text[:1500] if len(text) > 1500 else text
+    prompt = _build_brand_validation_prompt(brands, text_snippet, vertical)
+
+    try:
+        response = await ollama._call_ollama(
+            model=ollama.ner_model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.0,
+        )
+
+        validated = _parse_single_type_validation_response(response, brands)
+
+        rejected = set(brands) - set(validated)
+        if rejected:
+            logger.info(f"Brand validation rejected: {list(rejected)}")
+
+        return validated
+
+    except Exception as e:
+        logger.warning(f"Brand validation failed, keeping all: {e}")
+        return brands
+
+
+async def _validate_products(
+    ollama,
+    products: List[str],
+    text: str,
+    vertical: str,
+    vertical_description: str,
+) -> List[str]:
+    if not products:
+        return []
+
+    system_prompt = _build_product_validation_system_prompt(vertical, vertical_description)
+    text_snippet = text[:1500] if len(text) > 1500 else text
+    prompt = _build_product_validation_prompt(products, text_snippet, vertical)
+
+    try:
+        response = await ollama._call_ollama(
+            model=ollama.ner_model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.0,
+        )
+
+        validated = _parse_single_type_validation_response(response, products)
+
+        rejected = set(products) - set(validated)
+        if rejected:
+            logger.info(f"Product validation rejected: {list(rejected)}")
+
+        return validated
+
+    except Exception as e:
+        logger.warning(f"Product validation failed, keeping all: {e}")
+        return products
+
+
+async def _run_negative_validation(
+    ollama,
+    brands: List[str],
+    products: List[str],
+    text: str,
+    vertical: str,
+    vertical_description: str,
+) -> Tuple[List[str], List[str]]:
+    if not brands and not products:
+        return [], []
+
+    validated_brands = await _validate_brands(
+        ollama, brands, text, vertical, vertical_description
+    )
+    validated_products = await _validate_products(
+        ollama, products, text, vertical, vertical_description
+    )
+
+    return validated_brands, validated_products
+
+
+def _parse_single_type_validation_response(response: str, original_entities: List[str]) -> List[str]:
+    import json
+
+    response = response.strip()
+    if response.startswith("```json"):
+        response = response[7:]
+    if response.startswith("```"):
+        response = response[3:]
+    if response.endswith("```"):
+        response = response[:-3]
+    response = response.strip()
+
+    parsed = None
+    try:
+        parsed = json.loads(response)
+    except json.JSONDecodeError:
+        json_match = re.search(r'\{[\s\S]*\}', response)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+    if not parsed or "validations" not in parsed:
+        logger.warning("Could not parse validation response, keeping all entities")
+        return original_entities
+
+    validated = []
+    entity_decisions = {}
+
+    for item in parsed.get("validations", []):
+        if not isinstance(item, dict):
+            continue
+
+        entity = item.get("entity", "")
+        decision = item.get("decision", "").upper()
+
+        entity_decisions[entity] = decision
+
+        if decision == "ACCEPT":
+            validated.append(entity)
+
+    for entity in original_entities:
+        if entity not in entity_decisions:
+            validated.append(entity)
+
+    return validated
 
 
 def _parse_entities_format(parsed: Dict) -> Dict[str, List[str]]:
