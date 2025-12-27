@@ -1,0 +1,19 @@
+{
+  "vertical_name": "SUV Cars Mini",
+  "vertical_description": "Family SUV market in China - Mini smoke test",
+  "brands": [
+    {
+      "display_name": "VW",
+      "aliases": {
+        "zh": ["大众汽车", "一汽-大众", "上汽大众"],
+        "en": ["VW", "Volkswagen"]
+      }
+    }
+  ],
+  "prompts": [
+    {
+      "text_zh": "在中国市场，家庭用SUV首选有哪些？请给出TOP10，并说明每款的理由。",
+      "language_original": "zh"
+    }
+  ]
+}

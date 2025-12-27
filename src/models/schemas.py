@@ -63,6 +63,8 @@ class TrackingJobCreate(BaseModel):
     prompts: List[PromptCreate]
     provider: str = Field(default="qwen", description="LLM provider (qwen, deepseek, kimi)")
     model_name: str = Field(default="qwen2.5:7b-instruct-q4_0", description="Specific model name (e.g., deepseek-chat, deepseek-reasoner)")
+    reuse_answers: bool = Field(default=False, description="Whether to reuse answers from previous runs")
+    web_search_enabled: bool = Field(default=False, description="Whether web search is enabled for this run")
 
 
 class TrackingJobResponse(BaseModel):
