@@ -1,4 +1,4 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean clear example
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean clear example example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi
 
 # Default target
 .DEFAULT_GOAL := help
@@ -520,6 +520,58 @@ example-all: ## Run example with all models (qwen, deepseek-chat, deepseek-reaso
 	@echo "$(YELLOW)View results:$(NC)"
 	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
 	@echo "  http://localhost:$(STREAMLIT_PORT)"
+
+example-all-mini: ## Smoke test: Run mini example (1 prompt) with 3 models (qwen, deepseek-chat, kimi-8k)
+	@echo "$(YELLOW)Running mini example smoke test (1 prompt, 3 models)...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)This is a quick smoke test to verify the pipeline works correctly.$(NC)"
+	@echo "$(YELLOW)Each model should process exactly 1 prompt.$(NC)"
+	@echo ""
+	@echo "$(YELLOW)1/3 Running with Qwen...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/suv_example_mini.json
+	@echo ""
+	@echo "$(YELLOW)2/3 Running with DeepSeek Chat...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/suv_example_mini.json
+	@echo ""
+	@echo "$(YELLOW)3/3 Running with Kimi 8K...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/suv_example_mini.json
+	@echo ""
+	@echo "$(GREEN)✓ Mini smoke test completed (3 models, 1 prompt each)!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Verify results:$(NC)"
+	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
+	@echo ""
+	@echo "$(YELLOW)Expected: Each run should have processed exactly 1 prompt$(NC)"
+
+example-all-mini-qwen: ## Smoke test: Run mini example with Qwen only
+	@echo "$(YELLOW)Running mini example with Qwen (1 prompt)...$(NC)"
+	@echo ""
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/suv_example_mini.json
+	@echo ""
+	@echo "$(GREEN)✓ Qwen mini test completed!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Verify results:$(NC)"
+	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
+
+example-all-mini-deepseek: ## Smoke test: Run mini example with DeepSeek Chat only
+	@echo "$(YELLOW)Running mini example with DeepSeek Chat (1 prompt)...$(NC)"
+	@echo ""
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/suv_example_mini.json
+	@echo ""
+	@echo "$(GREEN)✓ DeepSeek Chat mini test completed!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Verify results:$(NC)"
+	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
+
+example-all-mini-kimi: ## Smoke test: Run mini example with Kimi 8K only
+	@echo "$(YELLOW)Running mini example with Kimi 8K (1 prompt)...$(NC)"
+	@echo ""
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/suv_example_mini.json
+	@echo ""
+	@echo "$(GREEN)✓ Kimi 8K mini test completed!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Verify results:$(NC)"
+	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
 
 dev: ## Start services in development mode (with auto-reload)
 	@echo "$(YELLOW)Starting development environment...$(NC)"

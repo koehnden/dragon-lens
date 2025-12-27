@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 ENABLE_QWEN_FILTERING = os.getenv("ENABLE_QWEN_FILTERING", "true").lower() == "true"
 ENABLE_QWEN_EXTRACTION = os.getenv("ENABLE_QWEN_EXTRACTION", "true").lower() == "true"
 
-KNOWN_BRANDS = {
+BRAND_HINTS = {
     "honda", "本田", "toyota", "丰田", "byd", "比亚迪", "volkswagen", "vw", "大众",
     "bmw", "宝马", "mercedes", "mercedes-benz", "奔驰", "audi", "奥迪",
     "tesla", "特斯拉", "ford", "福特", "chevrolet", "雪佛兰", "nissan", "日产",
@@ -30,7 +30,7 @@ KNOWN_BRANDS = {
     "under armour", "dyson", "戴森", "shark", "roomba", "irobot",
 }
 
-KNOWN_PRODUCTS = {
+PRODUCT_HINTS = {
     "crv", "cr-v", "rav4", "rav-4", "model y", "model 3", "model s", "model x",
     "宋plus", "宋pro", "宋", "汉ev", "汉dm", "汉", "唐dm", "唐", "秦plus", "秦", "元plus", "元", "海豚", "海鸥",
     "id.4", "id.6", "tiguan", "途观", "途观l", "passat", "帕萨特", "golf", "高尔夫", "polo", "tuareg", "tuareq", "途锐",
@@ -47,8 +47,11 @@ KNOWN_PRODUCTS = {
     "mi 14", "redmi", "find x", "reno",
     "air max", "ultraboost", "v15", "navigator", "crosswave", "i7", "ascent",
     "rx", "glc", "gle", "gls", "sealion",
-    "h6", "bj80",  # Added problematic examples that were misclassified
+    "h6", "bj80",
 }
+
+KNOWN_BRANDS = BRAND_HINTS
+KNOWN_PRODUCTS = PRODUCT_HINTS
 
 GENERIC_TERMS = {
     "suv", "sedan", "coupe", "hatchback", "mpv", "pickup", "truck", "van",
@@ -80,43 +83,88 @@ class ExtractedEntities:
     product_confidence: float = 0.0
 
 
+@dataclass
+class ExtractionResult:
+    brands: Dict[str, List[str]]
+    products: Dict[str, List[str]]
+
+    def all_entities(self) -> Dict[str, List[str]]:
+        combined = dict(self.brands)
+        combined.update(self.products)
+        return combined
+
+
 def is_likely_brand(name: str) -> bool:
     name_lower = name.lower().strip()
-    if name_lower in KNOWN_BRANDS:
-        return True
+
     if name_lower in GENERIC_TERMS:
         return False
-    if name_lower in KNOWN_PRODUCTS:
+
+    if _has_product_model_patterns(name):
         return False
-    if len(name) <= 2 and name.isalpha() and name.isupper():
-        return False
+
+    if name_lower in BRAND_HINTS:
+        return True
+
     if re.match(r"^[A-Z][a-z]+$", name) and len(name) >= 4:
         return True
+
     if re.search(r"[\u4e00-\u9fff]{2,4}$", name) and not re.search(r"\d", name):
-        if not any(suffix in name for suffix in ["PLUS", "Plus", "Pro", "EV", "DM"]):
+        if not _has_product_suffix(name):
             return True
+
+    if re.match(r"^[A-Z]{2,5}$", name) and name not in {"EV", "DM", "AI", "VR", "AR"}:
+        return True
+
     return False
 
 
 def is_likely_product(name: str) -> bool:
     name_lower = name.lower().strip()
-    if name_lower in KNOWN_PRODUCTS:
-        return True
+
     if name_lower in GENERIC_TERMS:
         return False
-    if name_lower in KNOWN_BRANDS:
-        return False
-    if re.search(r"[A-Za-z]+\d+", name) or re.search(r"\d+[A-Za-z]+", name):
+
+    if _has_product_model_patterns(name):
         return True
-    if re.search(r"(PLUS|Plus|Pro|Max|Ultra|Mini|EV|DM|DM-i|DM-p)", name):
+
+    if name_lower in PRODUCT_HINTS:
+        return True
+
+    if _has_product_suffix(name):
+        return True
+
+    return False
+
+
+def _has_product_model_patterns(name: str) -> bool:
+    if re.search(r"[A-Za-z]+\d+", name) or re.search(r"\d+[A-Za-z]+", name):
         return True
     if re.match(r"^[A-Z]\d+$", name):
         return True
-    if re.match(r"^Model\s+[A-Z0-9]", name):
+    if re.match(r"^Model\s+[A-Z0-9]", name, re.IGNORECASE):
         return True
     if re.match(r"^ID\.\d+", name):
         return True
+    if re.match(r"^[A-Z]{1,3}-?[A-Z]?\d+", name):
+        return True
     return False
+
+
+def _has_product_suffix(name: str) -> bool:
+    product_suffixes = [
+        "PLUS", "Plus", "plus",
+        "Pro", "PRO", "pro",
+        "Max", "MAX", "max",
+        "Ultra", "ULTRA", "ultra",
+        "Mini", "MINI", "mini",
+        "EV", "ev",
+        "DM", "DM-i", "DM-p", "dm", "dm-i", "dm-p",
+        "GT", "gt",
+        "SE", "se",
+        "XL", "xl",
+    ]
+    return any(name.endswith(suffix) or f" {suffix}" in name for suffix in product_suffixes)
 
 
 def classify_entity_type(name: str, vertical: str = "") -> str:
@@ -281,7 +329,7 @@ def extract_entities(
     aliases: Dict[str, List[str]],
     vertical: str = "",
     vertical_description: str = "",
-) -> Dict[str, List[str]]:
+) -> ExtractionResult:
     if ENABLE_QWEN_EXTRACTION:
         return _run_async(_extract_entities_with_qwen(text, vertical, vertical_description))
 
@@ -307,14 +355,15 @@ def extract_entities(
     else:
         final_clusters = _simple_clustering(embedding_clusters, primary_brand, aliases)
 
-    return final_clusters
+    brands, products = _split_clusters_by_type(final_clusters, filtered_candidates)
+    return ExtractionResult(brands=brands, products=products)
 
 
 async def _extract_entities_with_qwen(
     text: str,
     vertical: str = "",
     vertical_description: str = ""
-) -> Dict[str, List[str]]:
+) -> ExtractionResult:
     import json
     from services.ollama import OllamaService
 
@@ -341,15 +390,15 @@ async def _extract_entities_with_qwen(
         
         # Step 2: Identify ambiguous entities (medium/low confidence)
         ambiguous_entities = []
-        entity_source = {}  # Track original classification
-        
+        entity_source = {}
+
         for brand, confidence in brand_confidences.items():
-            if confidence < 0.7:  # Medium/low confidence
+            if confidence < 0.8:
                 ambiguous_entities.append(brand)
                 entity_source[brand] = "brand"
-        
+
         for product, confidence in product_confidences.items():
-            if confidence < 0.7:  # Medium/low confidence
+            if confidence < 0.8:
                 ambiguous_entities.append(product)
                 entity_source[product] = "product"
         
@@ -428,16 +477,21 @@ async def _extract_entities_with_qwen(
 
         filtered = _filter_by_list_position(candidates, text)
 
-        clusters: Dict[str, List[str]] = {}
-        for c in filtered:
-            clusters[c.name] = [c.name]
+        brand_clusters: Dict[str, List[str]] = {}
+        product_clusters: Dict[str, List[str]] = {}
 
-        logger.info(f"Qwen extraction: {len(brands)} brands, {len(products)} products -> {len(corrected_brands)} corrected brands, {len(corrected_products)} corrected products -> {len(filtered)} after list filter")
-        return clusters
+        for c in filtered:
+            if c.entity_type == "brand":
+                brand_clusters[c.name] = [c.name]
+            elif c.entity_type == "product":
+                product_clusters[c.name] = [c.name]
+
+        logger.info(f"Qwen extraction: {len(brands)} brands, {len(products)} products -> {len(corrected_brands)} corrected brands, {len(corrected_products)} corrected products -> {len(brand_clusters)} brands, {len(product_clusters)} products after list filter")
+        return ExtractionResult(brands=brand_clusters, products=product_clusters)
 
     except Exception as e:
         logger.error(f"Qwen extraction failed: {e}")
-        return {}
+        return ExtractionResult(brands={}, products={})
 
 
 def _build_extraction_system_prompt(vertical: str, vertical_description: str) -> str:
@@ -694,12 +748,14 @@ def _add_all_entities_from_text(
     for candidate in candidates:
         name_lower = candidate.name.lower()
         if name_lower in text_lower:
-            if candidate.entity_type == "brand" or name_lower in KNOWN_BRANDS:
+            if candidate.entity_type == "brand" or name_lower in BRAND_HINTS:
                 brands.add(name_lower)
-            elif candidate.entity_type == "product" or name_lower in KNOWN_PRODUCTS:
+            elif candidate.entity_type == "product" or name_lower in PRODUCT_HINTS:
                 products.add(name_lower)
-            else:
+            elif _has_brand_patterns(candidate.name):
                 brands.add(name_lower)
+            elif _has_product_patterns(candidate.name):
+                products.add(name_lower)
 
 
 def _extract_first_brand_and_product_from_item(
@@ -727,9 +783,9 @@ def _extract_first_brand_and_product_from_item(
             candidate_brands.append((pos, -len(name), name))
         elif is_product:
             candidate_products.append((pos, -len(name), name))
-        elif _looks_like_product(name):
+        elif _looks_like_product(name) or _has_product_patterns(name):
             candidate_products.append((pos, -len(name), name))
-        else:
+        elif _has_brand_patterns(name):
             candidate_brands.append((pos, -len(name), name))
 
     if candidate_brands:
@@ -1086,53 +1142,73 @@ def _parse_product_verification_response(response: str, candidates: List[str]) -
 
 
 def _calculate_confidence_scores(entities: List[str], vertical: str, is_brand: bool) -> Dict[str, float]:
-    """Calculate confidence scores for entities (0.0 to 1.0)."""
     scores = {}
-    
+
     for entity in entities:
         entity_lower = entity.lower()
-        confidence = 0.5  # Default medium confidence
-        
-        # Check for clear patterns
+        confidence = 0.5
+
         if is_brand:
-            # Brand confidence factors
-            if entity_lower in KNOWN_BRANDS:
-                confidence = 0.9
-            elif is_likely_brand(entity):
-                confidence = 0.8
-            elif re.search(r"[\u4e00-\u9fff]{2,4}$", entity) and not re.search(r"\d", entity):
-                confidence = 0.7  # Chinese brand-like names
-            elif re.match(r"^[A-Z][a-z]+$", entity) and len(entity) >= 4:
-                confidence = 0.7  # Proper noun brands
-            elif entity_lower in GENERIC_TERMS:
-                confidence = 0.2  # Generic terms are unlikely to be brands
-            elif entity_lower in KNOWN_PRODUCTS:
-                confidence = 0.3  # Known products misclassified as brands
+            confidence = _calculate_brand_confidence(entity, entity_lower, vertical)
         else:
-            # Product confidence factors
-            if entity_lower in KNOWN_PRODUCTS:
-                confidence = 0.9
-            elif is_likely_product(entity):
-                confidence = 0.8
-            elif re.search(r"[A-Za-z]+\d+", entity) or re.search(r"\d+[A-Za-z]+", entity):
-                confidence = 0.7  # Alphanumeric patterns
-            elif re.search(r"(PLUS|Plus|Pro|Max|Ultra|Mini|EV|DM|DM-i|DM-p)", entity):
-                confidence = 0.6  # Product suffixes
-            elif entity_lower in GENERIC_TERMS:
-                confidence = 0.2  # Generic terms are unlikely to be products
-            elif entity_lower in KNOWN_BRANDS:
-                confidence = 0.3  # Known brands misclassified as products
-        
-        # Adjust for vertical context
-        vertical_lower = vertical.lower()
-        if "car" in vertical_lower or "suv" in vertical_lower or "auto" in vertical_lower:
-            # Automotive vertical: alphanumeric codes are likely products
-            if not is_brand and (re.search(r"[A-Za-z]+\d+", entity) or re.match(r"^[A-Z]\d+$", entity)):
-                confidence = min(confidence + 0.1, 0.9)
-        
-        scores[entity] = max(0.1, min(0.95, confidence))  # Clamp between 0.1 and 0.95
-    
+            confidence = _calculate_product_confidence(entity, entity_lower, vertical)
+
+        scores[entity] = max(0.1, min(0.95, confidence))
+
     return scores
+
+
+def _calculate_brand_confidence(entity: str, entity_lower: str, vertical: str) -> float:
+    if entity_lower in GENERIC_TERMS:
+        return 0.2
+
+    if _has_product_model_patterns(entity):
+        return 0.3
+
+    if _has_product_suffix(entity):
+        return 0.35
+
+    if entity_lower in BRAND_HINTS:
+        return 0.9
+
+    if is_likely_brand(entity):
+        return 0.8
+
+    if re.search(r"[\u4e00-\u9fff]{2,4}$", entity) and not re.search(r"\d", entity):
+        return 0.7
+
+    if re.match(r"^[A-Z][a-z]+$", entity) and len(entity) >= 4:
+        return 0.7
+
+    if re.match(r"^[A-Z]{2,5}$", entity):
+        return 0.65
+
+    return 0.5
+
+
+def _calculate_product_confidence(entity: str, entity_lower: str, vertical: str) -> float:
+    if entity_lower in GENERIC_TERMS:
+        return 0.2
+
+    if _has_product_model_patterns(entity):
+        return 0.85
+
+    if _has_product_suffix(entity):
+        return 0.8
+
+    if entity_lower in PRODUCT_HINTS:
+        return 0.9
+
+    if is_likely_product(entity):
+        return 0.8
+
+    if re.search(r"[\u4e00-\u9fff]{2,4}$", entity) and not re.search(r"\d", entity):
+        return 0.4
+
+    if re.match(r"^[A-Z][a-z]+$", entity) and len(entity) >= 4:
+        return 0.4
+
+    return 0.5
 
 
 async def _verify_ambiguous_entities_with_qwen(
@@ -1159,47 +1235,42 @@ async def _verify_ambiguous_entities_with_qwen(
 
 
 def _has_product_patterns(name: str) -> bool:
-    """Check if name has patterns typical of products."""
+    if _has_product_model_patterns(name):
+        return True
+
+    if _has_product_suffix(name):
+        return True
+
     name_lower = name.lower()
-    
-    # Quick checks
-    if name_lower in KNOWN_PRODUCTS:
+    if name_lower in PRODUCT_HINTS:
         return True
-    
-    # Pattern checks
-    if re.search(r"[A-Za-z]+\d+", name) or re.search(r"\d+[A-Za-z]+", name):
-        return True
-    if re.search(r"(PLUS|Plus|Pro|Max|Ultra|Mini|EV|DM|DM-i|DM-p)", name):
-        return True
-    if re.match(r"^[A-Z]\d+$", name):
-        return True
-    if re.match(r"^Model\s+[A-Z0-9]", name):
-        return True
-    if re.match(r"^ID\.\d+", name):
-        return True
-    
+
     return False
 
 
 def _has_brand_patterns(name: str) -> bool:
-    """Check if name has patterns typical of brands."""
+    if _has_product_model_patterns(name):
+        return False
+
+    if _has_product_suffix(name):
+        return False
+
     name_lower = name.lower()
-    
-    # Quick checks
-    if name_lower in KNOWN_BRANDS:
+    if name_lower in BRAND_HINTS:
         return True
-    
-    # Pattern checks
+
     if re.match(r"^[A-Z][a-z]+$", name) and len(name) >= 4:
         return True
+
     if re.search(r"[\u4e00-\u9fff]{2,4}$", name) and not re.search(r"\d", name):
-        if not any(suffix in name for suffix in ["PLUS", "Plus", "Pro", "EV", "DM"]):
-            return True
-    
-    # Company-like patterns
-    if re.search(r"(Inc|Corp|Co|Ltd|LLC|GmbH|AG)$", name, re.IGNORECASE):
         return True
-    
+
+    if re.match(r"^[A-Z]{2,5}$", name) and name not in {"EV", "DM", "AI", "VR", "AR"}:
+        return True
+
+    if re.search(r"(Inc|Corp|Co|Ltd|LLC|GmbH|AG|公司|集团|企业)$", name, re.IGNORECASE):
+        return True
+
     return False
 
 
@@ -2079,6 +2150,28 @@ def _load_optional_model(module_name: str, attr: str):
         return None
     module_obj = importlib.import_module(module_name)
     return getattr(module_obj, attr, None)
+
+
+def _split_clusters_by_type(
+    clusters: Dict[str, List[str]],
+    candidates: List[EntityCandidate]
+) -> Tuple[Dict[str, List[str]], Dict[str, List[str]]]:
+    candidate_types = {c.name.lower(): c.entity_type for c in candidates}
+
+    brands: Dict[str, List[str]] = {}
+    products: Dict[str, List[str]] = {}
+
+    for name, surface_forms in clusters.items():
+        entity_type = candidate_types.get(name.lower(), "unknown")
+
+        if entity_type == "product" or is_likely_product(name):
+            products[name] = surface_forms
+        elif entity_type == "brand" or is_likely_brand(name):
+            brands[name] = surface_forms
+        else:
+            brands[name] = surface_forms
+
+    return brands, products
 
 
 def canonicalize_entities(candidates: List[EntityCandidate], primary_brand: str, aliases: Dict[str, List[str]], alias_table: Dict[str, str] | None = None, text: str = "") -> Dict[str, List[str]]:
