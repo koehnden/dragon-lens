@@ -9,63 +9,35 @@ from typing import Dict, List, Set, Tuple
 
 import numpy as np
 
+from constants import (
+    BRAND_HINTS,
+    KNOWN_BRANDS,
+    PRODUCT_HINTS,
+    KNOWN_PRODUCTS,
+    GENERIC_TERMS,
+    DESCRIPTOR_PATTERNS,
+    LIST_PATTERNS,
+    COMPILED_LIST_PATTERNS,
+    COMPARISON_MARKERS,
+    CLAUSE_SEPARATORS,
+    VALID_EXTRA_TERMS,
+)
+
 logger = logging.getLogger(__name__)
 
 ENABLE_QWEN_FILTERING = os.getenv("ENABLE_QWEN_FILTERING", "true").lower() == "true"
 ENABLE_QWEN_EXTRACTION = os.getenv("ENABLE_QWEN_EXTRACTION", "true").lower() == "true"
-
-BRAND_HINTS = {
-    "honda", "本田", "toyota", "丰田", "byd", "比亚迪", "volkswagen", "vw", "大众",
-    "bmw", "宝马", "mercedes", "mercedes-benz", "奔驰", "audi", "奥迪",
-    "tesla", "特斯拉", "ford", "福特", "chevrolet", "雪佛兰", "nissan", "日产",
-    "hyundai", "现代", "kia", "起亚", "porsche", "保时捷", "lexus", "雷克萨斯",
-    "volvo", "沃尔沃", "mazda", "马自达", "subaru", "斯巴鲁", "jeep", "吉普",
-    "land rover", "路虎", "jaguar", "捷豹", "ferrari", "法拉利", "lamborghini", "兰博基尼",
-    "理想", "li auto", "nio", "蔚来", "xpeng", "小鹏", "geely", "吉利",
-    "changan", "长安", "great wall", "长城", "haval", "哈弗", "wey", "魏牌",
-    "zeekr", "极氪", "lynk & co", "领克", "buick", "别克", "cadillac", "凯迪拉克",
-    "apple", "苹果", "samsung", "三星", "huawei", "华为", "xiaomi", "小米",
-    "oppo", "vivo", "oneplus", "一加", "sony", "索尼", "google", "谷歌",
-    "loreal", "欧莱雅", "nike", "耐克", "adidas", "阿迪达斯", "puma", "彪马",
-    "under armour", "dyson", "戴森", "shark", "roomba", "irobot",
-}
-
-PRODUCT_HINTS = {
-    "crv", "cr-v", "rav4", "rav-4", "model y", "model 3", "model s", "model x",
-    "宋plus", "宋pro", "宋", "汉ev", "汉dm", "汉", "唐dm", "唐", "秦plus", "秦", "元plus", "元", "海豚", "海鸥",
-    "id.4", "id.6", "tiguan", "途观", "途观l", "passat", "帕萨特", "golf", "高尔夫", "polo", "tuareg", "tuareq", "途锐",
-    "camry", "凯美瑞", "corolla", "卡罗拉", "highlander", "汉兰达", "prado", "普拉多", "4runner",
-    "accord", "雅阁", "civic", "思域", "odyssey", "奥德赛", "pilot", "passport", "hr-v",
-    "x3", "x5", "x7", "3 series", "5 series", "7 series", "x1",
-    "a4", "a6", "a8", "q3", "q5", "q7", "q8", "e-tron",
-    "cayenne", "macan", "panamera", "911", "taycan",
-    "mustang", "野马", "f-150", "explorer", "escape", "bronco",
-    "l9", "l8", "l7", "l6", "理想one", "et7", "et5", "es6", "es8", "ec6",
-    "p7", "g9", "g6", "p5", "tucson", "途胜", "telluride", "palisade",
-    "iphone", "iphone 14", "iphone 15", "iphone 15 pro", "galaxy", "galaxy s24",
-    "mate", "mate 50", "p50", "p60", "pixel", "pixel 8",
-    "mi 14", "redmi", "find x", "reno",
-    "air max", "ultraboost", "v15", "navigator", "crosswave", "i7", "ascent",
-    "rx", "glc", "gle", "gls", "sealion",
-    "h6", "bj80",
-}
-
-KNOWN_BRANDS = BRAND_HINTS
-KNOWN_PRODUCTS = PRODUCT_HINTS
-
-GENERIC_TERMS = {
-    "suv", "sedan", "coupe", "hatchback", "mpv", "pickup", "truck", "van",
-    "ev", "phev", "hev", "bev", "hybrid", "electric", "gasoline", "diesel",
-    "one", "pro", "max", "plus", "ultra", "lite", "mini", "air",
-    "carplay", "android auto", "gps", "abs", "esp", "acc", "lka", "bsd",
-    "4wd", "awd", "fwd", "rwd", "cvt", "dct", "at", "mt",
-    "led", "lcd", "oled", "hud", "360", "adas",
-    "车", "汽车", "轿车", "越野车", "跑车", "电动车", "新能源",
-    "品牌", "产品", "型号", "系列", "款", "版",
-}
 ENABLE_EMBEDDING_CLUSTERING = os.getenv("ENABLE_EMBEDDING_CLUSTERING", "false").lower() == "true"
 ENABLE_LLM_CLUSTERING = os.getenv("ENABLE_LLM_CLUSTERING", "false").lower() == "true"
 OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "qllama/bge-small-zh-v1.5:latest")
+
+
+def _is_descriptor_pattern(name: str) -> bool:
+    for pattern in DESCRIPTOR_PATTERNS:
+        if re.match(pattern, name):
+            if name.lower() not in BRAND_HINTS and name.lower() not in PRODUCT_HINTS:
+                return True
+    return False
 
 
 @dataclass
@@ -98,6 +70,9 @@ def is_likely_brand(name: str) -> bool:
     name_lower = name.lower().strip()
 
     if name_lower in GENERIC_TERMS:
+        return False
+
+    if _is_descriptor_pattern(name):
         return False
 
     if _has_product_model_patterns(name):
@@ -275,17 +250,6 @@ def normalize_text_for_ner(text: str) -> str:
     return normalized
 
 
-LIST_PATTERNS = [
-    r'^\s*\d+[.\)]\s+',
-    r'^\s*\d+、',
-    r'^\s*[-*]\s+',
-    r'^\s*[・○→]\s*',
-    r'^#{1,4}\s*\**\d+[.\)]\s*',
-]
-
-COMPILED_LIST_PATTERNS = [re.compile(p, re.MULTILINE) for p in LIST_PATTERNS]
-
-
 def is_list_format(text: str) -> bool:
     for pattern in COMPILED_LIST_PATTERNS:
         matches = pattern.findall(text)
@@ -359,6 +323,95 @@ def extract_entities(
     return ExtractionResult(brands=brands, products=products)
 
 
+def _is_automotive_vertical(vertical_lower: str) -> bool:
+    automotive_keywords = ["car", "suv", "automotive", "vehicle", "auto", "truck"]
+    for keyword in automotive_keywords:
+        pattern = rf'\b{keyword}s?\b'
+        if re.search(pattern, vertical_lower):
+            return True
+        if keyword in vertical_lower:
+            idx = vertical_lower.find(keyword)
+            if (idx == 0 or not vertical_lower[idx-1].isalpha()) and \
+               (idx + len(keyword) == len(vertical_lower) or not vertical_lower[idx + len(keyword)].isalpha()):
+                return True
+    return False
+
+
+def _boost_confidence_for_known_relationships(
+    product_confidences: Dict[str, float],
+    relationships: Dict[str, str],
+    brands: List[str]
+) -> Dict[str, float]:
+    for product, parent in relationships.items():
+        if product in product_confidences:
+            parent_lower = parent.lower()
+            if parent_lower in BRAND_HINTS or parent in brands:
+                product_confidences[product] = min(0.95, product_confidences[product] + 0.2)
+                logger.debug(f"Boosted confidence for product '{product}' (parent: {parent})")
+    return product_confidences
+
+
+def _identify_ambiguous_entities(
+    brand_confidences: Dict[str, float],
+    product_confidences: Dict[str, float]
+) -> Tuple[List[str], Dict[str, str]]:
+    ambiguous_entities = []
+    entity_source = {}
+    for brand, confidence in brand_confidences.items():
+        if confidence < 0.8:
+            ambiguous_entities.append(brand)
+            entity_source[brand] = "brand"
+    for product, confidence in product_confidences.items():
+        if confidence < 0.8:
+            ambiguous_entities.append(product)
+            entity_source[product] = "product"
+    return ambiguous_entities, entity_source
+
+
+def _process_brands_with_verification(
+    brands: List[str],
+    verified_results: Dict[str, str],
+    brand_confidences: Dict[str, float]
+) -> List[str]:
+    corrected_brands = []
+    for brand in brands:
+        if brand in verified_results:
+            entity_type = verified_results[brand]
+            if entity_type == "brand":
+                corrected_brands.append(brand)
+        else:
+            confidence = brand_confidences.get(brand, 0.5)
+            if confidence >= 0.6:
+                corrected_brands.append(brand)
+            elif confidence <= 0.4 and not _has_product_patterns(brand):
+                corrected_brands.append(brand)
+            else:
+                corrected_brands.append(brand)
+    return corrected_brands
+
+
+def _process_products_with_verification(
+    products: List[str],
+    verified_results: Dict[str, str],
+    product_confidences: Dict[str, float]
+) -> List[str]:
+    corrected_products = []
+    for product in products:
+        if product in verified_results:
+            entity_type = verified_results[product]
+            if entity_type == "product":
+                corrected_products.append(product)
+        else:
+            confidence = product_confidences.get(product, 0.5)
+            if confidence >= 0.6:
+                corrected_products.append(product)
+            elif confidence <= 0.4 and not _has_brand_patterns(product):
+                corrected_products.append(product)
+            else:
+                corrected_products.append(product)
+    return corrected_products
+
+
 async def _extract_entities_with_qwen(
     text: str,
     vertical: str = "",
@@ -383,87 +436,25 @@ async def _extract_entities_with_qwen(
         result = _parse_extraction_response(response)
         brands = result.get("brands", [])
         products = result.get("products", [])
+        relationships = result.get("relationships", {})
 
-        # Step 1: Calculate confidence scores for each entity
         brand_confidences = _calculate_confidence_scores(brands, vertical, is_brand=True)
         product_confidences = _calculate_confidence_scores(products, vertical, is_brand=False)
-        
-        # Step 2: Identify ambiguous entities (medium/low confidence)
-        ambiguous_entities = []
-        entity_source = {}
-
-        for brand, confidence in brand_confidences.items():
-            if confidence < 0.8:
-                ambiguous_entities.append(brand)
-                entity_source[brand] = "brand"
-
-        for product, confidence in product_confidences.items():
-            if confidence < 0.8:
-                ambiguous_entities.append(product)
-                entity_source[product] = "product"
-        
-        # Step 3: Verify ambiguous entities with Qwen
-        verified_results = {}
-        if ambiguous_entities:
-            verified_results = await _verify_ambiguous_entities_with_qwen(
-                ollama, ambiguous_entities, text, vertical, vertical_description
-            )
-        
-        # Step 4: Apply verification results and heuristics
-        corrected_brands = []
-        corrected_products = []
-        
-        # Process brands with verification results
-        for brand in brands:
-            if brand in verified_results:
-                # Use Qwen verification result
-                entity_type = verified_results[brand]
-                if entity_type == "brand":
-                    corrected_brands.append(brand)
-                elif entity_type == "product":
-                    corrected_products.append(brand)
-                # "other" entities are discarded
-            else:
-                # Use confidence-based decision
-                confidence = brand_confidences.get(brand, 0.5)
-                if confidence >= 0.6:
-                    corrected_brands.append(brand)
-                elif confidence <= 0.4:
-                    # Low confidence brand might be a product
-                    if _has_product_patterns(brand):
-                        corrected_products.append(brand)
-                    else:
-                        corrected_brands.append(brand)  # Keep original
-                else:
-                    # Medium confidence, keep original
-                    corrected_brands.append(brand)
-        
-        # Process products with verification results
-        for product in products:
-            if product in verified_results:
-                # Use Qwen verification result
-                entity_type = verified_results[product]
-                if entity_type == "product":
-                    corrected_products.append(product)
-                elif entity_type == "brand":
-                    corrected_brands.append(product)
-                # "other" entities are discarded
-            else:
-                # Use confidence-based decision
-                confidence = product_confidences.get(product, 0.5)
-                if confidence >= 0.6:
-                    corrected_products.append(product)
-                elif confidence <= 0.4:
-                    # Low confidence product might be a brand
-                    if _has_brand_patterns(product):
-                        corrected_brands.append(product)
-                    else:
-                        corrected_products.append(product)  # Keep original
-                else:
-                    # Medium confidence, keep original
-                    corrected_products.append(product)
-
-        # Remove duplicates
+        product_confidences = _boost_confidence_for_known_relationships(
+            product_confidences, relationships, brands
+        )
+        ambiguous_entities, entity_source = _identify_ambiguous_entities(
+            brand_confidences, product_confidences
+        )
+        verified_results = await _verify_ambiguous_entities_with_qwen(
+            ollama, ambiguous_entities, text, vertical, vertical_description
+        ) if ambiguous_entities else {}
+        corrected_brands = _process_brands_with_verification(
+            brands, verified_results, brand_confidences
+        )
+        corrected_products = _process_products_with_verification(
+            products, verified_results, product_confidences
+        )
         corrected_brands = list(dict.fromkeys(corrected_brands))
         corrected_products = list(dict.fromkeys(corrected_products))
 
@@ -499,32 +490,7 @@ def _build_extraction_system_prompt(vertical: str, vertical_description: str) ->
     if vertical_description:
         vertical_context += f"\nDescription: {vertical_description}"
 
-    # Determine if this is an automotive vertical
-    vertical_lower = vertical.lower()
-    # Use word boundaries or exact matches to avoid false positives like "skincare"
-    # Also handle plural forms (e.g., "vehicles", "cars")
-    automotive_keywords = ["car", "suv", "automotive", "vehicle", "auto", "truck"]
-    
-    # Check for exact word matches with word boundaries
-    is_automotive = False
-    for keyword in automotive_keywords:
-        # Match singular or plural forms
-        pattern = rf'\b{keyword}s?\b'
-        if re.search(pattern, vertical_lower):
-            is_automotive = True
-            break
-        
-        # Also check for compound words like "electric vehicles"
-        if keyword in vertical_lower:
-            # Make sure it's not part of another word like "skincare"
-            idx = vertical_lower.find(keyword)
-            # Check if it's a whole word (preceded/followed by space or start/end of string)
-            if (idx == 0 or not vertical_lower[idx-1].isalpha()) and \
-               (idx + len(keyword) == len(vertical_lower) or not vertical_lower[idx + len(keyword)].isalpha()):
-                is_automotive = True
-                break
-
-    # Base definitions and rules
+    is_automotive = _is_automotive_vertical(vertical.lower())
     system_prompt = f"""You are an expert entity extractor for the {vertical or 'general'} industry.
 
 TASK: Extract ALL genuine brand names and product names mentioned in the text.
@@ -562,7 +528,6 @@ EXTRACTION RULES:
    - The model number/alphanumeric code is the PRODUCT
 8. Extract BOTH the brand AND product when they appear together"""
 
-    # Add automotive-specific guidance
     if is_automotive:
         system_prompt += """
 
@@ -577,8 +542,21 @@ AUTOMOTIVE-SPECIFIC RULES:
 
 {vertical_context}
 
-Output JSON only:
-{{"brands": ["brand1", "brand2"], "products": ["product1", "product2"]}}"""
+OUTPUT FORMAT - Use this exact JSON structure:
+{{
+  "entities": [
+    {{"name": "Toyota", "type": "brand"}},
+    {{"name": "RAV4", "type": "product", "parent_brand": "Toyota"}},
+    {{"name": "BYD", "type": "brand"}},
+    {{"name": "宋PLUS", "type": "product", "parent_brand": "BYD"}}
+  ]
+}}
+
+IMPORTANT:
+- For each PRODUCT, include "parent_brand" if you know which brand makes it
+- If unsure of parent_brand, omit the field
+- "type" must be either "brand" or "product"
+"""
 
     return system_prompt
 
@@ -589,7 +567,7 @@ def _build_extraction_prompt(text: str) -> str:
 
 {text_snippet}
 
-Output JSON with "brands" and "products" arrays. Be STRICT - only genuine names:"""
+Output JSON with "entities" array. For each entity include name, type (brand/product), and parent_brand if known:"""
 
 
 def _parse_extraction_response(response: str) -> Dict[str, List[str]]:
@@ -605,40 +583,54 @@ def _parse_extraction_response(response: str) -> Dict[str, List[str]]:
                 response = response[4:]
     response = response.strip()
 
+    parsed = None
     try:
-        result = json.loads(response)
-        if isinstance(result, dict):
-            return {
-                "brands": result.get("brands", []),
-                "products": result.get("products", [])
-            }
+        parsed = json.loads(response)
     except json.JSONDecodeError:
-        pass
+        json_match = re.search(r'\{[\s\S]*\}', response)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                pass
 
-    json_match = re.search(r'\{[\s\S]*\}', response)
-    if json_match:
-        try:
-            result = json.loads(json_match.group(0))
-            if isinstance(result, dict):
-                return {
-                    "brands": result.get("brands", []),
-                    "products": result.get("products", [])
-                }
-        except json.JSONDecodeError:
-            pass
+    if not parsed or not isinstance(parsed, dict):
+        return {"brands": [], "products": [], "relationships": {}}
 
-    return {"brands": [], "products": []}
+    if "entities" in parsed:
+        return _parse_entities_format(parsed)
+
+    return {
+        "brands": parsed.get("brands", []),
+        "products": parsed.get("products", []),
+        "relationships": {},
+    }
 
 
-COMPARISON_MARKERS = [
-    "similar to", "comparable to", "like ", "better than", "worse than",
-    "competing with", "compared to", "versus", " vs ", " vs.",
-    "outperforming", "ahead of", "behind ",
-    "类似于", "相比于", "胜过", "不如", "优于", "竞争对手",
-    "，比", "，和", "，与", "，类似", "，相比",
-]
+def _parse_entities_format(parsed: Dict) -> Dict[str, List[str]]:
+    brands = []
+    products = []
+    relationships = {}
 
-CLAUSE_SEPARATORS = [". ", ", ", "; ", "。", "，", "；", " - "]
+    for entity in parsed.get("entities", []):
+        if not isinstance(entity, dict):
+            continue
+
+        name = entity.get("name", "")
+        entity_type = entity.get("type", "")
+        parent_brand = entity.get("parent_brand")
+
+        if not name:
+            continue
+
+        if entity_type == "brand":
+            brands.append(name)
+        elif entity_type == "product":
+            products.append(name)
+            if parent_brand:
+                relationships[name] = parent_brand
+
+    return {"brands": brands, "products": products, "relationships": relationships}
 
 
 def _filter_by_list_position(candidates: List[EntityCandidate], text: str) -> List[EntityCandidate]:
@@ -718,9 +710,6 @@ def _is_clean_substring_match(allowed: str, candidate: str) -> bool:
     if re.search(r"[a-z]{3,}", extra):
         return False
     return True
-
-
-VALID_EXTRA_TERMS = {"hybrid", "ev", "plus", "pro", "max", "ultra", "mini", "dmi", "dm-i", "dmp", "dm-p"}
 
 
 def _extra_is_valid(extra: str) -> bool:
@@ -1223,10 +1212,9 @@ async def _verify_ambiguous_entities_with_qwen(
     
     if not ambiguous_entities:
         return {}
-    
-    # Use existing batch verification
+
     candidates = [EntityCandidate(name=e, source="ambiguous") for e in ambiguous_entities]
-    
+
     batch_results = await _verify_batch_with_qwen(
         ollama, candidates, text, vertical, vertical_description
     )
@@ -1273,84 +1261,6 @@ def _has_brand_patterns(name: str) -> bool:
 
     return False
 
-
-async def _verify_batch_with_qwen_legacy(
-    ollama,
-    batch: List[EntityCandidate],
-    text: str,
-    vertical: str = "",
-    vertical_description: str = ""
-) -> Dict[str, str]:
-    import json
-
-    candidate_names = [c.name for c in batch]
-    candidates_json = json.dumps(candidate_names, ensure_ascii=False)
-
-    vertical_context = ""
-    if vertical:
-        vertical_context = f"\nVertical/Industry: {vertical}"
-        if vertical_description:
-            vertical_context += f" - {vertical_description}"
-
-    system_prompt = f"""You are an expert at distinguishing brands from products in the {vertical or 'general'} industry.
-
-CRITICAL RULES:
-1. A BRAND is a company/manufacturer name that makes multiple products
-2. A PRODUCT is a specific model/item made by a brand
-3. Classify as "other" for generic terms, features, or non-entity words
-
-STRICT FILTERING - Classify as "other":
-- Generic category terms: SUV, sedan, EV, hybrid, smartphone, laptop
-- Feature words: CarPlay, GPS, LED, AWD, wireless, automatic
-- Common words: One, Pro, Max, Plus (unless part of product name)
-- Quality descriptors: best, good, popular, premium
-
-BRAND examples: Toyota, Honda, BYD, 比亚迪, Tesla, BMW, Apple, Samsung
-PRODUCT examples: RAV4, CRV, 宋PLUS, Model Y, X5, iPhone 15, Galaxy S24
-
-Output format (JSON array only):
-[{{"name": "entity1", "type": "brand"}}, {{"name": "entity2", "type": "product"}}, {{"name": "entity3", "type": "other"}}]"""
-
-    text_snippet = text[:1500] if len(text) > 1500 else text
-
-    prompt = f"""Industry context:{vertical_context}
-
-Source text:
-{text_snippet}
-
-Candidates to classify:
-{candidates_json}
-
-For each candidate, determine if it's a BRAND (company), PRODUCT (specific model), or OTHER (generic term).
-Output JSON array only:"""
-
-    try:
-        response = await ollama._call_ollama(
-            model=ollama.ner_model,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            temperature=0.0,
-        )
-
-        parsed = _parse_batch_json_response(response)
-        if not parsed:
-            logger.warning(f"Failed to parse batch response, falling back to 'other'")
-            return {name: "other" for name in candidate_names}
-
-        result_map = {}
-        for item in parsed:
-            if isinstance(item, dict) and "name" in item and "type" in item:
-                result_map[item["name"]] = item["type"]
-
-        for name in candidate_names:
-            if name not in result_map:
-                result_map[name] = "other"
-
-        return result_map
-
-    except Exception as e:
-        logger.warning(f"Batch verification failed: {e}")
-        return {name: "other" for name in candidate_names}
 
 
 def _parse_batch_json_response(response: str) -> List[Dict] | None:
