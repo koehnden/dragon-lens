@@ -9,7 +9,7 @@ from typing import Dict, List, Set, Tuple
 
 import numpy as np
 
-from src.constants import (
+from constants import (
     BRAND_HINTS,
     KNOWN_BRANDS,
     PRODUCT_HINTS,
@@ -21,11 +21,6 @@ from src.constants import (
     COMPARISON_MARKERS,
     CLAUSE_SEPARATORS,
     VALID_EXTRA_TERMS,
-)
-from src.services.wikidata_lookup import (
-    is_known_brand as wikidata_is_known_brand,
-    is_known_product as wikidata_is_known_product,
-    get_cache_available as wikidata_cache_available,
 )
 
 logger = logging.getLogger(__name__)
@@ -1162,9 +1157,6 @@ def _calculate_brand_confidence(entity: str, entity_lower: str, vertical: str) -
     if _has_product_suffix(entity):
         return 0.35
 
-    if vertical and _check_wikidata_brand(entity, vertical):
-        return 0.92
-
     if entity_lower in BRAND_HINTS:
         return 0.9
 
@@ -1187,9 +1179,6 @@ def _calculate_product_confidence(entity: str, entity_lower: str, vertical: str)
     if entity_lower in GENERIC_TERMS:
         return 0.2
 
-    if vertical and _check_wikidata_product(entity, vertical):
-        return 0.92
-
     if _has_product_model_patterns(entity):
         return 0.85
 
@@ -1209,24 +1198,6 @@ def _calculate_product_confidence(entity: str, entity_lower: str, vertical: str)
         return 0.4
 
     return 0.5
-
-
-def _check_wikidata_brand(entity: str, vertical: str) -> bool:
-    try:
-        if not wikidata_cache_available():
-            return False
-        return wikidata_is_known_brand(entity, vertical)
-    except Exception:
-        return False
-
-
-def _check_wikidata_product(entity: str, vertical: str) -> bool:
-    try:
-        if not wikidata_cache_available():
-            return False
-        return wikidata_is_known_product(entity, vertical)
-    except Exception:
-        return False
 
 
 async def _verify_ambiguous_entities_with_qwen(
@@ -1290,6 +1261,84 @@ def _has_brand_patterns(name: str) -> bool:
 
     return False
 
+
+async def _verify_batch_with_qwen_legacy(
+    ollama,
+    batch: List[EntityCandidate],
+    text: str,
+    vertical: str = "",
+    vertical_description: str = ""
+) -> Dict[str, str]:
+    import json
+
+    candidate_names = [c.name for c in batch]
+    candidates_json = json.dumps(candidate_names, ensure_ascii=False)
+
+    vertical_context = ""
+    if vertical:
+        vertical_context = f"\nVertical/Industry: {vertical}"
+        if vertical_description:
+            vertical_context += f" - {vertical_description}"
+
+    system_prompt = f"""You are an expert at distinguishing brands from products in the {vertical or 'general'} industry.
+
+CRITICAL RULES:
+1. A BRAND is a company/manufacturer name that makes multiple products
+2. A PRODUCT is a specific model/item made by a brand
+3. Classify as "other" for generic terms, features, or non-entity words
+
+STRICT FILTERING - Classify as "other":
+- Generic category terms: SUV, sedan, EV, hybrid, smartphone, laptop
+- Feature words: CarPlay, GPS, LED, AWD, wireless, automatic
+- Common words: One, Pro, Max, Plus (unless part of product name)
+- Quality descriptors: best, good, popular, premium
+
+BRAND examples: Toyota, Honda, BYD, 比亚迪, Tesla, BMW, Apple, Samsung
+PRODUCT examples: RAV4, CRV, 宋PLUS, Model Y, X5, iPhone 15, Galaxy S24
+
+Output format (JSON array only):
+[{{"name": "entity1", "type": "brand"}}, {{"name": "entity2", "type": "product"}}, {{"name": "entity3", "type": "other"}}]"""
+
+    text_snippet = text[:1500] if len(text) > 1500 else text
+
+    prompt = f"""Industry context:{vertical_context}
+
+Source text:
+{text_snippet}
+
+Candidates to classify:
+{candidates_json}
+
+For each candidate, determine if it's a BRAND (company), PRODUCT (specific model), or OTHER (generic term).
+Output JSON array only:"""
+
+    try:
+        response = await ollama._call_ollama(
+            model=ollama.ner_model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.0,
+        )
+
+        parsed = _parse_batch_json_response(response)
+        if not parsed:
+            logger.warning(f"Failed to parse batch response, falling back to 'other'")
+            return {name: "other" for name in candidate_names}
+
+        result_map = {}
+        for item in parsed:
+            if isinstance(item, dict) and "name" in item and "type" in item:
+                result_map[item["name"]] = item["type"]
+
+        for name in candidate_names:
+            if name not in result_map:
+                result_map[name] = "other"
+
+        return result_map
+
+    except Exception as e:
+        logger.warning(f"Batch verification failed: {e}")
+        return {name: "other" for name in candidate_names}
 
 
 def _parse_batch_json_response(response: str) -> List[Dict] | None:
