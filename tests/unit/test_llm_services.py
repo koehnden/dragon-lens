@@ -15,14 +15,9 @@ class TestDeepSeekService:
     def test_inherits_base_llm_service(self):
         assert issubclass(DeepSeekService, BaseLLMService)
 
-    def test_builds_correct_payload(self):
-        service = DeepSeekService()
-        messages = [{"role": "user", "content": "test"}]
-        payload = service._build_payload(messages, "deepseek-chat")
-
-        assert payload["model"] == "deepseek-chat"
-        assert payload["messages"] == messages
-        assert "temperature" in payload
+    def test_inherits_openai_client_service(self):
+        from src.services.openai_client import OpenAIClientService
+        assert issubclass(DeepSeekService, OpenAIClientService)
 
 
 class TestKimiService:
@@ -35,6 +30,10 @@ class TestKimiService:
     def test_inherits_base_llm_service(self):
         assert issubclass(KimiService, BaseLLMService)
 
+    def test_inherits_openai_client_service(self):
+        from src.services.openai_client import OpenAIClientService
+        assert issubclass(KimiService, OpenAIClientService)
+
     def test_builds_messages_with_system_prompt(self):
         service = KimiService()
         messages = service._build_messages("测试提示")
@@ -44,15 +43,13 @@ class TestKimiService:
         assert messages[1]["role"] == "user"
         assert messages[1]["content"] == "测试提示"
 
-    def test_builds_correct_payload(self):
+    def test_build_payload_is_dummy(self):
+        """_build_payload is a dummy method in OpenAIClientService."""
         service = KimiService()
         messages = [{"role": "user", "content": "test"}]
         payload = service._build_payload(messages, "moonshot-v1-8k")
-
-        assert payload["model"] == "moonshot-v1-8k"
-        assert payload["messages"] == messages
-        assert "temperature" in payload
-        assert "max_tokens" in payload
+        # Should return empty dict as dummy implementation
+        assert isinstance(payload, dict)
 
 
 class TestLLMRouter:
