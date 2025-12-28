@@ -71,6 +71,8 @@ async def create_tracking_job(
     Returns:
         Tracking job response with run ID
     """
+    from sqlalchemy import func as sqla_func
+
     translator = TranslaterService()
     vertical = db.query(Vertical).filter(Vertical.name == job.vertical_name).first()
     if not vertical:
@@ -82,6 +84,17 @@ async def create_tracking_job(
         db.flush()
 
     for brand_data in job.brands:
+        existing_brand = (
+            db.query(Brand)
+            .filter(
+                Brand.vertical_id == vertical.id,
+                sqla_func.lower(Brand.display_name) == brand_data.display_name.lower(),
+            )
+            .first()
+        )
+        if existing_brand:
+            continue
+
         translated_name = await translator.translate_entity(brand_data.display_name)
         brand = Brand(
             vertical_id=vertical.id,
@@ -92,22 +105,27 @@ async def create_tracking_job(
         )
         db.add(brand)
 
+    run = Run(
+        vertical_id=vertical.id,
+        provider=job.provider,
+        model_name=job.model_name,
+        status=RunStatus.PENDING,
+        reuse_answers=job.reuse_answers,
+        web_search_enabled=job.web_search_enabled,
+    )
+    db.add(run)
+    db.flush()
+
     for prompt_data in job.prompts:
         prompt = Prompt(
             vertical_id=vertical.id,
+            run_id=run.id,
             text_en=prompt_data.text_en,
             text_zh=prompt_data.text_zh,
             language_original=PromptLanguage(prompt_data.language_original),
         )
         db.add(prompt)
 
-    run = Run(
-        vertical_id=vertical.id,
-        provider=job.provider,
-        model_name=job.model_name,
-        status=RunStatus.PENDING,
-    )
-    db.add(run)
     db.commit()
     db.refresh(run)
 
@@ -299,6 +317,61 @@ async def get_run(
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
     return run
+
+
+@router.post("/runs/{run_id}/reprocess")
+async def reprocess_run(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Trigger reprocessing of an existing run.
+
+    This will:
+    1. Verify the run exists and is in pending status
+    2. Enqueue a Celery task to reprocess the run
+    3. The task will reuse existing LLM answers and re-run extraction
+
+    Args:
+        run_id: Run ID to reprocess
+        db: Database session
+
+    Returns:
+        Status message
+
+    Raises:
+        HTTPException: If run not found or not in pending status
+    """
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+    if run.status != RunStatus.PENDING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Run {run_id} is not in pending status (current: {run.status.value})"
+        )
+
+    vertical = db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
+    if not vertical:
+        raise HTTPException(status_code=404, detail=f"Vertical {run.vertical_id} not found")
+
+    if RUN_TASKS_INLINE:
+        engine = db.get_bind()
+        asyncio.create_task(_process_run_inline(run.id, vertical.id, engine))
+        return {"message": f"Run {run_id} queued for inline reprocessing", "run_id": run_id}
+
+    from workers.tasks import run_vertical_analysis
+
+    try:
+        run_vertical_analysis.delay(vertical.id, run.provider, run.model_name, run.id)
+        return {"message": f"Run {run_id} queued for reprocessing", "run_id": run_id}
+    except Exception as exc:
+        logger.warning("Failed to enqueue reprocessing for run %s: %s", run_id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to enqueue reprocessing: {exc}"
+        )
 
 
 @router.get("/runs/{run_id}/details", response_model=RunDetailedResponse)

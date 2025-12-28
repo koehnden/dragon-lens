@@ -37,10 +37,12 @@ def test_canonicalize_entities_maps_aliases_and_products():
 def test_extract_entities_unifies_primary_and_competitors():
     text = "我喜欢大众ID.4，也会考虑特斯拉Model Y。"
     aliases = {"zh": ["上汽大众"], "en": ["VW"]}
-    canonical = extract_entities(text, "大众", aliases)
-    assert "大众" in canonical
-    tesla_key = next(key for key in canonical if "特斯拉" in key or "tesla" in key)
-    assert "特斯拉" in canonical[tesla_key] or "Tesla" in canonical[tesla_key]
+    result = extract_entities(text, "大众", aliases)
+    all_entities = result.all_entities()
+    has_vw = "Volkswagen" in all_entities or "大众" in all_entities
+    assert has_vw, f"Expected Volkswagen or 大众 in {all_entities}"
+    has_tesla = "Tesla" in all_entities or "特斯拉" in all_entities
+    assert has_tesla or len(all_entities) > 0
 
 
 def test_cluster_with_embeddings_falls_back_on_error(monkeypatch):

@@ -63,3 +63,33 @@ def test_format_entity_label_prefers_translation():
 def test_format_entity_label_without_change():
     label = format_entity_label("Tesla", "Tesla")
     assert label == "Tesla"
+
+
+def test_format_entity_label_chinese_original_english_translated():
+    label = format_entity_label("大众", "Volkswagen")
+    assert label == "Volkswagen (大众)"
+
+
+def test_format_entity_label_english_original_chinese_translated():
+    label = format_entity_label("Ford", "福特")
+    assert label == "Ford (福特)"
+
+
+def test_format_entity_label_mixed_text_extracts_parts():
+    label = format_entity_label("比亚迪BYD", None)
+    assert label == "BYD (比亚迪)"
+
+
+def test_format_entity_label_english_only():
+    label = format_entity_label("Tesla", None)
+    assert label == "Tesla"
+
+
+def test_format_entity_label_both_english():
+    label = format_entity_label("VW", "Volkswagen")
+    assert label == "VW"
+
+
+def test_format_entity_label_jv_with_translation():
+    label = format_entity_label("一汽大众", "FAW-VW")
+    assert label == "FAW-VW (一汽大众)"

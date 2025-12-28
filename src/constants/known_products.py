@@ -1,0 +1,25 @@
+PRODUCT_HINTS = {
+    "crv", "cr-v", "rav4", "rav-4", "model y", "model 3", "model s", "model x",
+    "宋plus", "宋pro", "宋", "汉ev", "汉dm", "汉", "唐dm", "唐", "秦plus", "秦", "元plus", "元", "海豚", "海鸥",
+    "id.4", "id.6", "tiguan", "途观", "途观l", "passat", "帕萨特", "golf", "高尔夫", "polo", "tuareg", "tuareq", "途锐",
+    "探岳", "途岳", "tayron", "tharu", "taoyue", "troyer",
+    "camry", "凯美瑞", "corolla", "卡罗拉", "highlander", "汉兰达", "prado", "普拉多", "4runner",
+    "accord", "雅阁", "civic", "思域", "odyssey", "奥德赛", "pilot", "passport", "hr-v",
+    "皓影", "breeze",
+    "x3", "x5", "x7", "3 series", "5 series", "7 series", "x1",
+    "a4", "a6", "a8", "q3", "q5", "q7", "q8", "e-tron",
+    "cayenne", "macan", "panamera", "911", "taycan",
+    "mustang", "野马", "f-150", "explorer", "escape", "bronco",
+    "l9", "l8", "l7", "l6", "理想one", "et7", "et5", "es6", "es8", "ec6",
+    "p7", "g9", "g6", "p5", "tucson", "途胜", "telluride", "palisade",
+    "奇骏", "x-trail", "逍客", "qashqai", "天籁", "teana", "altima", "xvivo",
+    "瑞虎8", "瑞虎7", "瑞虎", "tiggo", "troy",
+    "h6", "h9", "bj80",
+    "iphone", "iphone 14", "iphone 15", "iphone 15 pro", "galaxy", "galaxy s24",
+    "mate", "mate 50", "p50", "p60", "pixel", "pixel 8",
+    "mi 14", "redmi", "find x", "reno",
+    "air max", "ultraboost", "v15", "navigator", "crosswave", "i7", "ascent",
+    "rx", "glc", "gle", "gls", "sealion",
+}
+
+KNOWN_PRODUCTS = PRODUCT_HINTS

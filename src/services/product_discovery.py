@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 
 from models import Brand, Product
 from services.brand_recognition import (
-    KNOWN_BRANDS,
     KNOWN_PRODUCTS,
     GENERIC_TERMS,
     extract_primary_entities_from_list_item,

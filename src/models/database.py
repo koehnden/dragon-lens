@@ -95,6 +95,15 @@ def _migrate_daily_metrics_table(connection, inspector):
             )
 
 
+def _migrate_prompts_table(connection, inspector):
+    if "prompts" in inspector.get_table_names():
+        prompt_columns = {col["name"] for col in inspector.get_columns("prompts")}
+        if "run_id" not in prompt_columns:
+            connection.execute(
+                text("ALTER TABLE prompts ADD COLUMN run_id INTEGER REFERENCES runs(id)")
+            )
+
+
 def _migrate_api_keys_table(connection, inspector):
     if "api_keys" not in inspector.get_table_names():
         connection.execute(
@@ -128,6 +137,7 @@ def init_db() -> None:
         _migrate_runs_table(connection, inspector)
         _migrate_llm_answers_table(connection, inspector)
         _migrate_daily_metrics_table(connection, inspector)
+        _migrate_prompts_table(connection, inspector)
         _migrate_api_keys_table(connection, inspector)
 
     Base.metadata.create_all(bind=engine)

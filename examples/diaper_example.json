@@ -1,0 +1,28 @@
+{
+  "vertical_name": "Diapers",
+  "vertical_description": "First-time mom diaper selection and usage questions in China (newborn to toddler, day/night, rash/leaks/fit)",
+  "model_name": "qwen",
+  "brands": [],
+  "prompts": [
+    {"text_zh": "新手妈妈第一次买纸尿裤，应该重点看哪些指标才不容易红屁屁？", "language_original": "zh"},
+    {"text_zh": "宝宝容易红屁屁/尿布疹，是换更透气的还是更勤换？有什么判断方法？", "language_original": "zh"},
+    {"text_zh": "纸尿裤“回渗”到底是什么意思？怎么判断表面干爽、不湿黏？", "language_original": "zh"},
+    {"text_zh": "宝宝夜里尿量大，总是漏尿，怎么选更适合夜用的纸尿裤？", "language_original": "zh"},
+    {"text_zh": "宝宝一翻身就侧漏，是尺码不对还是穿法不对？腿围怎么整理才不漏？", "language_original": "zh"},
+    {"text_zh": "肉腿宝宝大腿根容易勒红印，怎么选更贴合又不勒？", "language_original": "zh"},
+    {"text_zh": "新生儿肚脐还没掉，纸尿裤会不会磨到肚脐？要怎么穿更安全？", "language_original": "zh"},
+    {"text_zh": "NB码一般能用多久？什么时候需要从NB换到S？除了体重还要看什么信号？", "language_original": "zh"},
+    {"text_zh": "我家宝宝经常“炸屎/漏便便”，纸尿裤怎么选才更能兜住？", "language_original": "zh"},
+    {"text_zh": "母乳宝宝便便比较稀，容易漏，应该选更高腰围还是更大一码？", "language_original": "zh"},
+    {"text_zh": "纸尿裤太厚会不会闷？夏天和冬天选厚薄有什么讲究？", "language_original": "zh"},
+    {"text_zh": "宝宝皮肤敏感/容易湿疹，纸尿裤材质要注意什么？怎么降低过敏风险？", "language_original": "zh"},
+    {"text_zh": "每天大概要用多少片？新手囤货怎么囤才不浪费（NB/S/M分别囤多少更合理）？", "language_original": "zh"},
+    {"text_zh": "白天频繁更换和夜里长时间不换，选择思路一样吗？怎么搭配更省心？", "language_original": "zh"},
+    {"text_zh": "纸尿裤有异味/尿味重正常吗？怎么判断是吸收不行还是更换不够勤？", "language_original": "zh"},
+    {"text_zh": "外出一整天（高铁/飞机/景点）怎么选更不漏、更方便换的？有什么技巧？", "language_original": "zh"},
+    {"text_zh": "宝宝开始会爬/会走后换尿不湿很困难，什么时候该换成拉拉裤？", "language_original": "zh"},
+    {"text_zh": "拉拉裤和纸尿裤差别到底在哪？用起来哪个更不漏、更舒服？", "language_original": "zh"},
+    {"text_zh": "怎么判断尺码合不合适？腰围应该能伸进几根手指才算合适？", "language_original": "zh"},
+    {"text_zh": "如果预算有限，纸尿裤优先把钱花在哪些点最值（吸收/干爽/贴合/透气）？", "language_original": "zh"}
+  ]
+}
