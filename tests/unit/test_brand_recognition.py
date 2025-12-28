@@ -39,8 +39,9 @@ def test_extract_entities_unifies_primary_and_competitors():
     aliases = {"zh": ["上汽大众"], "en": ["VW"]}
     result = extract_entities(text, "大众", aliases)
     all_entities = result.all_entities()
-    assert "大众" in all_entities or any("大众" in k for k in all_entities)
-    has_tesla = any("特斯拉" in k or "tesla" in k.lower() for k in all_entities)
+    has_vw = "Volkswagen" in all_entities or "大众" in all_entities
+    assert has_vw, f"Expected Volkswagen or 大众 in {all_entities}"
+    has_tesla = "Tesla" in all_entities or "特斯拉" in all_entities
     assert has_tesla or len(all_entities) > 0
 
 

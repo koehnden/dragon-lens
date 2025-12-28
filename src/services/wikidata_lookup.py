@@ -104,6 +104,32 @@ def is_known_product(name: str, vertical: str) -> bool:
     return name.lower() in known_products
 
 
+def get_canonical_brand_name(name: str, vertical: str) -> str | None:
+    brand_info = lookup_brand(name, vertical)
+    if brand_info:
+        return brand_info.get("name_en")
+    return None
+
+
+def get_chinese_name(name: str, vertical: str) -> str | None:
+    brand_info = lookup_brand(name, vertical)
+    if brand_info:
+        return brand_info.get("name_zh")
+    return None
+
+
+def is_brand_in_vertical(name: str, vertical: str) -> tuple[bool, bool]:
+    brand_in_vertical = lookup_brand(name, vertical)
+    if brand_in_vertical:
+        return (True, True)
+
+    brand_anywhere = lookup_brand(name, None)
+    if brand_anywhere:
+        return (True, False)
+
+    return (False, False)
+
+
 def get_cache_available() -> bool:
     session = get_wikidata_session()
     try:
