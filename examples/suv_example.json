@@ -1,35 +1,28 @@
 {
   "vertical_name": "SUV Cars",
-  "vertical_description": "Family SUV market in China",
+  "vertical_description": "Chinese consumer SUV buying questions (family use, new energy vs fuel, space, safety, smart features, total cost)",
   "model_name": "qwen",
-  "brands": [
-    {
-      "display_name": "VW",
-      "aliases": {
-        "zh": ["大众汽车", "一汽-大众", "上汽大众"],
-        "en": ["VW", "Volkswagen"]
-      }
-    }
-  ],
+  "brands": [],
   "prompts": [
-    {"text_zh": "在中国市场，家庭用SUV首选有哪些？请给出TOP10，并说明每款的理由。", "language_original": "zh"},
-    {"text_zh": "如果预算20万人民币左右，适合一家三口的SUV怎么选？请排名并给出优缺点。", "language_original": "zh"},
-    {"text_zh": "在\"安全性\"维度，中国消费者最认可的SUV有哪些？请给出排名和证据点。", "language_original": "zh"},
-    {"text_zh": "从\"空间/后排舒适/后备箱\"角度，哪些SUV最适合家庭出行？请列TOP10。", "language_original": "zh"},
-    {"text_zh": "在中国，适合长途自驾的SUV推荐（舒适、油耗/能耗、可靠性）并排名。", "language_original": "zh"},
-    {"text_zh": "请对比大众（VW）在华主流SUV与比亚迪同价位SUV：各自优势是什么？", "language_original": "zh"},
-    {"text_zh": "如果我更重视\"保值率\"，中国市场哪些SUV更保值？请给出排名与原因。", "language_original": "zh"},
-    {"text_zh": "在中国市场，合资品牌SUV vs 自主品牌SUV：消费者更推荐哪类？请举例并排名。", "language_original": "zh"},
-    {"text_zh": "请推荐10款适合城市通勤的SUV（操控、停车便利、能耗、智能驾驶），并说明理由。", "language_original": "zh"},
-    {"text_zh": "从\"智能座舱/车机体验\"角度，哪些SUV口碑最好？请排名并给证据点。", "language_original": "zh"},
-    {"text_zh": "大众VW在中国SUV市场的品牌形象是什么？消费者通常如何评价它？", "language_original": "zh"},
-    {"text_zh": "请列出大众（VW）SUV常被提到的优点与缺点，并按重要性排序。", "language_original": "zh"},
-    {"text_zh": "如果我要买一台\"家庭SUV\"，大众VW会被推荐吗？为什么？请引用你判断的关键依据。", "language_original": "zh"},
-    {"text_zh": "在\"同价位\"里，大众VW SUV与日系SUV相比（丰田/本田/日产），哪边更推荐？请排名。", "language_original": "zh"},
-    {"text_zh": "在中国，最值得买的合资SUV TOP10有哪些？大众VW能排第几？为什么？", "language_original": "zh"},
-    {"text_zh": "从\"可靠性/故障率/维修便利\"维度，哪些SUV更值得买？请给出TOP10和理由。", "language_original": "zh"},
-    {"text_zh": "请基于中国消费者偏好，给出一份\"家用SUV购买决策清单\"，并举例说明VW适配哪些条目。", "language_original": "zh"},
-    {"text_zh": "如果我在意\"二胎家庭/儿童座椅/后排空间\"，哪些SUV最合适？请排名并说明。", "language_original": "zh"},
-    {"text_zh": "在中国市场，适合\"第一次买车\"的SUV推荐：请给TOP10，并说明VW是否适合新手", "language_original": "zh"}
+    {"text_zh": "在中国买家用SUV，一般最该优先看哪些点？能不能按重要性给个清单和解释？", "language_original": "zh"},
+    {"text_zh": "预算15-20万想买一台家用SUV，平时通勤+周末出游，怎么选才不后悔？", "language_original": "zh"},
+    {"text_zh": "二胎家庭+偶尔带老人，5座够不够？要不要直接上6/7座？怎么判断最适合？", "language_original": "zh"},
+    {"text_zh": "儿童安全座椅要装两张，后排空间怎么测？有哪些容易忽略的细节会影响舒适？", "language_original": "zh"},
+    {"text_zh": "经常露营/自驾，后备箱和后排放倒到底怎么选才实用？有哪些“看参数没用、实测才知道”的点？", "language_original": "zh"},
+    {"text_zh": "城市里停车难，小区车位窄，SUV车身尺寸/转弯半径/视野要怎么权衡？", "language_original": "zh"},
+    {"text_zh": "真实油耗/能耗怎么判断不被宣传忽悠？看哪些场景数据最靠谱？", "language_original": "zh"},
+    {"text_zh": "纯电/插混/增程/燃油到底怎么选？如果我最怕里程焦虑，但也不想太麻烦，建议怎么取舍？", "language_original": "zh"},
+    {"text_zh": "如果我家装不了家用充电桩，只能公共充电，买新能源SUV会不会很折腾？怎么评估？", "language_original": "zh"},
+    {"text_zh": "冬天续航打折很严重吗？北方用车需要重点看哪些配置/功能才不焦虑？", "language_original": "zh"},
+    {"text_zh": "家用SUV安全怎么选？除了气囊数量，还应该重点看哪些主动安全功能更实用？", "language_original": "zh"},
+    {"text_zh": "辅助驾驶/智能驾驶宣传很多，普通用户试驾时怎么判断“好用”还是“花架子”？", "language_original": "zh"},
+    {"text_zh": "车机/语音/导航这些智能功能，实际体验差异大吗？买之前怎么测试稳定性和易用性？", "language_original": "zh"},
+    {"text_zh": "家用SUV舒适性怎么判断？噪音、悬架、座椅、空调这些应该怎么试才真实？", "language_original": "zh"},
+    {"text_zh": "担心后期维修保养贵、毛病多，买SUV时怎么判断可靠性？有哪些常见坑？", "language_original": "zh"},
+    {"text_zh": "保值率到底重不重要？如果三五年可能换车，买SUV该怎么把“保值”考虑进去？", "language_original": "zh"},
+    {"text_zh": "南方雨季多、北方雪天多，选两驱还是四驱更合适？日常用车差别大吗？", "language_original": "zh"},
+    {"text_zh": "第一次买车的新手，买SUV有什么特别要注意的？比如视野、车感、停车、剐蹭风险。", "language_original": "zh"},
+    {"text_zh": "如果考虑买二手SUV，应该重点查哪些项目（事故/水泡/里程/电池等）才不踩雷？", "language_original": "zh"},
+    {"text_zh": "不想只看裸车价，家用SUV的5年总成本应该怎么算（油/电费、保险、保养、轮胎、折旧）？", "language_original": "zh"}
   ]
 }
