@@ -508,3 +508,115 @@ class TestAnswerReuseLogic:
 
         assert result is not None
         assert result.raw_answer_zh == "Based on web search: 1. 丰田RAV4..."
+
+    def test_reuse_english_only_prompt(self, db_session, vertical):
+        """Should reuse answer when matching on English text only."""
+        from services.answer_reuse import find_reusable_answer
+
+        run = Run(
+            vertical_id=vertical.id,
+            provider="deepseek",
+            model_name="deepseek-chat",
+            status=RunStatus.COMPLETED,
+            completed_at=datetime.utcnow(),
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        prompt = Prompt(
+            vertical_id=vertical.id,
+            run_id=run.id,
+            text_zh=None,
+            text_en="Recommend 10 SUVs",
+            language_original=PromptLanguage.EN,
+        )
+        db_session.add(prompt)
+        db_session.commit()
+
+        answer = LLMAnswer(
+            run_id=run.id,
+            prompt_id=prompt.id,
+            provider="deepseek",
+            model_name="deepseek-chat",
+            raw_answer_zh="1. Toyota RAV4...",
+            raw_answer_en="1. Toyota RAV4...",
+            tokens_in=100,
+            tokens_out=200,
+        )
+        db_session.add(answer)
+        db_session.commit()
+
+        new_run = Run(
+            vertical_id=vertical.id,
+            provider="deepseek",
+            model_name="deepseek-chat",
+            status=RunStatus.PENDING,
+            reuse_answers=True,
+        )
+        db_session.add(new_run)
+        db_session.commit()
+
+        result = find_reusable_answer(
+            db=db_session,
+            run=new_run,
+            prompt_text_en="Recommend 10 SUVs",
+        )
+
+        assert result is not None
+        assert result.raw_answer_zh == "1. Toyota RAV4..."
+
+    def test_reuse_matches_either_zh_or_en(self, db_session, vertical):
+        """Should find match when either Chinese or English text matches."""
+        from services.answer_reuse import find_reusable_answer
+
+        run = Run(
+            vertical_id=vertical.id,
+            provider="deepseek",
+            model_name="deepseek-chat",
+            status=RunStatus.COMPLETED,
+            completed_at=datetime.utcnow(),
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        prompt = Prompt(
+            vertical_id=vertical.id,
+            run_id=run.id,
+            text_zh="推荐10款SUV",
+            text_en="Recommend 10 SUVs",
+            language_original=PromptLanguage.ZH,
+        )
+        db_session.add(prompt)
+        db_session.commit()
+
+        answer = LLMAnswer(
+            run_id=run.id,
+            prompt_id=prompt.id,
+            provider="deepseek",
+            model_name="deepseek-chat",
+            raw_answer_zh="1. Toyota RAV4...",
+            raw_answer_en="1. Toyota RAV4...",
+            tokens_in=100,
+            tokens_out=200,
+        )
+        db_session.add(answer)
+        db_session.commit()
+
+        new_run = Run(
+            vertical_id=vertical.id,
+            provider="deepseek",
+            model_name="deepseek-chat",
+            status=RunStatus.PENDING,
+            reuse_answers=True,
+        )
+        db_session.add(new_run)
+        db_session.commit()
+
+        result = find_reusable_answer(
+            db=db_session,
+            run=new_run,
+            prompt_text_en="Recommend 10 SUVs",
+        )
+
+        assert result is not None
+        assert result.raw_answer_zh == "1. Toyota RAV4..."

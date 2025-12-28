@@ -109,7 +109,11 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                 self.db.flush()
 
             else:
-                reusable = find_reusable_answer(self.db, run, prompt_text_zh)
+                reusable = find_reusable_answer(
+                    self.db, run,
+                    prompt_text_zh=prompt_text_zh,
+                    prompt_text_en=prompt_text_en,
+                )
                 if reusable:
                     logger.info(f"Reusing answer from previous run for prompt {prompt.id}")
                     answer_zh = reusable.raw_answer_zh
