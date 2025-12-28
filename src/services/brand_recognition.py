@@ -10,8 +10,6 @@ from typing import Dict, List, Set, Tuple
 import numpy as np
 
 from src.constants import (
-    BRAND_HINTS,
-    KNOWN_BRANDS,
     PRODUCT_HINTS,
     KNOWN_PRODUCTS,
     GENERIC_TERMS,
@@ -40,7 +38,7 @@ OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "qllama/bge-small-z
 def _is_descriptor_pattern(name: str) -> bool:
     for pattern in DESCRIPTOR_PATTERNS:
         if re.match(pattern, name):
-            if name.lower() not in BRAND_HINTS and name.lower() not in PRODUCT_HINTS:
+            if name.lower() not in PRODUCT_HINTS:
                 return True
     return False
 
@@ -82,9 +80,6 @@ def is_likely_brand(name: str) -> bool:
 
     if _has_product_model_patterns(name):
         return False
-
-    if name_lower in BRAND_HINTS:
-        return True
 
     if re.match(r"^[A-Z][a-z]+$", name) and len(name) >= 4:
         return True
@@ -162,15 +157,6 @@ def extract_primary_entities_from_list_item(item: str) -> Dict[str, str | None]:
     result: Dict[str, str | None] = {"primary_brand": None, "primary_product": None}
     item_normalized = normalize_text_for_ner(item)
     item_lower = item_normalized.lower()
-    brand_positions: List[Tuple[int, str]] = []
-    for brand in KNOWN_BRANDS:
-        pos = item_lower.find(brand.lower())
-        if pos != -1:
-            display = brand.upper() if len(brand) <= 3 else (brand.title() if brand.isascii() else brand)
-            brand_positions.append((pos, display))
-    if brand_positions:
-        brand_positions.sort(key=lambda x: x[0])
-        result["primary_brand"] = brand_positions[0][1]
     product_positions: List[Tuple[int, int, str]] = []
     for product in KNOWN_PRODUCTS:
         pos = item_lower.find(product.lower())
@@ -349,8 +335,7 @@ def _boost_confidence_for_known_relationships(
 ) -> Dict[str, float]:
     for product, parent in relationships.items():
         if product in product_confidences:
-            parent_lower = parent.lower()
-            if parent_lower in BRAND_HINTS or parent in brands:
+            if parent in brands:
                 product_confidences[product] = min(0.95, product_confidences[product] + 0.2)
                 logger.debug(f"Boosted confidence for product '{product}' (parent: {parent})")
     return product_confidences
@@ -463,18 +448,28 @@ async def _extract_entities_with_qwen(
         corrected_brands = list(dict.fromkeys(corrected_brands))
         corrected_products = list(dict.fromkeys(corrected_products))
 
-        validated_brands, validated_products = await _run_negative_validation(
-            ollama,
+        normalized_result = await _normalize_brands_unified(
             corrected_brands,
-            corrected_products,
-            text,
             vertical,
             vertical_description,
+            ollama,
         )
+
+        validated_products = await _validate_products(
+            ollama, corrected_products, text, vertical, vertical_description
+        )
+
+        normalized_brands = [
+            b["canonical"] for b in normalized_result.get("brands", [])
+        ]
+        brand_chinese_map = {
+            b["canonical"]: b.get("chinese", "")
+            for b in normalized_result.get("brands", [])
+        }
 
         candidates = [
             EntityCandidate(name=b, source="qwen", entity_type="brand")
-            for b in validated_brands
+            for b in normalized_brands
         ] + [
             EntityCandidate(name=p, source="qwen", entity_type="product")
             for p in validated_products
@@ -487,11 +482,19 @@ async def _extract_entities_with_qwen(
 
         for c in filtered:
             if c.entity_type == "brand":
+                chinese = brand_chinese_map.get(c.name, "")
                 brand_clusters[c.name] = [c.name]
+                if chinese:
+                    brand_clusters[c.name].append(chinese)
             elif c.entity_type == "product":
                 product_clusters[c.name] = [c.name]
 
-        logger.info(f"Qwen extraction: {len(brands)} brands, {len(products)} products -> {len(corrected_brands)} corrected brands, {len(corrected_products)} corrected products -> {len(brand_clusters)} brands, {len(product_clusters)} products after list filter")
+        logger.info(
+            f"Qwen extraction: {len(brands)} brands, {len(products)} products -> "
+            f"{len(normalized_brands)} normalized brands, "
+            f"{len(validated_products)} validated products -> "
+            f"{len(brand_clusters)} brands, {len(product_clusters)} products after list filter"
+        )
         return ExtractionResult(brands=brand_clusters, products=product_clusters)
 
     except Exception as e:
@@ -582,6 +585,84 @@ def _build_extraction_prompt(text: str) -> str:
 {text_snippet}
 
 Output JSON with "entities" array. For each entity include name, type (brand/product), and parent_brand if known:"""
+
+
+def _build_brand_normalization_prompt(
+    brands: List[str],
+    vertical: str,
+    vertical_description: str
+) -> str:
+    import json
+    brands_json = json.dumps(brands, ensure_ascii=False)
+
+    vertical_context = vertical
+    if vertical_description:
+        vertical_context = f"{vertical} ({vertical_description})"
+
+    return f"""You are a brand normalization expert for the {vertical_context} industry.
+
+TASK: Process this list of extracted brand names and return ONLY genuine {vertical} brands in canonical form.
+
+BRANDS TO PROCESS:
+{brands_json}
+
+FOR EACH BRAND, DO ALL OF THE FOLLOWING:
+
+1. VERTICAL CHECK: Is this brand primarily in the {vertical} industry?
+   - REJECT brands from other industries (e.g., Huawei/Google for automotive, Toyota for electronics)
+   - ACCEPT brands that manufacture/sell {vertical} products
+
+2. JV/OWNER NORMALIZATION: Extract the consumer-facing brand
+   - Chinese JV format: "中方+外方" -> Extract FOREIGN brand
+   - Examples: 长安福特 -> Ford, 华晨宝马 -> BMW, 一汽大众 -> Volkswagen, 东风日产 -> Nissan
+   - Owner+Brand format: "集团+品牌" -> Extract the BRAND
+   - Examples: 上汽名爵 -> MG, 广汽传祺 -> Trumpchi, 上汽通用别克 -> Buick
+
+3. ALIAS DEDUPLICATION: Merge duplicates to canonical English name
+   - Same brand in different forms -> One canonical entry
+   - Examples: Jeep + 吉普 -> Jeep, BYD + 比亚迪 -> BYD, 宝马 + BMW -> BMW
+
+OUTPUT FORMAT (JSON only):
+{{
+  "brands": [
+    {{"canonical": "English Name", "chinese": "中文名", "original_forms": ["form1", "form2"]}}
+  ],
+  "rejected": [
+    {{"name": "rejected brand", "reason": "why rejected"}}
+  ]
+}}
+
+IMPORTANT:
+- canonical MUST be the English brand name
+- chinese should be the Chinese name if known, or empty string if not
+- original_forms lists all input forms that map to this brand
+- Be thorough: check ALL brands, normalize ALL JVs, merge ALL duplicates"""
+
+
+def _parse_normalization_response(response: str) -> Dict:
+    import json
+
+    response = response.strip()
+    if response.startswith("```json"):
+        response = response[7:]
+    if response.startswith("```"):
+        response = response[3:]
+    if response.endswith("```"):
+        response = response[:-3]
+    response = response.strip()
+
+    try:
+        parsed = json.loads(response)
+        return parsed
+    except json.JSONDecodeError:
+        json_match = re.search(r'\{[\s\S]*\}', response)
+        if json_match:
+            try:
+                return json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+    return {"brands": [], "rejected": []}
 
 
 def _parse_extraction_response(response: str) -> Dict[str, List[str]]:
@@ -906,6 +987,123 @@ async def _run_negative_validation(
     return validated_brands, validated_products
 
 
+async def _normalize_brands_unified(
+    brands: List[str],
+    vertical: str,
+    vertical_description: str,
+    ollama,
+) -> Dict:
+    from src.services.wikidata_lookup import (
+        get_canonical_brand_name,
+        get_chinese_name,
+        is_brand_in_vertical,
+    )
+
+    if not brands:
+        return {"brands": [], "rejected": []}
+
+    wikidata_known = []
+    wikidata_rejected = []
+    need_qwen = []
+
+    for brand in brands:
+        is_known, in_vertical = is_brand_in_vertical(brand, vertical)
+        if is_known and in_vertical:
+            canonical = get_canonical_brand_name(brand, vertical)
+            chinese = get_chinese_name(brand, vertical)
+            wikidata_known.append({
+                "canonical": canonical or brand,
+                "chinese": chinese or "",
+                "original_forms": [brand]
+            })
+        elif is_known and not in_vertical:
+            wikidata_rejected.append({
+                "name": brand,
+                "reason": f"Known brand but not in {vertical} industry"
+            })
+        else:
+            need_qwen.append(brand)
+
+    qwen_result = {"brands": [], "rejected": []}
+    if need_qwen:
+        prompt = _build_brand_normalization_prompt(
+            need_qwen, vertical, vertical_description
+        )
+        try:
+            response = await ollama._call_ollama(
+                model=ollama.ner_model,
+                prompt=prompt,
+                system_prompt="",
+                temperature=0.0,
+            )
+            qwen_result = _parse_normalization_response(response)
+        except Exception as e:
+            logger.warning(f"Brand normalization failed: {e}")
+            for brand in need_qwen:
+                qwen_result["brands"].append({
+                    "canonical": brand,
+                    "chinese": "",
+                    "original_forms": [brand]
+                })
+
+    all_brands = _merge_and_deduplicate_brands(
+        wikidata_known, qwen_result.get("brands", [])
+    )
+    all_rejected = wikidata_rejected + qwen_result.get("rejected", [])
+
+    logger.info(
+        f"Brand normalization: {len(brands)} input -> "
+        f"{len(all_brands)} normalized, {len(all_rejected)} rejected"
+    )
+
+    return {"brands": all_brands, "rejected": all_rejected}
+
+
+def _merge_and_deduplicate_brands(
+    wikidata_brands: List[Dict],
+    qwen_brands: List[Dict]
+) -> List[Dict]:
+    canonical_map: Dict[str, Dict] = {}
+
+    for brand in wikidata_brands:
+        canonical = brand.get("canonical", "").lower()
+        if not canonical:
+            continue
+        if canonical not in canonical_map:
+            canonical_map[canonical] = {
+                "canonical": brand.get("canonical", ""),
+                "chinese": brand.get("chinese", ""),
+                "original_forms": []
+            }
+        canonical_map[canonical]["original_forms"].extend(
+            brand.get("original_forms", [])
+        )
+
+    for brand in qwen_brands:
+        canonical = brand.get("canonical", "").lower()
+        if not canonical:
+            continue
+        if canonical not in canonical_map:
+            canonical_map[canonical] = {
+                "canonical": brand.get("canonical", ""),
+                "chinese": brand.get("chinese", ""),
+                "original_forms": []
+            }
+        else:
+            if not canonical_map[canonical]["chinese"] and brand.get("chinese"):
+                canonical_map[canonical]["chinese"] = brand.get("chinese", "")
+        canonical_map[canonical]["original_forms"].extend(
+            brand.get("original_forms", [])
+        )
+
+    for key in canonical_map:
+        canonical_map[key]["original_forms"] = list(
+            dict.fromkeys(canonical_map[key]["original_forms"])
+        )
+
+    return list(canonical_map.values())
+
+
 def _parse_single_type_validation_response(response: str, original_entities: List[str]) -> List[str]:
     import json
 
@@ -1066,8 +1264,6 @@ def _extra_is_valid(extra: str) -> bool:
         word = word.strip()
         if not word:
             continue
-        if word in KNOWN_BRANDS:
-            continue
         if word in VALID_EXTRA_TERMS:
             continue
         if word.isdigit():
@@ -1085,7 +1281,7 @@ def _add_all_entities_from_text(
     for candidate in candidates:
         name_lower = candidate.name.lower()
         if name_lower in text_lower:
-            if candidate.entity_type == "brand" or name_lower in BRAND_HINTS:
+            if candidate.entity_type == "brand":
                 brands.add(name_lower)
             elif candidate.entity_type == "product" or name_lower in PRODUCT_HINTS:
                 products.add(name_lower)
@@ -1132,13 +1328,6 @@ def _extract_first_brand_and_product_from_item(
     if candidate_products:
         candidate_products.sort(key=lambda x: (x[0], x[1]))
         result["product"] = candidate_products[0][2]
-
-    if result["brand"] is None:
-        for brand in KNOWN_BRANDS:
-            pos = primary_region_lower.find(brand.lower())
-            if pos != -1:
-                result["brand"] = brand
-                break
 
     if result["product"] is None:
         known_products: List[Tuple[int, int, str]] = []
@@ -1226,9 +1415,6 @@ async def _filter_candidates_with_qwen(
         if name_lower in GENERIC_TERMS:
             continue
         if candidate.source == "seed":
-            candidate.entity_type = "brand"
-            filtered.append(candidate)
-        elif name_lower in KNOWN_BRANDS:
             candidate.entity_type = "brand"
             filtered.append(candidate)
         elif name_lower in KNOWN_PRODUCTS:
@@ -1508,9 +1694,6 @@ def _calculate_brand_confidence(entity: str, entity_lower: str, vertical: str) -
     if vertical and _check_wikidata_brand(entity, vertical):
         return 0.92
 
-    if entity_lower in BRAND_HINTS:
-        return 0.9
-
     if is_likely_brand(entity):
         return 0.8
 
@@ -1614,10 +1797,6 @@ def _has_brand_patterns(name: str) -> bool:
 
     if _has_product_suffix(name):
         return False
-
-    name_lower = name.lower()
-    if name_lower in BRAND_HINTS:
-        return True
 
     if re.match(r"^[A-Z][a-z]+$", name) and len(name) >= 4:
         return True
@@ -1821,20 +2000,12 @@ def _extract_product_canonical(normalized: str) -> str | None:
             remaining = normalized.replace(product_norm, "").strip()
             if not remaining:
                 continue
-            if remaining in KNOWN_BRANDS:
-                return product_norm
             if _remaining_is_brand_and_suffix(remaining):
                 return product_norm
     return None
 
 
 def _remaining_is_brand_and_suffix(remaining: str) -> bool:
-    for brand in KNOWN_BRANDS:
-        brand_norm = _normalize_text(brand)
-        if brand_norm in remaining:
-            suffix = remaining.replace(brand_norm, "").strip()
-            if not suffix or suffix in VALID_EXTRA_TERMS:
-                return True
     return False
 
 

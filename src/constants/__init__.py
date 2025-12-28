@@ -1,5 +1,3 @@
-from src.constants.brand_aliases import BRAND_ALIAS_MAP
-from src.constants.known_brands import BRAND_HINTS, KNOWN_BRANDS
 from src.constants.known_products import PRODUCT_HINTS, KNOWN_PRODUCTS
 from src.constants.generic_terms import GENERIC_TERMS
 from src.constants.descriptor_patterns import DESCRIPTOR_PATTERNS
@@ -18,9 +16,6 @@ from src.constants.wikidata_industries import (
 )
 
 __all__ = [
-    "BRAND_ALIAS_MAP",
-    "BRAND_HINTS",
-    "KNOWN_BRANDS",
     "PRODUCT_HINTS",
     "KNOWN_PRODUCTS",
     "GENERIC_TERMS",
