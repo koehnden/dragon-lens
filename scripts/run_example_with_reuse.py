@@ -50,6 +50,44 @@ def check_existing_answers(vertical_id: int) -> bool:
     return False
 
 
+def find_pending_run(vertical_id: int, provider: str, model_name: str) -> Optional[int]:
+    """Find a pending run for reprocessing."""
+    try:
+        response = requests.get(
+            f"http://localhost:{settings.api_port}/api/v1/tracking/runs",
+            params={"vertical_id": vertical_id}
+        )
+        if response.status_code == 200:
+            runs = response.json()
+            for run in runs:
+                if (
+                    run.get("status") == "pending"
+                    and run.get("provider") == provider
+                    and run.get("model_name") == model_name
+                ):
+                    return run.get("id")
+    except requests.RequestException:
+        pass
+    return None
+
+
+def trigger_run_reprocessing(run_id: int) -> bool:
+    """Trigger reprocessing of an existing run."""
+    try:
+        response = requests.post(
+            f"http://localhost:{settings.api_port}/api/v1/tracking/runs/{run_id}/reprocess"
+        )
+        if response.status_code == 200:
+            logger.info(f"Triggered reprocessing for run {run_id}")
+            return True
+        else:
+            logger.warning(f"Failed to trigger reprocessing: {response.status_code}")
+            return False
+    except requests.RequestException as e:
+        logger.error(f"Error triggering reprocessing: {e}")
+        return False
+
+
 def delete_existing_vertical(vertical_name: str) -> bool:
     """Delete existing vertical and all associated data."""
     try:
@@ -111,15 +149,21 @@ def configure_api_key(provider: str, api_key: str) -> bool:
         return False
 
 
-def create_tracking_job(example_file: Path, provider: str, model_name: str) -> bool:
+def create_tracking_job(
+    example_file: Path,
+    provider: str,
+    model_name: str,
+    reuse_answers: bool = False,
+) -> bool:
     """Create a new tracking job."""
     try:
         with open(example_file, "r") as f:
             example_data = json.load(f)
-        
+
         example_data["provider"] = provider
         example_data["model_name"] = model_name
-        
+        example_data["reuse_answers"] = reuse_answers
+
         response = requests.post(
             f"http://localhost:{settings.api_port}/api/v1/tracking/jobs",
             json=example_data,
@@ -246,10 +290,26 @@ def main() -> None:
         default=None,
         help="API key for DeepSeek models (if not already configured)"
     )
-    
+    parser.add_argument(
+        "--example-file",
+        default=None,
+        help="Path to example JSON file. Default: examples/suv_example.json"
+    )
+    parser.add_argument(
+        "--reuse-answers",
+        action="store_true",
+        default=False,
+        help="Reuse answers from previous runs with same prompt/model. Default: False"
+    )
+
     args = parser.parse_args()
-    
-    example_file = Path(__file__).parent.parent / "examples" / "suv_example.json"
+
+    if args.example_file:
+        example_file = Path(args.example_file)
+        if not example_file.is_absolute():
+            example_file = Path(__file__).parent.parent / args.example_file
+    else:
+        example_file = Path(__file__).parent.parent / "examples" / "suv_example.json"
     if not example_file.exists():
         logger.error(f"Example file not found: {example_file}")
         sys.exit(1)
@@ -279,27 +339,49 @@ def main() -> None:
             print("⚠  Continuing without API key configuration...")
     
     vertical_id = check_existing_vertical(vertical_name)
-    
+
     if vertical_id:
-        has_existing_answers = check_existing_answers(vertical_id)
-        
-        if has_existing_answers and args.reuse_prompt_results:
-            print(f"✓ Found existing vertical '{vertical_name}' with prompt results")
-            print("  Prompt results will be reused for extraction")
+        pending_run_id = find_pending_run(vertical_id, provider, model_name)
+
+        if pending_run_id and args.reuse_prompt_results:
+            print(f"✓ Found pending run {pending_run_id} for {provider}/{model_name}")
+            print("  Triggering reprocessing to re-run extraction on existing LLM answers")
             print("  No new LLM calls will be made")
             print()
-            print("To run from scratch, use: --no-reuse-prompt-results")
-            print()
+
+            if trigger_run_reprocessing(pending_run_id):
+                print("✅ Reprocessing triggered successfully!")
+                print()
+                print("Next steps:")
+                print(f"  View runs:    curl http://localhost:{settings.api_port}/api/v1/tracking/runs | jq")
+                print(f"  Check status: curl http://localhost:{settings.api_port}/api/v1/tracking/runs/{pending_run_id} | jq")
+                print(f"  View in UI:   http://localhost:{settings.streamlit_port}")
+            else:
+                print("❌ Failed to trigger reprocessing")
+                sys.exit(1)
             return
-        
+
+        has_existing_answers = check_existing_answers(vertical_id)
+
+        if has_existing_answers and args.reuse_prompt_results:
+            print(f"✓ Found existing vertical '{vertical_name}' with completed runs")
+            print("  But no pending runs to reprocess for this model")
+            print("  Creating new job with reuse_answers=True")
+            print()
+            reuse_answers = True
         elif not args.reuse_prompt_results:
             print(f"Found existing vertical '{vertical_name}'")
             print("Deleting it to start fresh...")
             if not delete_existing_vertical(vertical_name):
                 print("⚠ Could not delete existing vertical, attempting to create new job anyway...")
-    
+            reuse_answers = args.reuse_answers
+        else:
+            reuse_answers = args.reuse_answers
+    else:
+        reuse_answers = args.reuse_answers
+
     print("Creating new tracking job...")
-    if create_tracking_job(example_file, provider, model_name):
+    if create_tracking_job(example_file, provider, model_name, reuse_answers):
         print("✅ Tracking job created successfully!")
         print()
         print("Next steps:")
