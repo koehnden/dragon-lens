@@ -14,6 +14,20 @@ def has_chinese_characters(text: str) -> bool:
     return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
 
 
+def extract_english_part(text: str) -> str:
+    if not text:
+        return ""
+    english_chars = re.findall(r"[A-Za-z0-9\-\.]+", text)
+    return " ".join(english_chars).strip()
+
+
+def extract_chinese_part(text: str) -> str:
+    if not text:
+        return ""
+    chinese_chars = re.findall(r"[\u4e00-\u9fff]+", text)
+    return "".join(chinese_chars).strip()
+
+
 def capitalize_brand_name(name: str) -> str:
     if not name:
         return name
@@ -41,19 +55,40 @@ def capitalize_brand_name(name: str) -> str:
 
 
 def format_entity_label(original: str, translated: str | None) -> str:
-    base = original.strip()
+    base = (original or "").strip()
     alt = (translated or "").strip()
-    base_capitalized = capitalize_brand_name(base)
-    alt_capitalized = capitalize_brand_name(alt)
-    if not alt_capitalized or alt_capitalized.lower() == base_capitalized.lower():
-        return base_capitalized
-    has_chinese_in_original = has_chinese_characters(base)
-    has_chinese_in_translated = has_chinese_characters(alt)
-    if has_chinese_in_original and not has_chinese_in_translated:
-        return f"{alt_capitalized} ({base})"
-    if has_chinese_in_translated and not has_chinese_in_original:
-        return f"{base_capitalized} ({alt})"
-    return f"{alt_capitalized} ({base})"
+    english_name = _find_english_name(base, alt)
+    chinese_name = _find_chinese_name(base, alt)
+    english_formatted = capitalize_brand_name(english_name) if english_name else ""
+    if english_formatted and chinese_name:
+        return f"{english_formatted} ({chinese_name})"
+    if english_formatted:
+        return english_formatted
+    return base
+
+
+def _find_english_name(original: str, translated: str) -> str:
+    for text in [original, translated]:
+        if not text:
+            continue
+        if has_latin_letters(text) and not has_chinese_characters(text):
+            return text
+    for text in [original, translated]:
+        if text and has_latin_letters(text) and has_chinese_characters(text):
+            return extract_english_part(text)
+    return ""
+
+
+def _find_chinese_name(original: str, translated: str) -> str:
+    for text in [original, translated]:
+        if not text:
+            continue
+        if has_chinese_characters(text) and not has_latin_letters(text):
+            return text
+    for text in [original, translated]:
+        if text and has_chinese_characters(text) and has_latin_letters(text):
+            return extract_chinese_part(text)
+    return ""
 
 
 class TranslaterService:
