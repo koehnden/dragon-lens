@@ -1,4 +1,4 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean clear example example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean clear example example-suv-all example-hiking-shoes-all example-diaper-all example-all example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search
 
 # Default target
 .DEFAULT_GOAL := help
@@ -538,28 +538,84 @@ example-kimi-128k: ## Run example with Kimi 128K model
 	@echo ""
 	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-128k
 
-example-all: ## Run example with all models (qwen, deepseek-chat, deepseek-reasoner, kimi-8k, kimi-32k, kimi-128k)
-	@echo "$(YELLOW)Running example with all models...$(NC)"
+example-suv-all: ## Run SUV example with all models (qwen, deepseek-chat, deepseek-reasoner, kimi-8k)
+	@echo "$(YELLOW)Running SUV example with all models...$(NC)"
 	@echo ""
 	@echo "$(YELLOW)1. Running with Qwen...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=qwen
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/suv_example.json
 	@echo ""
 	@echo "$(YELLOW)2. Running with DeepSeek Chat...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/suv_example.json
 	@echo ""
 	@echo "$(YELLOW)3. Running with DeepSeek Reasoner...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner --example-file=examples/suv_example.json
 	@echo ""
 	@echo "$(YELLOW)4. Running with Kimi 8K...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/suv_example.json
 	@echo ""
-	@echo "$(YELLOW)5. Running with Kimi 32K...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-32k
+	@echo "$(GREEN)✓ SUV example completed with 4 models!$(NC)"
 	@echo ""
-	@echo "$(YELLOW)6. Running with Kimi 128K...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-128k
+	@echo "$(YELLOW)View results:$(NC)"
+	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
+	@echo "  http://localhost:$(STREAMLIT_PORT)"
+
+example-hiking-shoes-all: ## Run hiking shoes example with all models (qwen, deepseek-chat, deepseek-reasoner, kimi-8k)
+	@echo "$(YELLOW)Running hiking shoes example with all models...$(NC)"
 	@echo ""
-	@echo "$(GREEN)✓ All 6 models completed!$(NC)"
+	@echo "$(YELLOW)1. Running with Qwen...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/hiking_shoes_example.json
+	@echo ""
+	@echo "$(YELLOW)2. Running with DeepSeek Chat...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/hiking_shoes_example.json
+	@echo ""
+	@echo "$(YELLOW)3. Running with DeepSeek Reasoner...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner --example-file=examples/hiking_shoes_example.json
+	@echo ""
+	@echo "$(YELLOW)4. Running with Kimi 8K...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/hiking_shoes_example.json
+	@echo ""
+	@echo "$(GREEN)✓ Hiking shoes example completed with 4 models!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)View results:$(NC)"
+	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
+	@echo "  http://localhost:$(STREAMLIT_PORT)"
+
+example-diaper-all: ## Run diaper example with all models (qwen, deepseek-chat, deepseek-reasoner, kimi-8k)
+	@echo "$(YELLOW)Running diaper example with all models...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)1. Running with Qwen...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/diaper_example.json
+	@echo ""
+	@echo "$(YELLOW)2. Running with DeepSeek Chat...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/diaper_example.json
+	@echo ""
+	@echo "$(YELLOW)3. Running with DeepSeek Reasoner...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner --example-file=examples/diaper_example.json
+	@echo ""
+	@echo "$(YELLOW)4. Running with Kimi 8K...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/diaper_example.json
+	@echo ""
+	@echo "$(GREEN)✓ Diaper example completed with 4 models!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)View results:$(NC)"
+	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
+	@echo "  http://localhost:$(STREAMLIT_PORT)"
+
+example-all: ## Run all examples (SUV, hiking shoes, diapers) with all models
+	@echo "$(YELLOW)Running ALL examples with all models...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)This will run SUV, hiking shoes, and diaper examples with 4 models each.$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Step 1: Running SUV example...$(NC)"
+	@$(MAKE) example-suv-all
+	@echo ""
+	@echo "$(YELLOW)Step 2: Running hiking shoes example...$(NC)"
+	@$(MAKE) example-hiking-shoes-all
+	@echo ""
+	@echo "$(YELLOW)Step 3: Running diaper example...$(NC)"
+	@$(MAKE) example-diaper-all
+	@echo ""
+	@echo "$(GREEN)✓ All examples completed!$(NC)"
 	@echo ""
 	@echo "$(YELLOW)View results:$(NC)"
 	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
