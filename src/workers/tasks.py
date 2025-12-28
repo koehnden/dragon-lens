@@ -89,44 +89,64 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                 logger.warning(f"Prompt {prompt.id} has no text, skipping")
                 continue
 
-            reusable = find_reusable_answer(self.db, run, prompt_text_zh)
-            if reusable:
-                logger.info(f"Reusing answer from previous run for prompt {prompt.id}")
-                answer_zh = reusable.raw_answer_zh
-                answer_en = reusable.raw_answer_en
-                tokens_in = reusable.tokens_in
-                tokens_out = reusable.tokens_out
-                latency = reusable.latency
-                cost_estimate = reusable.cost_estimate
-            else:
-                logger.info(f"Querying {provider}/{model_name} with prompt: {prompt_text_zh[:100]}...")
-                answer_zh, tokens_in, tokens_out, latency = asyncio.run(
-                    llm_router.query(provider, model_name, prompt_text_zh)
-                )
-                logger.info(f"Received answer: {answer_zh[:100]}...")
-
-                answer_en = None
-                if answer_zh:
-                    logger.info("Translating answer to English...")
-                    answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English")
-                    logger.info(f"Translated answer: {answer_en[:100]}...")
-
-                cost_estimate = calculate_cost(provider, model_name, tokens_in, tokens_out)
-            
-            llm_answer = LLMAnswer(
-                run_id=run_id,
-                prompt_id=prompt.id,
-                provider=provider,
-                model_name=model_name,
-                raw_answer_zh=answer_zh,
-                raw_answer_en=answer_en,
-                tokens_in=tokens_in,
-                tokens_out=tokens_out,
-                latency=latency,
-                cost_estimate=cost_estimate,
+            existing_answer = (
+                self.db.query(LLMAnswer)
+                .filter(LLMAnswer.run_id == run_id, LLMAnswer.prompt_id == prompt.id)
+                .first()
             )
-            self.db.add(llm_answer)
-            self.db.flush()
+
+            if existing_answer:
+                logger.info(f"Found existing answer for prompt {prompt.id}, reusing for extraction")
+                llm_answer = existing_answer
+                answer_zh = existing_answer.raw_answer_zh
+
+                self.db.query(BrandMention).filter(
+                    BrandMention.llm_answer_id == existing_answer.id
+                ).delete()
+                self.db.query(ProductMention).filter(
+                    ProductMention.llm_answer_id == existing_answer.id
+                ).delete()
+                self.db.flush()
+
+            else:
+                reusable = find_reusable_answer(self.db, run, prompt_text_zh)
+                if reusable:
+                    logger.info(f"Reusing answer from previous run for prompt {prompt.id}")
+                    answer_zh = reusable.raw_answer_zh
+                    answer_en = reusable.raw_answer_en
+                    tokens_in = reusable.tokens_in
+                    tokens_out = reusable.tokens_out
+                    latency = reusable.latency
+                    cost_estimate = reusable.cost_estimate
+                else:
+                    logger.info(f"Querying {provider}/{model_name} with prompt: {prompt_text_zh[:100]}...")
+                    answer_zh, tokens_in, tokens_out, latency = asyncio.run(
+                        llm_router.query(provider, model_name, prompt_text_zh)
+                    )
+                    logger.info(f"Received answer: {answer_zh[:100]}...")
+
+                    answer_en = None
+                    if answer_zh:
+                        logger.info("Translating answer to English...")
+                        answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English")
+                        logger.info(f"Translated answer: {answer_en[:100]}...")
+
+                    cost_estimate = calculate_cost(provider, model_name, tokens_in, tokens_out)
+
+                llm_answer = LLMAnswer(
+                    run_id=run_id,
+                    prompt_id=prompt.id,
+                    provider=provider,
+                    model_name=model_name,
+                    raw_answer_zh=answer_zh,
+                    raw_answer_en=answer_en,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    latency=latency,
+                    cost_estimate=cost_estimate,
+                )
+                self.db.add(llm_answer)
+                self.db.flush()
 
             logger.info("Discovering all brands in response...")
             all_brands = discover_all_brands(answer_zh, vertical_id, brands, self.db)
