@@ -204,6 +204,9 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+.claude
+.clinerules
+CLAUDE.md
 
 # Marimo
 marimo/_static/
