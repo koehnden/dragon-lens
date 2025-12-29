@@ -6,9 +6,12 @@ from typing import List
 from celery import Task
 from sqlalchemy.orm import Session
 
+import json
+
 from models import (
     Brand,
     BrandMention,
+    ExtractionDebug,
     LLMAnswer,
     Product,
     ProductMention,
@@ -19,8 +22,9 @@ from models import (
 from models.database import SessionLocal
 from models.domain import PromptLanguage, RunStatus, Sentiment
 from services.answer_reuse import find_reusable_answer
-from services.brand_discovery import discover_all_brands
+from services.brand_discovery import discover_brands_and_products
 from services.brand_recognition import extract_entities
+from services.entity_consolidation import consolidate_run
 from services.product_discovery import discover_and_store_products
 from services.translater import TranslaterService
 from services.metrics_service import calculate_and_save_metrics
@@ -29,6 +33,21 @@ from services.remote_llms import LLMRouter
 from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+_persistent_event_loop = None
+
+
+def _get_or_create_event_loop():
+    global _persistent_event_loop
+    if _persistent_event_loop is None or _persistent_event_loop.is_closed():
+        _persistent_event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_persistent_event_loop)
+    return _persistent_event_loop
+
+
+def _run_async(coro):
+    loop = _get_or_create_event_loop()
+    return loop.run_until_complete(coro)
 
 
 class DatabaseTask(Task):
@@ -124,7 +143,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                     cost_estimate = reusable.cost_estimate
                 else:
                     logger.info(f"Querying {provider}/{model_name} with prompt: {prompt_text_zh[:100]}...")
-                    answer_zh, tokens_in, tokens_out, latency = asyncio.run(
+                    answer_zh, tokens_in, tokens_out, latency = _run_async(
                         llm_router.query(provider, model_name, prompt_text_zh)
                     )
                     logger.info(f"Received answer: {answer_zh[:100]}...")
@@ -153,10 +172,26 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                 self.db.flush()
 
             logger.info("Discovering all brands in response...")
-            all_brands = discover_all_brands(answer_zh, vertical_id, brands, self.db)
+            all_brands, extraction_result = discover_brands_and_products(
+                answer_zh, vertical_id, brands, self.db
+            )
             logger.info(
                 f"Found {len(all_brands)} brands ({len(brands)} user-input, {len(all_brands) - len(brands)} discovered)"
             )
+
+            if extraction_result.debug_info:
+                debug_record = ExtractionDebug(
+                    llm_answer_id=llm_answer.id,
+                    raw_brands=json.dumps(extraction_result.debug_info.raw_brands, ensure_ascii=False),
+                    raw_products=json.dumps(extraction_result.debug_info.raw_products, ensure_ascii=False),
+                    rejected_at_normalization=json.dumps(extraction_result.debug_info.rejected_at_normalization, ensure_ascii=False),
+                    rejected_at_validation=json.dumps(extraction_result.debug_info.rejected_at_validation, ensure_ascii=False),
+                    rejected_at_list_filter=json.dumps(extraction_result.debug_info.rejected_at_list_filter, ensure_ascii=False),
+                    final_brands=json.dumps(extraction_result.debug_info.final_brands, ensure_ascii=False),
+                    final_products=json.dumps(extraction_result.debug_info.final_products, ensure_ascii=False),
+                    extraction_method="qwen",
+                )
+                self.db.add(debug_record)
 
             _apply_brand_translations(all_brands, translator, self.db)
 
@@ -176,7 +211,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             logger.info(f"Extracting brand mentions for {len(all_brands)} brands...")
             from services.ollama import OllamaService
             ollama_service = OllamaService()
-            mentions = asyncio.run(
+            mentions = _run_async(
                 ollama_service.extract_brands(answer_zh, brand_names, brand_aliases)
             )
 
@@ -189,7 +224,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                 sentiment_str = "neutral"
                 if mention_data["snippets"]:
                     snippet = mention_data["snippets"][0]
-                    sentiment_str = asyncio.run(ollama_service.classify_sentiment(snippet))
+                    sentiment_str = _run_async(ollama_service.classify_sentiment(snippet))
                     logger.info(f"Brand {brand.display_name} sentiment: {sentiment_str}")
 
                 sentiment = Sentiment.POSITIVE if sentiment_str == "positive" else (
@@ -216,6 +251,14 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
         logger.info(f"Calculating metrics for run {run_id}...")
         calculate_and_save_metrics(self.db, run_id)
         logger.info(f"Metrics calculated and saved for run {run_id}")
+
+        logger.info(f"Consolidating entities for run {run_id}...")
+        consolidation_result = consolidate_run(self.db, run_id)
+        logger.info(
+            f"Entity consolidation complete: {consolidation_result.brands_merged} brands merged, "
+            f"{consolidation_result.products_merged} products merged, "
+            f"{consolidation_result.brands_flagged} brands flagged for review"
+        )
 
         run.status = RunStatus.COMPLETED
         run.completed_at = datetime.utcnow()

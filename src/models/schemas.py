@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class VerticalCreate(BaseModel):
@@ -65,6 +65,13 @@ class TrackingJobCreate(BaseModel):
     model_name: str = Field(default="qwen2.5:7b-instruct-q4_0", description="Specific model name (e.g., deepseek-chat, deepseek-reasoner)")
     reuse_answers: bool = Field(default=False, description="Whether to reuse answers from previous runs")
     web_search_enabled: bool = Field(default=False, description="Whether web search is enabled for this run")
+
+    @field_validator('brands')
+    @classmethod
+    def brands_must_not_be_empty(cls, v):
+        if not v:
+            raise ValueError('At least one brand must be provided')
+        return v
 
 
 class TrackingJobResponse(BaseModel):
@@ -226,3 +233,62 @@ class APIKeyResponse(BaseModel):
 class DeleteJobsResponse(BaseModel):
     deleted_count: int
     vertical_ids: List[int]
+
+
+class ConsolidationResultResponse(BaseModel):
+    brands_merged: int
+    products_merged: int
+    brands_flagged: int
+    products_flagged: int
+    canonical_brands_created: int
+    canonical_products_created: int
+
+
+class CanonicalBrandResponse(BaseModel):
+    id: int
+    vertical_id: int
+    canonical_name: str
+    display_name: str
+    is_validated: bool
+    validation_source: Optional[str]
+    mention_count: int
+    aliases: List[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CanonicalProductResponse(BaseModel):
+    id: int
+    vertical_id: int
+    canonical_brand_id: Optional[int]
+    canonical_name: str
+    display_name: str
+    is_validated: bool
+    validation_source: Optional[str]
+    mention_count: int
+    aliases: List[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ValidationCandidateResponse(BaseModel):
+    id: int
+    vertical_id: int
+    entity_type: str
+    name: str
+    canonical_id: Optional[int]
+    mention_count: int
+    status: str
+    reviewed_at: Optional[datetime]
+    reviewed_by: Optional[str]
+    rejection_reason: Optional[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ValidateCandidateRequest(BaseModel):
+    approved: bool
+    rejection_reason: Optional[str] = None

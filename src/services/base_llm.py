@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 import httpx
+from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -102,4 +103,57 @@ class BaseLLMService(ABC):
         usage = result.get("usage", {})
         tokens_in = usage.get("prompt_tokens", 0)
         tokens_out = usage.get("completion_tokens", 0)
+        return answer, tokens_in, tokens_out, latency
+
+
+class OpenAICompatibleService(BaseLLMService):
+    provider: LLMProvider
+    default_model: str
+    api_base: str
+    temperature: float = 0.7
+    max_tokens: Optional[int] = None
+    system_prompt: Optional[str] = None
+
+    def _build_payload(self, messages: list[dict], model_name: str) -> dict:
+        return {"model": model_name, "messages": messages}
+
+    def _build_messages(self, prompt_zh: str) -> list[dict]:
+        messages = []
+        if self.system_prompt:
+            messages.append({"role": "system", "content": self.system_prompt})
+        messages.append({"role": "user", "content": prompt_zh})
+        return messages
+
+    async def query(
+        self,
+        prompt_zh: str,
+        model_name: Optional[str] = None,
+        **kwargs,
+    ) -> tuple[str, int, int, float]:
+        api_key = self._get_api_key()
+        model = model_name or self.default_model
+
+        client = AsyncOpenAI(api_key=api_key, base_url=self.api_base)
+
+        messages = self._build_messages(prompt_zh)
+        request_kwargs = {"model": model, "messages": messages}
+
+        if self.temperature is not None:
+            request_kwargs["temperature"] = self.temperature
+        if self.max_tokens is not None:
+            request_kwargs["max_tokens"] = self.max_tokens
+
+        start_time = time.time()
+        try:
+            response = await client.chat.completions.create(**request_kwargs)
+            latency = time.time() - start_time
+            return self._parse_openai_response(response, latency)
+        except Exception as e:
+            logger.error(f"{self.provider.value} API error: {e}")
+            raise
+
+    def _parse_openai_response(self, response, latency: float) -> tuple[str, int, int, float]:
+        answer = response.choices[0].message.content
+        tokens_in = response.usage.prompt_tokens if response.usage else 0
+        tokens_out = response.usage.completion_tokens if response.usage else 0
         return answer, tokens_in, tokens_out, latency
