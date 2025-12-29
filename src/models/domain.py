@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlalchemy import Boolean, JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from models.database import Base
+from .database import Base
 
 
 class Vertical(Base):

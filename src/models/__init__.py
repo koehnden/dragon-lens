@@ -1,5 +1,5 @@
-from models.database import Base, get_db, init_db
-from models.domain import (
+from .database import Base, get_db, init_db
+from .domain import (
     APIKey,
     Brand,
     BrandAlias,
