@@ -5,48 +5,31 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from models.domain import LLMProvider
-from services.base_llm import BaseLLMService
+from services.base_llm import BaseLLMService, OpenAICompatibleService
 
 logger = logging.getLogger(__name__)
 
 
-class DeepSeekService(BaseLLMService):
+class DeepSeekService(OpenAICompatibleService):
     provider = LLMProvider.DEEPSEEK
     default_model = "deepseek-chat"
+    temperature = 0.7
 
     def __init__(self, db: Optional[Session] = None, api_key: Optional[str] = None):
         super().__init__(db, api_key)
         self.api_base = settings.deepseek_api_base
 
-    def _build_payload(self, messages: list[dict], model_name: str) -> dict:
-        return {
-            "model": model_name,
-            "messages": messages,
-            "temperature": 0.7,
-        }
 
-
-class KimiService(BaseLLMService):
+class KimiService(OpenAICompatibleService):
     provider = LLMProvider.KIMI
     default_model = "moonshot-v1-8k"
+    temperature = 0.7
+    max_tokens = 2000
+    system_prompt = "你是一个中文助手，请用中文回答所有问题。"
 
     def __init__(self, db: Optional[Session] = None, api_key: Optional[str] = None):
         super().__init__(db, api_key)
         self.api_base = settings.kimi_api_base
-
-    def _build_messages(self, prompt_zh: str) -> list[dict]:
-        return [
-            {"role": "system", "content": "你是一个中文助手，请用中文回答所有问题。"},
-            {"role": "user", "content": prompt_zh},
-        ]
-
-    def _build_payload(self, messages: list[dict], model_name: str) -> dict:
-        return {
-            "model": model_name,
-            "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 2000,
-        }
 
 
 class LLMRouter:

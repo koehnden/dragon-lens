@@ -32,6 +32,9 @@ ENABLE_QWEN_FILTERING = os.getenv("ENABLE_QWEN_FILTERING", "true").lower() == "t
 ENABLE_QWEN_EXTRACTION = os.getenv("ENABLE_QWEN_EXTRACTION", "true").lower() == "true"
 ENABLE_EMBEDDING_CLUSTERING = os.getenv("ENABLE_EMBEDDING_CLUSTERING", "false").lower() == "true"
 ENABLE_LLM_CLUSTERING = os.getenv("ENABLE_LLM_CLUSTERING", "false").lower() == "true"
+ENABLE_WIKIDATA_NORMALIZATION = os.getenv("ENABLE_WIKIDATA_NORMALIZATION", "false").lower() == "true"
+ENABLE_BRAND_VALIDATION = os.getenv("ENABLE_BRAND_VALIDATION", "false").lower() == "true"
+ENABLE_CONFIDENCE_VERIFICATION = os.getenv("ENABLE_CONFIDENCE_VERIFICATION", "false").lower() == "true"
 OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "qllama/bge-small-zh-v1.5:latest")
 
 
@@ -59,9 +62,21 @@ class ExtractedEntities:
 
 
 @dataclass
+class ExtractionDebugInfo:
+    raw_brands: List[str]
+    raw_products: List[str]
+    rejected_at_normalization: List[dict]
+    rejected_at_validation: List[str]
+    rejected_at_list_filter: List[str]
+    final_brands: List[str]
+    final_products: List[str]
+
+
+@dataclass
 class ExtractionResult:
     brands: Dict[str, List[str]]
     products: Dict[str, List[str]]
+    debug_info: ExtractionDebugInfo | None = None
 
     def all_entities(self) -> Dict[str, List[str]]:
         combined = dict(self.brands)
@@ -341,6 +356,9 @@ def _boost_confidence_for_known_relationships(
     return product_confidences
 
 
+AMBIGUOUS_CONFIDENCE_THRESHOLD = 0.5
+
+
 def _identify_ambiguous_entities(
     brand_confidences: Dict[str, float],
     product_confidences: Dict[str, float]
@@ -348,11 +366,11 @@ def _identify_ambiguous_entities(
     ambiguous_entities = []
     entity_source = {}
     for brand, confidence in brand_confidences.items():
-        if confidence < 0.8:
+        if confidence < AMBIGUOUS_CONFIDENCE_THRESHOLD:
             ambiguous_entities.append(brand)
             entity_source[brand] = "brand"
     for product, confidence in product_confidences.items():
-        if confidence < 0.8:
+        if confidence < AMBIGUOUS_CONFIDENCE_THRESHOLD:
             ambiguous_entities.append(product)
             entity_source[product] = "product"
     return ambiguous_entities, entity_source
@@ -428,25 +446,42 @@ async def _extract_entities_with_qwen(
         products = result.get("products", [])
         relationships = result.get("relationships", {})
 
-        brand_confidences = _calculate_confidence_scores(brands, vertical, is_brand=True)
-        product_confidences = _calculate_confidence_scores(products, vertical, is_brand=False)
-        product_confidences = _boost_confidence_for_known_relationships(
-            product_confidences, relationships, brands
-        )
-        ambiguous_entities, entity_source = _identify_ambiguous_entities(
-            brand_confidences, product_confidences
-        )
-        verified_results = await _verify_ambiguous_entities_with_qwen(
-            ollama, ambiguous_entities, text, vertical, vertical_description
-        ) if ambiguous_entities else {}
-        corrected_brands = _process_brands_with_verification(
-            brands, verified_results, brand_confidences
-        )
-        corrected_products = _process_products_with_verification(
-            products, verified_results, product_confidences
-        )
-        corrected_brands = list(dict.fromkeys(corrected_brands))
-        corrected_products = list(dict.fromkeys(corrected_products))
+        logger.info(f"[Extraction] Raw from Qwen: brands={brands}, products={products}")
+
+        if ENABLE_CONFIDENCE_VERIFICATION:
+            brand_confidences = _calculate_confidence_scores(brands, vertical, is_brand=True)
+            product_confidences = _calculate_confidence_scores(products, vertical, is_brand=False)
+            product_confidences = _boost_confidence_for_known_relationships(
+                product_confidences, relationships, brands
+            )
+
+            logger.debug(f"[Extraction] Brand confidences: {brand_confidences}")
+            logger.debug(f"[Extraction] Product confidences: {product_confidences}")
+
+            ambiguous_entities, entity_source = _identify_ambiguous_entities(
+                brand_confidences, product_confidences
+            )
+            verified_results = await _verify_ambiguous_entities_with_qwen(
+                ollama, ambiguous_entities, text, vertical, vertical_description
+            ) if ambiguous_entities else {}
+
+            if ambiguous_entities:
+                logger.info(f"[Extraction] Ambiguous entities verified: {verified_results}")
+
+            corrected_brands = _process_brands_with_verification(
+                brands, verified_results, brand_confidences
+            )
+            corrected_products = _process_products_with_verification(
+                products, verified_results, product_confidences
+            )
+            corrected_brands = list(dict.fromkeys(corrected_brands))
+            corrected_products = list(dict.fromkeys(corrected_products))
+
+            logger.info(f"[Extraction] After verification: brands={corrected_brands}")
+        else:
+            logger.info(f"[Extraction] Skipping confidence verification (ENABLE_CONFIDENCE_VERIFICATION=false)")
+            corrected_brands = list(dict.fromkeys(brands))
+            corrected_products = list(dict.fromkeys(products))
 
         normalized_result = await _normalize_brands_unified(
             corrected_brands,
@@ -455,9 +490,17 @@ async def _extract_entities_with_qwen(
             ollama,
         )
 
+        rejected_at_normalization = normalized_result.get("rejected", [])
+        if rejected_at_normalization:
+            logger.info(f"[Extraction] Rejected at normalization: {rejected_at_normalization}")
+
         validated_products = await _validate_products(
             ollama, corrected_products, text, vertical, vertical_description
         )
+
+        rejected_products = set(corrected_products) - set(validated_products)
+        if rejected_products:
+            logger.info(f"[Extraction] Rejected at product validation: {list(rejected_products)}")
 
         normalized_brands = [
             b["canonical"] for b in normalized_result.get("brands", [])
@@ -466,6 +509,8 @@ async def _extract_entities_with_qwen(
             b["canonical"]: b.get("chinese", "")
             for b in normalized_result.get("brands", [])
         }
+
+        logger.info(f"[Extraction] Normalized brands: {normalized_brands}")
 
         candidates = [
             EntityCandidate(name=b, source="qwen", entity_type="brand")
@@ -476,6 +521,10 @@ async def _extract_entities_with_qwen(
         ]
 
         filtered = _filter_by_list_position(candidates, text)
+
+        filtered_out_list = list(set(c.name for c in candidates) - set(c.name for c in filtered))
+        if filtered_out_list:
+            logger.info(f"[Extraction] Filtered by list position: {filtered_out_list}")
 
         brand_clusters: Dict[str, List[str]] = {}
         product_clusters: Dict[str, List[str]] = {}
@@ -489,13 +538,22 @@ async def _extract_entities_with_qwen(
             elif c.entity_type == "product":
                 product_clusters[c.name] = [c.name]
 
-        logger.info(
-            f"Qwen extraction: {len(brands)} brands, {len(products)} products -> "
-            f"{len(normalized_brands)} normalized brands, "
-            f"{len(validated_products)} validated products -> "
-            f"{len(brand_clusters)} brands, {len(product_clusters)} products after list filter"
+        debug_info = ExtractionDebugInfo(
+            raw_brands=brands,
+            raw_products=products,
+            rejected_at_normalization=rejected_at_normalization,
+            rejected_at_validation=list(rejected_products),
+            rejected_at_list_filter=filtered_out_list,
+            final_brands=list(brand_clusters.keys()),
+            final_products=list(product_clusters.keys()),
         )
-        return ExtractionResult(brands=brand_clusters, products=product_clusters)
+
+        logger.info(
+            f"[Extraction] Final: {len(brands)} raw -> "
+            f"{len(normalized_brands)} normalized -> "
+            f"{len(brand_clusters)} brands, {len(product_clusters)} products"
+        )
+        return ExtractionResult(brands=brand_clusters, products=product_clusters, debug_info=debug_info)
 
     except Exception as e:
         logger.error(f"Qwen extraction failed: {e}")
@@ -601,42 +659,39 @@ def _build_brand_normalization_prompt(
 
     return f"""You are a brand normalization expert for the {vertical_context} industry.
 
-TASK: Process this list of extracted brand names and return ONLY genuine {vertical} brands in canonical form.
+TASK: Normalize and canonicalize this list of brand names. Do NOT reject any brands - just normalize them.
 
 BRANDS TO PROCESS:
 {brands_json}
 
-FOR EACH BRAND, DO ALL OF THE FOLLOWING:
+FOR EACH BRAND, DO THE FOLLOWING:
 
-1. VERTICAL CHECK: Is this brand primarily in the {vertical} industry?
-   - REJECT brands from other industries (e.g., Huawei/Google for automotive, Toyota for electronics)
-   - ACCEPT brands that manufacture/sell {vertical} products
-
-2. JV/OWNER NORMALIZATION: Extract the consumer-facing brand
+1. JV/OWNER NORMALIZATION: Extract the consumer-facing brand
    - Chinese JV format: "中方+外方" -> Extract FOREIGN brand
    - Examples: 长安福特 -> Ford, 华晨宝马 -> BMW, 一汽大众 -> Volkswagen, 东风日产 -> Nissan
    - Owner+Brand format: "集团+品牌" -> Extract the BRAND
    - Examples: 上汽名爵 -> MG, 广汽传祺 -> Trumpchi, 上汽通用别克 -> Buick
 
-3. ALIAS DEDUPLICATION: Merge duplicates to canonical English name
+2. ALIAS DEDUPLICATION: Merge duplicates to canonical English name
    - Same brand in different forms -> One canonical entry
    - Examples: Jeep + 吉普 -> Jeep, BYD + 比亚迪 -> BYD, 宝马 + BMW -> BMW
+
+3. KEEP ALL BRANDS: Do not reject any brand. If unsure about canonicalization, keep the original name.
 
 OUTPUT FORMAT (JSON only):
 {{
   "brands": [
     {{"canonical": "English Name", "chinese": "中文名", "original_forms": ["form1", "form2"]}}
   ],
-  "rejected": [
-    {{"name": "rejected brand", "reason": "why rejected"}}
-  ]
+  "rejected": []
 }}
 
 IMPORTANT:
-- canonical MUST be the English brand name
+- canonical MUST be the English brand name (or original if no English name known)
 - chinese should be the Chinese name if known, or empty string if not
 - original_forms lists all input forms that map to this brand
-- Be thorough: check ALL brands, normalize ALL JVs, merge ALL duplicates"""
+- rejected should ALWAYS be an empty array - do not reject any brands
+- Be thorough: normalize ALL JVs, merge ALL duplicates"""
 
 
 def _parse_normalization_response(response: str) -> Dict:
@@ -707,9 +762,9 @@ def _build_brand_validation_system_prompt(vertical: str, vertical_description: s
     if vertical_description:
         vertical_context += f" ({vertical_description})"
 
-    return f"""You are a strict quality control expert validating BRAND extractions for the {vertical_context} industry.
+    return f"""You are a quality control expert validating BRAND extractions in the Chinese market for the {vertical_context} industry.
 
-YOUR ROLE: Act as a skeptical reviewer. Your job is to REJECT entities that are NOT genuine brands. When in doubt, REJECT.
+YOUR ROLE: Identify genuine brands while filtering obvious non-brands. 
 
 TASK: For each candidate, determine if it is a genuine BRAND (company/manufacturer) - ACCEPT or REJECT.
 
@@ -764,9 +819,10 @@ ALSO REJECT these non-brand categories:
 ---
 
 VALIDATION RULES:
-1. Be CONSERVATIVE: If not 95% certain it's a company name, REJECT
+1. If reasonably confident it's a company/manufacturer name, ACCEPT
 2. ASK YOURSELF: "Is this a company that makes products, or is this a product itself?"
 3. CONTEXT CHECK: Does it make sense as a manufacturer in {vertical_context}?
+4. When uncertain about established company names (especially Chinese brands like 哈弗, 吉利, 长安, 荣威, 奇瑞), lean toward ACCEPT
 
 ---
 
@@ -785,9 +841,9 @@ def _build_product_validation_system_prompt(vertical: str, vertical_description:
     if vertical_description:
         vertical_context += f" ({vertical_description})"
 
-    return f"""You are a strict quality control expert validating PRODUCT extractions for the {vertical_context} industry.
+    return f"""You are a quality control expert validating PRODUCT extractions for the {vertical_context} industry.
 
-YOUR ROLE: Act as a skeptical reviewer. Your job is to REJECT entities that are NOT genuine products. When in doubt, REJECT.
+YOUR ROLE: Identify genuine products while filtering obvious non-products. When uncertain about a known product model, lean toward ACCEPT.
 
 TASK: For each candidate, determine if it is a genuine PRODUCT (specific model/item) - ACCEPT or REJECT.
 
@@ -838,9 +894,10 @@ ALSO REJECT these non-product categories:
 ---
 
 VALIDATION RULES:
-1. Be CONSERVATIVE: If not 95% certain it's a specific product, REJECT
+1. If reasonably confident it's a specific product model, ACCEPT
 2. ASK YOURSELF: "Can I buy this specific item? Does it have a model number or distinctive name?"
 3. CONTEXT CHECK: Does it make sense as a purchasable product in {vertical_context}?
+4. When uncertain about product models with alphanumeric codes (H6, CS75, RX5, CR-V, RAV4), lean toward ACCEPT
 
 ---
 
@@ -870,7 +927,7 @@ For EACH candidate, decide: ACCEPT (genuine company/manufacturer) or REJECT (pro
 
 Remember: Products like "RAV4", "iPhone", "Model Y" are NOT brands - they are products made BY brands.
 
-Be STRICT. When uncertain, REJECT.
+When uncertain about established company names, lean toward ACCEPT.
 
 Output JSON with "validations" array:"""
 
@@ -891,7 +948,7 @@ For EACH candidate, decide: ACCEPT (genuine specific product/model) or REJECT (b
 
 Remember: Company names like "Toyota", "Apple", "Nike" are NOT products - they are brands that MAKE products.
 
-Be STRICT. When uncertain, REJECT.
+When uncertain about specific product models, lean toward ACCEPT.
 
 Output JSON with "validations" array:"""
 
@@ -977,9 +1034,14 @@ async def _run_negative_validation(
     if not brands and not products:
         return [], []
 
-    validated_brands = await _validate_brands(
-        ollama, brands, text, vertical, vertical_description
-    )
+    if ENABLE_BRAND_VALIDATION:
+        validated_brands = await _validate_brands(
+            ollama, brands, text, vertical, vertical_description
+        )
+    else:
+        logger.info(f"[Extraction] Skipping brand validation (ENABLE_BRAND_VALIDATION=false), keeping all {len(brands)} brands")
+        validated_brands = brands
+
     validated_products = await _validate_products(
         ollama, products, text, vertical, vertical_description
     )
@@ -993,36 +1055,38 @@ async def _normalize_brands_unified(
     vertical_description: str,
     ollama,
 ) -> Dict:
-    from src.services.wikidata_lookup import (
-        get_canonical_brand_name,
-        get_chinese_name,
-        is_brand_in_vertical,
-    )
-
     if not brands:
         return {"brands": [], "rejected": []}
 
     wikidata_known = []
     wikidata_rejected = []
-    need_qwen = []
 
-    for brand in brands:
-        is_known, in_vertical = is_brand_in_vertical(brand, vertical)
-        if is_known and in_vertical:
-            canonical = get_canonical_brand_name(brand, vertical)
-            chinese = get_chinese_name(brand, vertical)
-            wikidata_known.append({
-                "canonical": canonical or brand,
-                "chinese": chinese or "",
-                "original_forms": [brand]
-            })
-        elif is_known and not in_vertical:
-            wikidata_rejected.append({
-                "name": brand,
-                "reason": f"Known brand but not in {vertical} industry"
-            })
-        else:
-            need_qwen.append(brand)
+    if ENABLE_WIKIDATA_NORMALIZATION:
+        from src.services.wikidata_lookup import (
+            get_canonical_brand_name,
+            get_chinese_name,
+            is_brand_in_vertical,
+        )
+        need_qwen = []
+        for brand in brands:
+            is_known, in_vertical = is_brand_in_vertical(brand, vertical)
+            if is_known and in_vertical:
+                canonical = get_canonical_brand_name(brand, vertical)
+                chinese = get_chinese_name(brand, vertical)
+                wikidata_known.append({
+                    "canonical": canonical or brand,
+                    "chinese": chinese or "",
+                    "original_forms": [brand]
+                })
+            elif is_known and not in_vertical:
+                wikidata_rejected.append({
+                    "name": brand,
+                    "reason": f"Known brand but not in {vertical} industry"
+                })
+            else:
+                need_qwen.append(brand)
+    else:
+        need_qwen = list(brands)
 
     qwen_result = {"brands": [], "rejected": []}
     if need_qwen:
@@ -2286,13 +2350,24 @@ Examples:
         return None
 
 
+_persistent_event_loop = None
+
+
+def _get_or_create_event_loop():
+    global _persistent_event_loop
+    if _persistent_event_loop is None or _persistent_event_loop.is_closed():
+        _persistent_event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_persistent_event_loop)
+    return _persistent_event_loop
+
+
 def _run_async(coro):
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-    else:
+        asyncio.get_running_loop()
         raise RuntimeError("Cannot run async code from within async context. Use await instead.")
+    except RuntimeError:
+        loop = _get_or_create_event_loop()
+        return loop.run_until_complete(coro)
 
 
 def _seed_primary(primary_brand: str, aliases: Dict[str, List[str]]) -> Set[str]:
