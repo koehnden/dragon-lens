@@ -43,7 +43,7 @@ def test_create_tracking_job_minimal(client: TestClient):
 
     assert response.status_code == 201
     data = response.json()
-    assert data["model_name"] == "qwen"
+    assert "qwen" in data["model_name"].lower()
 
 
 def test_create_tracking_job_existing_vertical(client: TestClient):

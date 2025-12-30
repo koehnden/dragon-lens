@@ -18,7 +18,7 @@ def test_beauty_skincare_vertical():
     """
 
     entities = extract_entities(response, "Loreal", {"zh": ["欧莱雅"], "en": ["Loreal"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
 
     assert any("loreal" in name.lower() or "欧莱雅" in name.lower() for name in extracted_names), f"Expected Loreal in {extracted_names}"
     assert any("shiseido" in name.lower() for name in extracted_names), f"Expected Shiseido in {extracted_names}"
@@ -48,7 +48,7 @@ def test_smartphones_electronics_vertical():
     """
 
     entities = extract_entities(response, "iPhone", {"zh": ["苹果"], "en": ["iPhone", "Apple"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
 
     assert any("iphone" in name.lower() for name in extracted_names), f"Expected iPhone in {extracted_names}"
     assert any("14" in name and "pro" in name.lower() for name in extracted_names), f"Expected 14 Pro in {extracted_names}"
@@ -78,7 +78,7 @@ def test_pet_care_vertical():
     """
 
     entities = extract_entities(response, "RoyalCanin", {"zh": ["皇家"], "en": ["RoyalCanin"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
 
     assert any("royal" in name.lower() or "canin" in name.lower() for name in extracted_names), f"Expected RoyalCanin in {extracted_names}"
     assert any("purina" in name.lower() for name in extracted_names), f"Expected Purina in {extracted_names}"
@@ -105,7 +105,7 @@ def test_home_appliances_vertical():
     """
 
     entities = extract_entities(response, "Dyson", {"zh": ["戴森"], "en": ["Dyson"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
 
     assert any("dyson" in name.lower() for name in extracted_names), f"Expected Dyson in {extracted_names}"
     assert any("v15" in name.lower() for name in extracted_names), f"Expected V15 in {extracted_names}"
@@ -134,7 +134,7 @@ def test_health_wellness_vertical():
     """
 
     entities = extract_entities(response, "Swisse", {"zh": ["瑞思"], "en": ["Swisse"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
 
     assert any("swisse" in name.lower() for name in extracted_names), f"Expected Swisse in {extracted_names}"
     assert any("gnc" in name.lower() for name in extracted_names), f"Expected GNC in {extracted_names}"

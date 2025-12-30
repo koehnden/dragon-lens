@@ -8,7 +8,7 @@ entity types based on pattern matching and heuristics.
 import re
 from typing import Dict, List
 
-from src.constants import (
+from constants import (
     PRODUCT_HINTS,
     GENERIC_TERMS,
     DESCRIPTOR_PATTERNS,

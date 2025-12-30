@@ -13,7 +13,7 @@ class TestListItemFirstEntityExtraction:
         2. VW Tiguan is spacious.
         """
         entities = extract_entities(response, "Honda", {"zh": ["本田"], "en": ["Honda"]})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert any("honda" in name.lower() for name in extracted_names)
         assert any("crv" in name.lower() or "cr-v" in name.lower() for name in extracted_names)
@@ -27,7 +27,7 @@ class TestListItemFirstEntityExtraction:
         - Samsung Galaxy S24 Ultra has amazing display, comparable to iPhone 15 Pro Max
         """
         entities = extract_entities(response, "Apple", {"zh": ["苹果"], "en": ["iPhone", "Apple"]})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert any("iphone" in name.lower() or "pro" in name.lower() for name in extracted_names)
         assert any("samsung" in name.lower() or "s24" in name.lower() for name in extracted_names)
@@ -41,7 +41,7 @@ class TestListItemFirstEntityExtraction:
         3. Purina Pro Plan offers good value
         """
         entities = extract_entities(response, "Royal Canin", {"zh": ["皇家"], "en": ["Royal Canin"]})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert any("royal" in name.lower() for name in extracted_names)
         assert any("hill" in name.lower() for name in extracted_names)
@@ -55,7 +55,7 @@ class TestListItemFirstEntityExtraction:
         * The Ordinary provides budget options
         """
         entities = extract_entities(response, "Loreal", {"zh": ["欧莱雅"], "en": ["Loreal", "L'Oreal"]})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert any("loreal" in name.lower() or "l'oreal" in name.lower() for name in extracted_names)
         assert any("estee" in name.lower() or "lauder" in name.lower() for name in extracted_names)
@@ -70,7 +70,7 @@ class TestListItemFirstEntityExtraction:
         3、理想L7空间大
         """
         entities = extract_entities(response, "比亚迪", {"zh": ["BYD"], "en": ["BYD"]})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert any("比亚迪" in name or "宋" in name for name in extracted_names)
         assert any("大众" in name or "途观" in name for name in extracted_names)
@@ -86,7 +86,7 @@ class TestListItemFirstEntityExtraction:
         3. ThinkPad X1 Carbon is best for business
         """
         entities = extract_entities(response, "Apple", {"zh": ["苹果"], "en": ["MacBook", "Apple"]})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert any("macbook" in name.lower() and "pro" in name.lower() for name in extracted_names)
         assert any("dell" in name.lower() or "xps" in name.lower() for name in extracted_names)
@@ -101,7 +101,7 @@ class TestListItemFirstEntityExtraction:
         - Shark Navigator is budget-friendly
         """
         entities = extract_entities(response, "Dyson", {"zh": ["戴森"], "en": ["Dyson"]})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert any("dyson" in name.lower() for name in extracted_names)
         assert any("roomba" in name.lower() for name in extracted_names)
@@ -116,7 +116,7 @@ class TestListItemFirstEntityExtraction:
         VW Tiguan offers German engineering. Mazda CX-5 has sporty handling.
         """
         entities = extract_entities(response, "Honda", {"zh": ["本田"], "en": ["Honda"]})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert any("honda" in name.lower() for name in extracted_names)
         assert any("toyota" in name.lower() or "rav4" in name.lower() for name in extracted_names)
@@ -129,7 +129,7 @@ class TestListItemFirstEntityExtraction:
         2) Adidas Ultraboost offers comfort, competing with Nike React and New Balance Fresh Foam
         """
         entities = extract_entities(response, "Nike", {"zh": ["耐克"], "en": ["Nike"]})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert any("nike" in name.lower() for name in extracted_names)
         assert any("max" in name.lower() for name in extracted_names)
@@ -144,7 +144,7 @@ class TestListItemFirstEntityExtraction:
         2. VW Tiguan - spacious interior
         """
         entities = extract_entities(response, "Honda", {"zh": ["本田"], "en": ["Honda"]})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert any("honda" in name.lower() for name in extracted_names)
         assert any("crv" in name.lower() or "cr-v" in name.lower() for name in extracted_names)
@@ -185,7 +185,7 @@ class TestListItemFirstEntityExtraction:
 - **Luxury Buyers**: BMW X1.
         """
         entities = extract_entities(response, "Toyota", {"zh": ["丰田"], "en": ["Toyota"]})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert any("toyota" in name.lower() for name in extracted_names)
         assert any("honda" in name.lower() for name in extracted_names)

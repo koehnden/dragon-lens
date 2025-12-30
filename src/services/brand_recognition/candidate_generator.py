@@ -9,7 +9,7 @@ import re
 import importlib
 from typing import Dict, List, Set
 
-from src.constants import (
+from constants import (
     KNOWN_PRODUCTS,
     GENERIC_TERMS,
     PRODUCT_HINTS,

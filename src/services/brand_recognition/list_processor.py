@@ -8,12 +8,14 @@ list items, and extracting entities from list items.
 import re
 from typing import Dict, List, Optional, Tuple
 
-from src.constants import (
+from constants import (
     KNOWN_PRODUCTS,
     GENERIC_TERMS,
+    PRODUCT_HINTS,
     COMPILED_LIST_PATTERNS,
     COMPARISON_MARKERS,
     CLAUSE_SEPARATORS,
+    VALID_EXTRA_TERMS,
 )
 
 from services.brand_recognition.classification import (
@@ -110,5 +112,246 @@ def extract_primary_entities_from_list_item(item: str) -> Dict[str, Optional[str
 
 def _filter_by_list_position(candidates: List[EntityCandidate], text: str) -> List[EntityCandidate]:
     """Filter candidates based on their position in list items."""
-    # Simplified version - in real implementation this would analyze list positions
-    return candidates
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not is_list_format(text):
+        return candidates
+
+    list_items = split_into_list_items(text)
+    if not list_items:
+        return candidates
+
+    allowed_brands: set = set()
+    allowed_products: set = set()
+
+    intro_text = _get_intro_text(text)
+    if intro_text:
+        _add_all_entities_from_text(intro_text, candidates, allowed_brands, allowed_products)
+
+    for item in list_items:
+        primary = _extract_first_brand_and_product_from_item(item, candidates)
+        if primary["brand"]:
+            allowed_brands.add(primary["brand"].lower())
+        if primary["product"]:
+            allowed_products.add(primary["product"].lower())
+
+    filtered = _match_candidates_to_allowed(candidates, allowed_brands, allowed_products)
+    logger.info(f"List position filter: {len(candidates)} -> {len(filtered)} candidates")
+    return filtered
+
+
+def _get_intro_text(text: str) -> Optional[str]:
+    """Get introductory text before the first list item."""
+    first_marker_idx = _find_first_list_item_index(text)
+    if first_marker_idx > 0:
+        return text[:first_marker_idx].strip()
+    return None
+
+
+def _add_all_entities_from_text(
+    text: str, candidates: List[EntityCandidate], brands: set, products: set
+) -> None:
+    """Add all entities found in text to the allowed sets."""
+    from services.brand_recognition.classification import _has_product_model_patterns, _has_product_suffix
+
+    text_lower = text.lower()
+    for candidate in candidates:
+        name_lower = candidate.name.lower()
+        if name_lower in text_lower:
+            if candidate.entity_type == "brand":
+                brands.add(name_lower)
+            elif candidate.entity_type == "product" or name_lower in PRODUCT_HINTS:
+                products.add(name_lower)
+            elif _has_brand_patterns(candidate.name):
+                brands.add(name_lower)
+            elif _has_product_patterns(candidate.name):
+                products.add(name_lower)
+
+
+def _has_product_patterns(name: str) -> bool:
+    """Check if name has product-like patterns."""
+    from services.brand_recognition.classification import _has_product_model_patterns, _has_product_suffix
+
+    if _has_product_model_patterns(name):
+        return True
+    if _has_product_suffix(name):
+        return True
+    if name.lower() in PRODUCT_HINTS:
+        return True
+    return False
+
+
+def _has_brand_patterns(name: str) -> bool:
+    """Check if name has brand-like patterns."""
+    from services.brand_recognition.classification import _has_product_model_patterns, _has_product_suffix
+
+    if _has_product_model_patterns(name):
+        return False
+    if _has_product_suffix(name):
+        return False
+    if re.match(r"^[A-Z][a-z]+$", name) and len(name) >= 4:
+        return True
+    if re.search(r"[\u4e00-\u9fff]{2,4}$", name) and not re.search(r"\d", name):
+        return True
+    if re.match(r"^[A-Z]{2,5}$", name) and name not in {"EV", "DM", "AI", "VR", "AR"}:
+        return True
+    if re.search(r"(Inc|Corp|Co|Ltd|LLC|GmbH|AG|公司|集团|企业)$", name, re.IGNORECASE):
+        return True
+    return False
+
+
+def _extract_first_brand_and_product_from_item(
+    item: str, candidates: List[EntityCandidate]
+) -> Dict[str, Optional[str]]:
+    """Extract the first brand and product from a list item."""
+    result: Dict[str, Optional[str]] = {"brand": None, "product": None}
+
+    primary_region = _get_primary_region(item)
+    primary_region_lower = primary_region.lower()
+
+    candidate_brands: List[Tuple[int, int, str]] = []
+    candidate_products: List[Tuple[int, int, str]] = []
+
+    for candidate in candidates:
+        name = candidate.name
+        name_lower = name.lower()
+        pos = primary_region_lower.find(name_lower)
+        if pos == -1:
+            continue
+
+        is_brand = candidate.entity_type == "brand"
+        is_product = candidate.entity_type == "product"
+
+        if is_brand:
+            candidate_brands.append((pos, -len(name), name))
+        elif is_product:
+            candidate_products.append((pos, -len(name), name))
+        elif _looks_like_product(name) or _has_product_patterns(name):
+            candidate_products.append((pos, -len(name), name))
+        elif _has_brand_patterns(name):
+            candidate_brands.append((pos, -len(name), name))
+
+    if candidate_brands:
+        candidate_brands.sort(key=lambda x: (x[0], x[1]))
+        result["brand"] = candidate_brands[0][2]
+
+    if candidate_products:
+        candidate_products.sort(key=lambda x: (x[0], x[1]))
+        result["product"] = candidate_products[0][2]
+
+    if result["product"] is None:
+        known_products: List[Tuple[int, int, str]] = []
+        for product in KNOWN_PRODUCTS:
+            pos = primary_region_lower.find(product.lower())
+            if pos != -1:
+                known_products.append((pos, -len(product), product))
+        if known_products:
+            known_products.sort(key=lambda x: (x[0], x[1]))
+            result["product"] = known_products[0][2]
+
+    return result
+
+
+def _looks_like_product(name: str) -> bool:
+    """Check if a name looks like a product."""
+    if re.search(r"\d", name):
+        return True
+    if re.search(r"(PLUS|Plus|Pro|Max|Ultra|Mini|EV|DM)", name):
+        return True
+    return False
+
+
+def _get_primary_region(item: str) -> str:
+    """Get the primary region of a list item (before cutoff markers)."""
+    cutoff = _find_first_cutoff(item)
+    return item[:cutoff] if cutoff else item
+
+
+def _find_first_cutoff(item: str) -> Optional[int]:
+    """Find the first cutoff position in a list item."""
+    cutoff_positions = []
+
+    for marker in COMPARISON_MARKERS:
+        pos = item.find(marker)
+        if pos != -1:
+            cutoff_positions.append(pos)
+
+    for sep in CLAUSE_SEPARATORS:
+        pos = item.find(sep)
+        if pos != -1 and pos > 5:
+            cutoff_positions.append(pos)
+
+    return min(cutoff_positions) if cutoff_positions else None
+
+
+def _match_candidates_to_allowed(
+    candidates: List[EntityCandidate],
+    allowed_brands: set,
+    allowed_products: set
+) -> List[EntityCandidate]:
+    """Match candidates to allowed sets."""
+    filtered: List[EntityCandidate] = []
+    allowed_all = allowed_brands | allowed_products
+
+    for candidate in candidates:
+        name_lower = candidate.name.lower()
+
+        if name_lower in allowed_all:
+            filtered.append(candidate)
+            continue
+
+        if _candidate_matches_allowed(name_lower, allowed_brands):
+            filtered.append(candidate)
+            continue
+
+        if _candidate_matches_allowed(name_lower, allowed_products):
+            filtered.append(candidate)
+            continue
+
+    return filtered
+
+
+def _candidate_matches_allowed(candidate_lower: str, allowed_set: set) -> bool:
+    """Check if a candidate matches any allowed entity."""
+    for allowed in allowed_set:
+        if candidate_lower in allowed:
+            return True
+        if allowed == candidate_lower:
+            return True
+        if _is_clean_substring_match(allowed, candidate_lower):
+            return True
+    return False
+
+
+def _is_clean_substring_match(allowed: str, candidate: str) -> bool:
+    """Check if candidate is a clean substring match of allowed."""
+    if allowed not in candidate:
+        return False
+    if len(candidate) > len(allowed) * 4:
+        return False
+    extra = candidate.replace(allowed, "", 1).strip()
+    if re.search(r"[\u4e00-\u9fff]{2,}", extra):
+        return False
+    if _extra_is_valid(extra):
+        return True
+    if re.search(r"[a-z]{3,}", extra):
+        return False
+    return True
+
+
+def _extra_is_valid(extra: str) -> bool:
+    """Check if extra text is valid for substring matching."""
+    words = extra.lower().split()
+    for word in words:
+        word = word.strip()
+        if not word:
+            continue
+        if word in VALID_EXTRA_TERMS:
+            continue
+        if word.isdigit():
+            continue
+        if re.match(r"^\d+[a-z]{0,2}$", word):
+            continue
+        return False
+    return True
