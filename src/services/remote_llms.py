@@ -14,10 +14,15 @@ class DeepSeekService(OpenAICompatibleService):
     provider = LLMProvider.DEEPSEEK
     default_model = "deepseek-chat"
     temperature = 0.7
+    SUPPORTED_MODELS = ["deepseek-chat", "deepseek-reasoner"]
 
     def __init__(self, db: Optional[Session] = None, api_key: Optional[str] = None):
         super().__init__(db, api_key)
         self.api_base = settings.deepseek_api_base
+
+    def validate_model(self, model: str) -> None:
+        if model not in self.SUPPORTED_MODELS:
+            raise ValueError(f"Unsupported DeepSeek model: {model}")
 
 
 class KimiService(OpenAICompatibleService):

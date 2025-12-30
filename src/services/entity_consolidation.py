@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from src.models import (
+from models import (
     Brand,
     BrandAlias,
     BrandMention,

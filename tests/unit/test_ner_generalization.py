@@ -15,7 +15,7 @@ def test_filters_feature_suffixes_across_verticals():
 
     for vertical, response in responses:
         entities = extract_entities(response, "", {})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert not any("性" in name and len(name) <= 4 for name in extracted_names), f"{vertical}: Should filter 'XX性' patterns but found in {extracted_names}"
         assert not any("度" in name and len(name) <= 4 for name in extracted_names), f"{vertical}: Should filter 'XX度' patterns but found in {extracted_names}"
@@ -35,7 +35,7 @@ def test_filters_feature_descriptor_words_across_verticals():
 
     for vertical, response in responses:
         entities = extract_entities(response, "", {})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert not any("效果" in name for name in extracted_names), f"{vertical}: Should filter '效果' but found in {extracted_names}"
         assert not any("功能" in name for name in extracted_names), f"{vertical}: Should filter '功能' but found in {extracted_names}"
@@ -57,7 +57,7 @@ def test_keeps_brand_product_patterns_across_verticals():
 
     for vertical, response, expected_patterns in test_cases:
         entities = extract_entities(response, "", {})
-        extracted_names_lower = {name.lower().replace(" ", "") for name in entities.keys()}
+        extracted_names_lower = {name.lower().replace(" ", "") for name in entities.all_entities().keys()}
 
         for pattern in expected_patterns:
             assert any(pattern in name for name in extracted_names_lower), f"{vertical}: Expected to extract pattern '{pattern}' but got {extracted_names_lower}"
@@ -73,7 +73,7 @@ def test_filters_measurement_descriptor_words():
 
     for vertical, response in responses:
         entities = extract_entities(response, "", {})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert not any("空间" in name for name in extracted_names), f"{vertical}: Should filter '空间' but found in {extracted_names}"
         assert not any("时间" in name for name in extracted_names), f"{vertical}: Should filter '时间' but found in {extracted_names}"
@@ -94,7 +94,7 @@ def test_filters_quality_adjectives():
 
     for vertical, response in responses:
         entities = extract_entities(response, "", {})
-        extracted_names = set(entities.keys())
+        extracted_names = set(entities.all_entities().keys())
 
         assert not any("良好" in name for name in extracted_names), f"{vertical}: Should filter '良好' but found in {extracted_names}"
         assert not any("优秀" in name for name in extracted_names), f"{vertical}: Should filter '优秀' but found in {extracted_names}"
