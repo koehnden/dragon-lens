@@ -538,26 +538,35 @@ example-kimi-128k: ## Run example with Kimi 128K model
 	@echo ""
 	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-128k
 
-example-all: ## Run example with all models (qwen, deepseek-chat, deepseek-reasoner, kimi-8k)
-	@echo "$(YELLOW)Running example with all models...$(NC)"
+example-all: ## Run all examples (examples/*.json) with 4 models (qwen, deepseek-chat, deepseek-reasoner, kimi-8k)
+	@echo "$(YELLOW)Running all examples with all models...$(NC)"
 	@echo ""
-	@echo "$(YELLOW)1. Running with Qwen...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=qwen
-	@echo ""
-	@echo "$(YELLOW)2. Running with DeepSeek Chat...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat
-	@echo ""
-	@echo "$(YELLOW)3. Running with DeepSeek Reasoner...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner
-	@echo ""
-	@echo "$(YELLOW)4. Running with Kimi 8K...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k
-	@echo ""
-	@echo "$(GREEN)✓ All 4 models completed!$(NC)"
-	@echo ""
-	@echo "$(YELLOW)View results:$(NC)"
-	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
-	@echo "  http://localhost:$(STREAMLIT_PORT)"
+	@set -e; \
+	for example in $$(ls examples/*.json 2>/dev/null); do \
+		echo "$(YELLOW)═══════════════════════════════════════════════════════$(NC)"; \
+		echo "$(YELLOW)Example: $$example$(NC)"; \
+		echo "$(YELLOW)═══════════════════════════════════════════════════════$(NC)"; \
+		echo ""; \
+		echo "$(YELLOW)1/4 Running with Qwen...$(NC)"; \
+		poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=$$example; \
+		echo ""; \
+		echo "$(YELLOW)2/4 Running with DeepSeek Chat...$(NC)"; \
+		poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=$$example; \
+		echo ""; \
+		echo "$(YELLOW)3/4 Running with DeepSeek Reasoner...$(NC)"; \
+		poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner --example-file=$$example; \
+		echo ""; \
+		echo "$(YELLOW)4/4 Running with Kimi 8K...$(NC)"; \
+		poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=$$example; \
+		echo ""; \
+		echo "$(GREEN)✓ Completed: $$example$(NC)"; \
+		echo ""; \
+	done; \
+	echo "$(GREEN)✓ All examples completed (4 models each)!$(NC)"; \
+	echo ""; \
+	echo "$(YELLOW)View results:$(NC)"; \
+	echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"; \
+	echo "  http://localhost:$(STREAMLIT_PORT)"
 
 example-all-mini: ## Smoke test: Run mini example (1 prompt) with 3 models (qwen, deepseek-chat, kimi-8k)
 	@echo "$(YELLOW)Running mini example smoke test (1 prompt, 3 models)...$(NC)"
