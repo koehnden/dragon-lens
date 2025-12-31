@@ -95,6 +95,7 @@ def sample_answer(
     answer = LLMAnswer(
         run_id=sample_run.id,
         prompt_id=sample_prompt.id,
+        model_name="qwen",
         raw_answer_zh="我推荐丰田RAV4",
         raw_answer_en="I recommend Toyota RAV4",
     )

@@ -30,6 +30,7 @@ from services.product_discovery import discover_and_store_products
 from services.translater import TranslaterService
 from services.metrics_service import calculate_and_save_metrics
 from services.pricing import calculate_cost
+from services.mention_ranking import rank_entities
 from services.remote_llms import LLMRouter
 from workers.celery_app import celery_app
 
@@ -368,7 +369,10 @@ def _create_product_mentions(
     answer_zh: str,
     translator: TranslaterService,
 ) -> None:
-    for product in products:
+    ranks = rank_entities(answer_zh, [_product_variants(p) for p in products])
+    for product, rank in zip(products, ranks):
+        if rank is None:
+            continue
         snippet = _extract_product_snippet(answer_zh, product.display_name)
         en_snippet = translator.translate_text_sync(snippet, "Chinese", "English") if snippet else ""
 
@@ -376,11 +380,24 @@ def _create_product_mentions(
             llm_answer_id=llm_answer.id,
             product_id=product.id,
             mentioned=True,
+            rank=rank,
             sentiment=Sentiment.NEUTRAL,
             evidence_snippets={"zh": [snippet] if snippet else [], "en": [en_snippet] if en_snippet else []},
         )
         db.add(mention)
     db.flush()
+
+
+def _product_variants(product: Product) -> List[str]:
+    variants = [product.display_name, product.original_name, product.translated_name or ""]
+    seen: set[str] = set()
+    result: List[str] = []
+    for v in variants:
+        if not v or v in seen:
+            continue
+        seen.add(v)
+        result.append(v)
+    return result
 
 
 def _extract_product_snippet(text: str, product_name: str, max_len: int = 100) -> str:

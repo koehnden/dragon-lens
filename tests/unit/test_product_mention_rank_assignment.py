@@ -19,7 +19,14 @@ def _build_answer(db_session, vertical_id: int, text_zh: str):
     db_session.add(prompt)
     db_session.flush()
 
-    answer = LLMAnswer(run_id=run.id, prompt_id=prompt.id, raw_answer_zh=text_zh, raw_answer_en="")
+    answer = LLMAnswer(
+        run_id=run.id,
+        prompt_id=prompt.id,
+        provider="qwen",
+        model_name="qwen",
+        raw_answer_zh=text_zh,
+        raw_answer_en="",
+    )
     db_session.add(answer)
     db_session.flush()
     return answer

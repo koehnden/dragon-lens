@@ -386,6 +386,7 @@ async def get_run_metrics(
         run_id=run.id,
         vertical_id=run.vertical_id,
         vertical_name=vertical.name,
+        provider=run.provider,
         model_name=run.model_name,
         run_time=run.run_time,
         metrics=metrics_responses,

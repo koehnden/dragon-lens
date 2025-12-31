@@ -11,6 +11,7 @@ from src.services.brand_recognition import (
     split_into_list_items,
     extract_snippet_with_list_awareness,
 )
+from src.services.mention_ranking import rank_entities
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,10 @@ class OllamaService:
     ) -> list[dict]:
         mentions = []
         text_lower = text_zh.lower()
+        ranks = rank_entities(
+            text_zh,
+            [[name] + aliases for name, aliases in zip(brand_names, brand_aliases)],
+        )
 
         all_brand_positions = {}
         all_brand_names_lower = set()
@@ -155,7 +160,7 @@ class OllamaService:
             all_names = [brand_name.lower()] + [alias.lower() for alias in aliases]
 
             clean_snippets = []
-            rank = None
+            rank = ranks[brand_idx]
 
             for pos_info in positions:
                 snippet = extract_snippet_with_list_awareness(
@@ -175,12 +180,6 @@ class OllamaService:
                             clean_snippet = clean_snippet.replace(other_name, '[BRAND]')
 
                 clean_snippets.append(clean_snippet)
-
-                prefix = text_zh[max(0, pos_info['start'] - 20):pos_info['start']]
-                for num in range(1, 21):
-                    if f"{num}." in prefix or f"{num}、" in prefix:
-                        rank = num
-                        break
 
             if brand_idx not in all_brand_positions:
                 clean_snippets = []

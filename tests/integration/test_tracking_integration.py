@@ -301,6 +301,7 @@ def test_get_run_details_with_answers(client: TestClient, db_session: Session):
     llm_answer = LLMAnswer(
         run_id=run_id,
         prompt_id=prompts[0].id,
+        model_name="qwen",
         raw_answer_zh="奔驰GLE和宝马X5都是非常好的豪华SUV选择。",
         raw_answer_en="Mercedes-Benz GLE and BMW X5 are both excellent luxury SUV choices.",
     )
