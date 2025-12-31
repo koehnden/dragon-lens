@@ -79,6 +79,7 @@ def test_complete_tracking_workflow(client: TestClient, db_session: Session):
         answer = LLMAnswer(
             run_id=run_id,
             prompt_id=prompt.id,
+            model_name=run.model_name,
             raw_answer_zh="特斯拉是最好的选择",
             raw_answer_en="Tesla is the best choice",
         )

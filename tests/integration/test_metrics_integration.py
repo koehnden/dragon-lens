@@ -79,6 +79,7 @@ def complete_test_data(db_session: Session):
     answer1 = LLMAnswer(
         run_id=run.id,
         prompt_id=prompt1.id,
+        model_name="qwen",
         raw_answer_zh="奔驰是最好的选择",
         raw_answer_en="Mercedes is the best choice",
     )
@@ -115,6 +116,7 @@ def complete_test_data(db_session: Session):
     answer2 = LLMAnswer(
         run_id=run.id,
         prompt_id=prompt2.id,
+        model_name="qwen",
         raw_answer_zh="我推荐宝马，其次是奔驰",
         raw_answer_en="I recommend BMW, followed by Mercedes",
     )
@@ -151,6 +153,7 @@ def complete_test_data(db_session: Session):
     answer3 = LLMAnswer(
         run_id=run.id,
         prompt_id=prompt3.id,
+        model_name="qwen",
         raw_answer_zh="宝马、奔驰和奥迪都是顶级品牌，但奥迪稍逊一筹",
         raw_answer_en="BMW, Mercedes and Audi are top brands, but Audi is slightly inferior",
     )
