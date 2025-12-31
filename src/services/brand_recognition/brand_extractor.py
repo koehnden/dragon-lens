@@ -2,12 +2,15 @@
 Brand extraction using Qwen.
 
 This module contains functions for extracting entities using Qwen-based
-extraction with structured prompts.
+extraction with structured prompts. Supports augmentation with validated
+entities and previous mistakes from earlier runs.
 """
 
 import logging
 import re
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
+
+from sqlalchemy.orm import Session
 
 from services.brand_recognition.models import (
     EntityCandidate,
@@ -30,21 +33,52 @@ from services.brand_recognition.list_processor import _filter_by_list_position
 from services.brand_recognition.prompts import load_prompt
 from constants import GENERIC_TERMS, PRODUCT_HINTS
 
+# Note: Many functions below (_normalize_brands_unified, _validate_products, etc.)
+# are kept for use by the consolidation service. They are no longer called
+# during per-prompt extraction.
+
 logger = logging.getLogger(__name__)
 
 
 async def _extract_entities_with_qwen(
     text: str,
     vertical: str = "",
-    vertical_description: str = ""
+    vertical_description: str = "",
+    db: Optional[Session] = None,
+    vertical_id: Optional[int] = None,
 ) -> ExtractionResult:
-    """Extract entities using Qwen-based extraction."""
-    import json
+    """Extract entities using Qwen - simplified for maximum recall.
+
+    Only applies light filtering (GENERIC_TERMS). Normalization, validation,
+    and list position filtering are deferred to the consolidation step.
+
+    If db and vertical_id are provided, augments the prompt with validated
+    entities (positive examples) and previous mistakes (negative examples).
+    Validated entities bypass the light filter.
+    """
     from services.ollama import OllamaService
 
     ollama = OllamaService()
 
-    system_prompt = _build_extraction_system_prompt(vertical, vertical_description)
+    augmentation_context = {}
+    validated_brand_names: Set[str] = set()
+    validated_product_names: Set[str] = set()
+
+    if db is not None and vertical_id is not None:
+        from services.brand_recognition.extraction_augmentation import (
+            get_augmentation_context,
+            get_validated_entity_names,
+        )
+        augmentation_context = get_augmentation_context(db, vertical_id)
+        validated_brand_names, validated_product_names = get_validated_entity_names(db, vertical_id)
+        logger.debug(
+            f"[Extraction] Augmentation loaded: {len(augmentation_context.get('validated_brands', []))} "
+            f"validated brands, {len(augmentation_context.get('rejected_brands', []))} rejected brands"
+        )
+
+    system_prompt = _build_extraction_system_prompt(
+        vertical, vertical_description, augmentation_context
+    )
     prompt = _build_extraction_prompt(text)
 
     try:
@@ -56,79 +90,77 @@ async def _extract_entities_with_qwen(
         )
 
         result = _parse_extraction_response(response)
-        brands = result.get("brands", [])
-        products = result.get("products", [])
-        relationships = result.get("relationships", {})
+        raw_brands = result.get("brands", [])
+        raw_products = result.get("products", [])
 
-        logger.info(f"[Extraction] Raw from Qwen: brands={brands}, products={products}")
+        logger.info(f"[Extraction] Raw from Qwen: brands={raw_brands}, products={raw_products}")
 
-        if ENABLE_CONFIDENCE_VERIFICATION:
-            corrected_brands, corrected_products = await _process_with_confidence_verification(
-                ollama, brands, products, relationships, text, vertical, vertical_description
-            )
-        else:
-            logger.info("[Extraction] Skipping confidence verification (ENABLE_CONFIDENCE_VERIFICATION=false)")
-            corrected_brands = list(dict.fromkeys(brands))
-            corrected_products = list(dict.fromkeys(products))
-
-        normalized_result = await _normalize_brands_unified(
-            corrected_brands, vertical, vertical_description, ollama
+        filtered_brands, rejected_brands = _apply_light_filter_with_bypass(
+            raw_brands, validated_brand_names
+        )
+        filtered_products, rejected_products = _apply_light_filter_with_bypass(
+            raw_products, validated_product_names
         )
 
-        rejected_at_normalization = normalized_result.get("rejected", [])
-        if rejected_at_normalization:
-            logger.info(f"[Extraction] Rejected at normalization: {rejected_at_normalization}")
+        rejected_at_light_filter = rejected_brands + rejected_products
+        if rejected_at_light_filter:
+            logger.info(f"[Extraction] Rejected at light filter: {rejected_at_light_filter}")
 
-        validated_products = await _validate_products(
-            ollama, corrected_products, text, vertical, vertical_description
-        )
-
-        rejected_products = set(corrected_products) - set(validated_products)
-        if rejected_products:
-            logger.info(f"[Extraction] Rejected at product validation: {list(rejected_products)}")
-
-        normalized_brands = [b["canonical"] for b in normalized_result.get("brands", [])]
-        brand_chinese_map = {
-            b["canonical"]: b.get("chinese", "")
-            for b in normalized_result.get("brands", [])
-        }
-
-        logger.info(f"[Extraction] Normalized brands: {normalized_brands}")
-
-        candidates = _build_candidates_from_results(
-            normalized_brands, validated_products, brand_chinese_map
-        )
-
-        filtered = _filter_by_list_position(candidates, text)
-
-        filtered_out_list = list(set(c.name for c in candidates) - set(c.name for c in filtered))
-        if filtered_out_list:
-            logger.info(f"[Extraction] Filtered by list position: {filtered_out_list}")
-
-        brand_clusters, product_clusters = _build_clusters_from_filtered(
-            filtered, brand_chinese_map
-        )
+        brand_clusters = {b: [b] for b in filtered_brands}
+        product_clusters = {p: [p] for p in filtered_products}
 
         debug_info = ExtractionDebugInfo(
-            raw_brands=brands,
-            raw_products=products,
-            rejected_at_normalization=rejected_at_normalization,
-            rejected_at_validation=list(rejected_products),
-            rejected_at_list_filter=filtered_out_list,
-            final_brands=list(brand_clusters.keys()),
-            final_products=list(product_clusters.keys()),
+            raw_brands=raw_brands,
+            raw_products=raw_products,
+            rejected_at_light_filter=rejected_at_light_filter,
+            final_brands=filtered_brands,
+            final_products=filtered_products,
         )
 
         logger.info(
-            f"[Extraction] Final: {len(brands)} raw -> "
-            f"{len(normalized_brands)} normalized -> "
-            f"{len(brand_clusters)} brands, {len(product_clusters)} products"
+            f"[Extraction] Final: {len(raw_brands)} raw brands -> {len(filtered_brands)} after light filter, "
+            f"{len(raw_products)} raw products -> {len(filtered_products)} after light filter"
         )
         return ExtractionResult(brands=brand_clusters, products=product_clusters, debug_info=debug_info)
 
     except Exception as e:
         logger.error(f"Qwen extraction failed: {e}")
         return ExtractionResult(brands={}, products={})
+
+
+def _apply_light_filter(entities: List[str]) -> Tuple[List[str], List[str]]:
+    """Apply light filtering - only remove obvious non-entities."""
+    return _apply_light_filter_with_bypass(entities, set())
+
+
+def _apply_light_filter_with_bypass(
+    entities: List[str],
+    validated_names: Set[str],
+) -> Tuple[List[str], List[str]]:
+    """Apply light filtering with bypass for validated entities."""
+    filtered = []
+    rejected = []
+    seen = set()
+
+    for entity in entities:
+        if entity in seen:
+            continue
+        seen.add(entity)
+
+        if entity in validated_names or entity.lower() in validated_names:
+            filtered.append(entity)
+            logger.debug(f"[Extraction] Bypassed light filter for validated entity: {entity}")
+            continue
+
+        entity_lower = entity.lower()
+        if entity_lower in GENERIC_TERMS:
+            rejected.append(entity)
+        elif len(entity) < 2:
+            rejected.append(entity)
+        else:
+            filtered.append(entity)
+
+    return filtered, rejected
 
 
 async def _process_with_confidence_verification(
@@ -222,14 +254,23 @@ def _is_automotive_vertical(vertical_lower: str) -> bool:
     return False
 
 
-def _build_extraction_system_prompt(vertical: str, vertical_description: str) -> str:
+def _build_extraction_system_prompt(
+    vertical: str,
+    vertical_description: str,
+    augmentation_context: Optional[Dict] = None,
+) -> str:
     """Build the system prompt for entity extraction using template."""
     is_automotive = _is_automotive_vertical(vertical.lower()) if vertical else False
+    context = augmentation_context or {}
     return load_prompt(
         "extraction_system_prompt",
         vertical=vertical,
         vertical_description=vertical_description,
         is_automotive=is_automotive,
+        validated_brands=context.get("validated_brands", []),
+        validated_products=context.get("validated_products", []),
+        rejected_brands=context.get("rejected_brands", []),
+        rejected_products=context.get("rejected_products", []),
     )
 
 

@@ -7,7 +7,9 @@ normalization, and clustering.
 """
 
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
+
+from sqlalchemy.orm import Session
 
 from services.brand_recognition.models import (
     EntityCandidate,
@@ -31,6 +33,8 @@ def extract_entities(
     aliases: Dict[str, List[str]],
     vertical: str = "",
     vertical_description: str = "",
+    db: Optional[Session] = None,
+    vertical_id: Optional[int] = None,
 ) -> ExtractionResult:
     """
     Main entry point for entity extraction.
@@ -45,9 +49,11 @@ def extract_entities(
     # Import here to avoid circular imports
     from services.brand_recognition.candidate_generator import generate_candidates
     from services.brand_recognition.brand_extractor import _extract_entities_with_qwen
-    
+
     if ENABLE_QWEN_EXTRACTION:
-        return _run_async(_extract_entities_with_qwen(text, vertical, vertical_description))
+        return _run_async(_extract_entities_with_qwen(
+            text, vertical, vertical_description, db=db, vertical_id=vertical_id
+        ))
 
     normalized_text = normalize_text_for_ner(text)
     candidates = generate_candidates(normalized_text, primary_brand, aliases)

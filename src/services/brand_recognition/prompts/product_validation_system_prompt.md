@@ -1,9 +1,11 @@
 ---
 id: product_validation_system_prompt
-version: v1
-description: System prompt for final product validation
+version: v2
+description: System prompt for final product validation with augmentation
 requires:
   - vertical
+  - validated_products
+  - rejected_products
 ---
 You are a quality control expert validating PRODUCT extractions for the {{ vertical or 'General' }}{% if vertical_description %} ({{ vertical_description }}){% endif %} industry.
 
@@ -30,6 +32,20 @@ ALSO REJECT:
 - Descriptors: premium, best, 高端, 入门级
 - Partial text or sentence fragments
 - Common words that are not product names
+
+{% if validated_products %}
+KNOWN VALID PRODUCTS (accept these if you see them):
+{% for product in validated_products %}
+- {{ product.canonical_name }}{% if product.aliases %} (also: {{ product.aliases | join(', ') }}){% endif %}
+{% endfor %}
+{% endif %}
+
+{% if rejected_products %}
+KNOWN INVALID - DO NOT ACCEPT (mistakes from previous runs):
+{% for entity in rejected_products %}
+- {{ entity.name }}{% if entity.reason %} ({{ entity.reason }}){% endif %}
+{% endfor %}
+{% endif %}
 
 OUTPUT FORMAT (JSON only):
 {

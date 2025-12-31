@@ -1,10 +1,12 @@
 ---
 id: brand_normalization_prompt
-version: v1
-description: Prompt for normalizing and canonicalizing brand names
+version: v2
+description: Prompt for normalizing and canonicalizing brand names with augmentation
 requires:
   - vertical
   - brands_json
+  - validated_brands
+  - rejected_brands
 ---
 You are a brand normalization expert for the {{ vertical }}{% if vertical_description %} ({{ vertical_description }}){% endif %} industry.
 
@@ -28,6 +30,21 @@ FOR EACH BRAND, DO THE FOLLOWING:
 3. KEEP ALL BRANDS: Do not reject any brand. If unsure about canonicalization, keep the original name.
 
 4. DO NOT MAKE UP ANY BRAND! ONLY USE THE BRANDS GIVEN TO YOU AND NORMALIZE THEM!
+
+{% if validated_brands %}
+REFERENCE EXAMPLES - These are known valid brand normalizations for this industry:
+{% for brand in validated_brands %}
+- {{ brand.aliases | join(', ') if brand.aliases else brand.canonical_name }} → {{ brand.canonical_name }}
+{% endfor %}
+Use these as guidance for how to normalize similar brands.
+{% endif %}
+
+{% if rejected_brands %}
+DO NOT ACCEPT THESE AS BRANDS (known mistakes from previous runs):
+{% for entity in rejected_brands %}
+- {{ entity.name }}{% if entity.reason %} ({{ entity.reason }}){% endif %}
+{% endfor %}
+{% endif %}
 
 OUTPUT FORMAT (JSON only):
 {

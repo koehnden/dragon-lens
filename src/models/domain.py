@@ -262,6 +262,7 @@ class ExtractionDebug(Base):
     llm_answer_id: Mapped[int] = mapped_column(ForeignKey("llm_answers.id"), nullable=False)
     raw_brands: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     raw_products: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_light_filter: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     rejected_at_normalization: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     rejected_at_validation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     rejected_at_list_filter: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -273,6 +274,26 @@ class ExtractionDebug(Base):
     )
 
     llm_answer: Mapped["LLMAnswer"] = relationship(LLMAnswer)
+
+
+class ConsolidationDebug(Base):
+    __tablename__ = "consolidation_debug"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
+    input_brands: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    input_products: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_normalization: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_validation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_list_filter: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    final_brands: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    final_products: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    run: Mapped["Run"] = relationship(Run)
 
 
 class ValidationStatus(str, enum.Enum):
