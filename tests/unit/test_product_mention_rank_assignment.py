@@ -44,6 +44,8 @@ def _build_product(db_session, vertical_id: int, name: str):
 def test_create_product_mentions_sets_rank_list_position(db_session):
     from models import ProductMention, Vertical
     from workers.tasks import _create_product_mentions
+    from services.ollama import OllamaService
+    from unittest.mock import AsyncMock
 
     vertical = Vertical(name="SUV Cars", description="test")
     db_session.add(vertical)
@@ -53,7 +55,11 @@ def test_create_product_mentions_sets_rank_list_position(db_session):
     crv = _build_product(db_session, vertical.id, "CR-V")
     answer = _build_answer(db_session, vertical.id, "1. CR-V\n2. RAV4")
 
-    _create_product_mentions(db_session, answer, [rav4, crv], answer.raw_answer_zh, DummyTranslator())
+    ollama = OllamaService.__new__(OllamaService)
+    ollama.classify_sentiment = AsyncMock(return_value="neutral")
+    _create_product_mentions(
+        db_session, answer, [rav4, crv], answer.raw_answer_zh, DummyTranslator(), [], ollama
+    )
     db_session.commit()
 
     mentions = db_session.query(ProductMention).filter(ProductMention.llm_answer_id == answer.id).all()
@@ -65,6 +71,8 @@ def test_create_product_mentions_sets_rank_list_position(db_session):
 def test_create_product_mentions_sets_rank_first_occurrence(db_session):
     from models import ProductMention, Vertical
     from workers.tasks import _create_product_mentions
+    from services.ollama import OllamaService
+    from unittest.mock import AsyncMock
 
     vertical = Vertical(name="Sedans", description="test")
     db_session.add(vertical)
@@ -74,7 +82,11 @@ def test_create_product_mentions_sets_rank_first_occurrence(db_session):
     b = _build_product(db_session, vertical.id, "Beta")
     answer = _build_answer(db_session, vertical.id, "Beta不错，Alpha也可以。")
 
-    _create_product_mentions(db_session, answer, [a, b], answer.raw_answer_zh, DummyTranslator())
+    ollama = OllamaService.__new__(OllamaService)
+    ollama.classify_sentiment = AsyncMock(return_value="neutral")
+    _create_product_mentions(
+        db_session, answer, [a, b], answer.raw_answer_zh, DummyTranslator(), [], ollama
+    )
     db_session.commit()
 
     mentions = db_session.query(ProductMention).filter(ProductMention.llm_answer_id == answer.id).all()
@@ -86,6 +98,8 @@ def test_create_product_mentions_sets_rank_first_occurrence(db_session):
 def test_create_product_mentions_caps_rank_at_10(db_session):
     from models import ProductMention, Vertical
     from workers.tasks import _create_product_mentions
+    from services.ollama import OllamaService
+    from unittest.mock import AsyncMock
 
     vertical = Vertical(name="Cap Test", description="test")
     db_session.add(vertical)
@@ -95,7 +109,11 @@ def test_create_product_mentions_caps_rank_at_10(db_session):
     text = "\n".join([f"- item{i}" for i in range(1, 12)]) + "\n- P12"
     answer = _build_answer(db_session, vertical.id, text)
 
-    _create_product_mentions(db_session, answer, [product], answer.raw_answer_zh, DummyTranslator())
+    ollama = OllamaService.__new__(OllamaService)
+    ollama.classify_sentiment = AsyncMock(return_value="neutral")
+    _create_product_mentions(
+        db_session, answer, [product], answer.raw_answer_zh, DummyTranslator(), [], ollama
+    )
     db_session.commit()
 
     mention = db_session.query(ProductMention).filter(ProductMention.llm_answer_id == answer.id).one()
@@ -105,6 +123,8 @@ def test_create_product_mentions_caps_rank_at_10(db_session):
 def test_create_product_mentions_skips_unmentioned_products(db_session):
     from models import ProductMention, Vertical
     from workers.tasks import _create_product_mentions
+    from services.ollama import OllamaService
+    from unittest.mock import AsyncMock
 
     vertical = Vertical(name="Skip Test", description="test")
     db_session.add(vertical)
@@ -113,7 +133,11 @@ def test_create_product_mentions_skips_unmentioned_products(db_session):
     missing = _build_product(db_session, vertical.id, "Missing")
     answer = _build_answer(db_session, vertical.id, "这里没有产品名")
 
-    _create_product_mentions(db_session, answer, [missing], answer.raw_answer_zh, DummyTranslator())
+    ollama = OllamaService.__new__(OllamaService)
+    ollama.classify_sentiment = AsyncMock(return_value="neutral")
+    _create_product_mentions(
+        db_session, answer, [missing], answer.raw_answer_zh, DummyTranslator(), [], ollama
+    )
     db_session.commit()
 
     mentions = db_session.query(ProductMention).filter(ProductMention.llm_answer_id == answer.id).all()
