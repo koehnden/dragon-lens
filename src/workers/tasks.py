@@ -25,6 +25,7 @@ from services.answer_reuse import find_reusable_answer
 from services.brand_discovery import discover_brands_and_products
 from services.brand_recognition import extract_entities
 from services.entity_consolidation import consolidate_run
+from services.brand_recognition.consolidation_service import run_enhanced_consolidation
 from services.product_discovery import discover_and_store_products
 from services.translater import TranslaterService
 from services.metrics_service import calculate_and_save_metrics
@@ -184,9 +185,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                     llm_answer_id=llm_answer.id,
                     raw_brands=json.dumps(extraction_result.debug_info.raw_brands, ensure_ascii=False),
                     raw_products=json.dumps(extraction_result.debug_info.raw_products, ensure_ascii=False),
-                    rejected_at_normalization=json.dumps(extraction_result.debug_info.rejected_at_normalization, ensure_ascii=False),
-                    rejected_at_validation=json.dumps(extraction_result.debug_info.rejected_at_validation, ensure_ascii=False),
-                    rejected_at_list_filter=json.dumps(extraction_result.debug_info.rejected_at_list_filter, ensure_ascii=False),
+                    rejected_at_light_filter=json.dumps(extraction_result.debug_info.rejected_at_light_filter, ensure_ascii=False),
                     final_brands=json.dumps(extraction_result.debug_info.final_brands, ensure_ascii=False),
                     final_products=json.dumps(extraction_result.debug_info.final_products, ensure_ascii=False),
                     extraction_method="qwen",
@@ -248,9 +247,12 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
 
             self.db.commit()
 
-        logger.info(f"Calculating metrics for run {run_id}...")
-        calculate_and_save_metrics(self.db, run_id)
-        logger.info(f"Metrics calculated and saved for run {run_id}")
+        logger.info(f"Running enhanced consolidation for run {run_id}...")
+        enhanced_result = _run_async(run_enhanced_consolidation(self.db, run_id))
+        logger.info(
+            f"Enhanced consolidation complete: {len(enhanced_result.final_brands)} brands, "
+            f"{len(enhanced_result.final_products)} products after normalization/validation"
+        )
 
         logger.info(f"Consolidating entities for run {run_id}...")
         consolidation_result = consolidate_run(self.db, run_id)
@@ -259,6 +261,10 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             f"{consolidation_result.products_merged} products merged, "
             f"{consolidation_result.brands_flagged} brands flagged for review"
         )
+
+        logger.info(f"Calculating metrics for run {run_id}...")
+        calculate_and_save_metrics(self.db, run_id)
+        logger.info(f"Metrics calculated and saved for run {run_id}")
 
         run.status = RunStatus.COMPLETED
         run.completed_at = datetime.utcnow()

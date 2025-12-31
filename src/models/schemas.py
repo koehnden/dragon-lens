@@ -59,19 +59,12 @@ class PromptResponse(BaseModel):
 class TrackingJobCreate(BaseModel):
     vertical_name: str = Field(..., min_length=1)
     vertical_description: Optional[str] = None
-    brands: List[BrandCreate]
+    brands: List[BrandCreate] = Field(default_factory=list)
     prompts: List[PromptCreate]
     provider: str = Field(default="qwen", description="LLM provider (qwen, deepseek, kimi)")
     model_name: str = Field(default="qwen2.5:7b-instruct-q4_0", description="Specific model name (e.g., deepseek-chat, deepseek-reasoner)")
     reuse_answers: bool = Field(default=False, description="Whether to reuse answers from previous runs")
     web_search_enabled: bool = Field(default=False, description="Whether web search is enabled for this run")
-
-    @field_validator('brands')
-    @classmethod
-    def brands_must_not_be_empty(cls, v):
-        if not v:
-            raise ValueError('At least one brand must be provided')
-        return v
 
 
 class TrackingJobResponse(BaseModel):

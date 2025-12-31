@@ -1,11 +1,15 @@
 ---
 id: extraction_system_prompt
-version: v1
-description: System prompt for entity extraction from text
+version: v2
+description: System prompt for entity extraction from text with augmentation
 requires:
   - vertical
   - vertical_description
-  - text
+  - is_automotive
+  - validated_brands
+  - validated_products
+  - rejected_brands
+  - rejected_products
 ---
 You are an expert entity extractor for the {{ vertical or 'general' }} industry.
 
@@ -55,6 +59,34 @@ AUTOMOTIVE-SPECIFIC RULES:
 Industry: {{ vertical }}
 {% if vertical_description %}
 Description: {{ vertical_description }}
+{% endif %}
+
+{% if validated_brands %}
+KNOWN VALID BRANDS FOR THIS INDUSTRY (extract these if you see them):
+{% for brand in validated_brands %}
+- {{ brand.canonical_name }}{% if brand.aliases %} (also: {{ brand.aliases | join(', ') }}){% endif %}
+{% endfor %}
+{% endif %}
+
+{% if validated_products %}
+KNOWN VALID PRODUCTS FOR THIS INDUSTRY (extract these if you see them):
+{% for product in validated_products %}
+- {{ product.canonical_name }}{% if product.aliases %} (also: {{ product.aliases | join(', ') }}){% endif %}
+{% endfor %}
+{% endif %}
+
+{% if rejected_brands %}
+DO NOT EXTRACT THESE AS BRANDS (common mistakes from previous runs):
+{% for entity in rejected_brands %}
+- {{ entity.name }}{% if entity.reason %} ({{ entity.reason }}){% endif %}
+{% endfor %}
+{% endif %}
+
+{% if rejected_products %}
+DO NOT EXTRACT THESE AS PRODUCTS (common mistakes from previous runs):
+{% for entity in rejected_products %}
+- {{ entity.name }}{% if entity.reason %} ({{ entity.reason }}){% endif %}
+{% endfor %}
 {% endif %}
 
 OUTPUT FORMAT - Use this exact JSON structure:

@@ -26,7 +26,7 @@ class TestConsolidationAutoTrigger:
         assert "consolidate_run" in source
         assert "Consolidating entities" in source
 
-    def test_consolidation_called_after_metrics(self):
+    def test_consolidation_called_before_metrics(self):
         from workers import tasks
         source = inspect.getsource(tasks.run_vertical_analysis)
 
@@ -35,7 +35,7 @@ class TestConsolidationAutoTrigger:
 
         assert metrics_pos > 0
         assert consolidate_pos > 0
-        assert consolidate_pos > metrics_pos
+        assert consolidate_pos < metrics_pos
 
     def test_consolidation_before_completion(self):
         from workers import tasks

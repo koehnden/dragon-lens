@@ -31,6 +31,16 @@ class ExtractionDebugInfo:
     """Debug information for entity extraction pipeline."""
     raw_brands: List[str]
     raw_products: List[str]
+    rejected_at_light_filter: List[str]
+    final_brands: List[str]
+    final_products: List[str]
+
+
+@dataclass
+class ConsolidationDebugInfo:
+    """Debug information for consolidation pipeline."""
+    input_brands: List[str]
+    input_products: List[str]
     rejected_at_normalization: List[dict]
     rejected_at_validation: List[str]
     rejected_at_list_filter: List[str]
