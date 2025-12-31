@@ -538,7 +538,7 @@ example-kimi-128k: ## Run example with Kimi 128K model
 	@echo ""
 	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-128k
 
-example-all: ## Run example with all models (qwen, deepseek-chat, deepseek-reasoner, kimi-8k, kimi-32k, kimi-128k)
+example-all: ## Run example with all models (qwen, deepseek-chat, deepseek-reasoner, kimi-8k)
 	@echo "$(YELLOW)Running example with all models...$(NC)"
 	@echo ""
 	@echo "$(YELLOW)1. Running with Qwen...$(NC)"
@@ -553,13 +553,7 @@ example-all: ## Run example with all models (qwen, deepseek-chat, deepseek-reaso
 	@echo "$(YELLOW)4. Running with Kimi 8K...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k
 	@echo ""
-	@echo "$(YELLOW)5. Running with Kimi 32K...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-32k
-	@echo ""
-	@echo "$(YELLOW)6. Running with Kimi 128K...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-128k
-	@echo ""
-	@echo "$(GREEN)✓ All 6 models completed!$(NC)"
+	@echo "$(GREEN)✓ All 4 models completed!$(NC)"
 	@echo ""
 	@echo "$(YELLOW)View results:$(NC)"
 	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
