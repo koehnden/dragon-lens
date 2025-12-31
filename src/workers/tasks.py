@@ -30,7 +30,6 @@ from services.product_discovery import discover_and_store_products
 from services.translater import TranslaterService
 from services.metrics_service import calculate_and_save_metrics
 from services.pricing import calculate_cost
-from services.mention_ranking import rank_entities
 from services.remote_llms import LLMRouter
 from workers.celery_app import celery_app
 
@@ -94,6 +93,8 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
         llm_router = LLMRouter(self.db)
         translator = TranslaterService()
         _apply_brand_translations(brands, translator, self.db)
+        from services.ollama import OllamaService
+        ollama_service = OllamaService()
 
         for prompt in prompts:
             logger.info(f"Processing prompt {prompt.id}")
@@ -202,15 +203,19 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             logger.info(f"Found {len(discovered_products)} products")
 
             _create_product_mentions(
-                self.db, llm_answer, discovered_products, answer_zh, translator
+                self.db,
+                llm_answer,
+                discovered_products,
+                answer_zh,
+                translator,
+                all_brands,
+                ollama_service,
             )
 
             brand_names = [b.display_name for b in all_brands]
             brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
 
             logger.info(f"Extracting brand mentions for {len(all_brands)} brands...")
-            from services.ollama import OllamaService
-            ollama_service = OllamaService()
             mentions = _run_async(
                 ollama_service.extract_brands(answer_zh, brand_names, brand_aliases)
             )
@@ -368,24 +373,69 @@ def _create_product_mentions(
     products: List[Product],
     answer_zh: str,
     translator: TranslaterService,
+    brands: List[Brand],
+    ollama_service,
 ) -> None:
-    ranks = rank_entities(answer_zh, [_product_variants(p) for p in products])
-    for product, rank in zip(products, ranks):
+    product_names, product_aliases = _products_to_variants(products)
+    brand_names, brand_aliases = _brands_to_variants(brands)
+    mentions = _run_async(
+        ollama_service.extract_products(
+            answer_zh, product_names, product_aliases, brand_names, brand_aliases
+        )
+    )
+    for mention_data in mentions:
+        if not mention_data["mentioned"]:
+            continue
+        rank = mention_data["rank"]
         if rank is None:
             continue
-        snippet = _extract_product_snippet(answer_zh, product.display_name)
-        en_snippet = translator.translate_text_sync(snippet, "Chinese", "English") if snippet else ""
+
+        product = products[mention_data["product_index"]]
+        sentiment_str = "neutral"
+        if mention_data["snippets"]:
+            sentiment_str = _run_async(ollama_service.classify_sentiment(mention_data["snippets"][0]))
+        sentiment = _map_sentiment(sentiment_str)
+
+        en_snippets = []
+        for snippet in mention_data["snippets"]:
+            en_snippets.append(translator.translate_text_sync(snippet, "Chinese", "English"))
 
         mention = ProductMention(
             llm_answer_id=llm_answer.id,
             product_id=product.id,
             mentioned=True,
             rank=rank,
-            sentiment=Sentiment.NEUTRAL,
-            evidence_snippets={"zh": [snippet] if snippet else [], "en": [en_snippet] if en_snippet else []},
+            sentiment=sentiment,
+            evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
         )
         db.add(mention)
     db.flush()
+
+
+def _products_to_variants(products: List[Product]) -> tuple[list[str], list[list[str]]]:
+    names = []
+    aliases = []
+    for p in products:
+        variants = _product_variants(p)
+        names.append(variants[0] if variants else p.display_name)
+        aliases.append(variants[1:] if len(variants) > 1 else [])
+    return names, aliases
+
+
+def _brands_to_variants(brands: List[Brand]) -> tuple[list[str], list[list[str]]]:
+    names = []
+    aliases = []
+    for b in brands:
+        names.append(b.display_name)
+        aliases.append(_brand_aliases(b))
+    return names, aliases
+
+
+def _brand_aliases(brand: Brand) -> List[str]:
+    variants = [brand.original_name or "", brand.translated_name or ""]
+    variants.extend((brand.aliases or {}).get("zh", []))
+    variants.extend((brand.aliases or {}).get("en", []))
+    return [v for v in variants if v]
 
 
 def _product_variants(product: Product) -> List[str]:
