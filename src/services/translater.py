@@ -2,6 +2,8 @@ import asyncio
 import re
 from typing import TYPE_CHECKING
 
+from prompts import load_prompt
+
 if TYPE_CHECKING:
     from services.ollama import OllamaService
 
@@ -138,29 +140,27 @@ class TranslaterService:
 
 
 def _build_entity_prompt(name: str) -> str:
-    prefix = "Translate this brand or product name to English and preserve the entity exactly:"
-    return f"{prefix}\n{name}"
+    return load_prompt("translation/entity_translation_user_prompt", name=name)
 
 
 def _entity_system_prompt() -> str:
-    return (
-        "You are a precise translator for brand and product names. "
-        "RULES: "
-        "1. Return ONLY the translated name - no notes, explanations, or parenthetical comments. "
-        "2. Do NOT add (Note:...), (This means...), or any commentary. "
-        "3. If unsure, return the original text unchanged. "
-        "4. Output must be short: just the name, nothing else."
-    )
+    return load_prompt("translation/entity_translation_system_prompt")
 
 
 def _build_text_prompt(text: str, source_lang: str, target_lang: str) -> str:
-    return f"Translate from {source_lang} to {target_lang}:\n{text}"
+    return load_prompt(
+        "translation/text_translation_user_prompt",
+        text=text,
+        source_lang=source_lang,
+        target_lang=target_lang,
+    )
 
 
 def _text_system_prompt(source_lang: str, target_lang: str) -> str:
-    return (
-        f"You are a careful translator. Convert {source_lang} text to {target_lang} without adding, "
-        "removing, or fabricating content. Respond only with the translated text."
+    return load_prompt(
+        "translation/text_translation_system_prompt",
+        source_lang=source_lang,
+        target_lang=target_lang,
     )
 
 
