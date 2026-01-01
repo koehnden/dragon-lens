@@ -26,6 +26,7 @@ from services.brand_discovery import discover_brands_and_products
 from services.brand_recognition import extract_entities
 from services.entity_consolidation import consolidate_run
 from services.brand_recognition.consolidation_service import run_enhanced_consolidation
+from services.brand_recognition.vertical_gate import apply_vertical_gate_to_run
 from services.product_discovery import discover_and_store_products
 from services.translater import TranslaterService
 from services.metrics_service import calculate_and_save_metrics
@@ -259,6 +260,10 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             f"Enhanced consolidation complete: {len(enhanced_result.final_brands)} brands, "
             f"{len(enhanced_result.final_products)} products after normalization/validation"
         )
+
+        logger.info(f"Applying off-vertical gate for discovered brands in run {run_id}...")
+        rejected = _run_async(apply_vertical_gate_to_run(self.db, run_id))
+        logger.info(f"Off-vertical gate rejected {rejected} discovered brands")
 
         logger.info(f"Consolidating entities for run {run_id}...")
         consolidation_result = consolidate_run(self.db, run_id)
