@@ -1,4 +1,4 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean clear example example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search
 
 # Default target
 .DEFAULT_GOAL := help
@@ -505,6 +505,57 @@ example: ## Run an example SUV tracking job with VW brand (reuses prompt results
 	@echo "$(YELLOW)Use 'make example-fresh' to run from scratch$(NC)"
 	@echo ""
 	@poetry run python scripts/run_example_with_reuse.py --provider=qwen
+
+example-suv: ## Run 4-model example for examples/suv_example.json
+	@echo "$(YELLOW)Running SUV example with 4 models...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)1/4 Running with Qwen...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/suv_example.json
+	@echo ""
+	@echo "$(YELLOW)2/4 Running with DeepSeek Chat...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/suv_example.json
+	@echo ""
+	@echo "$(YELLOW)3/4 Running with DeepSeek Reasoner...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner --example-file=examples/suv_example.json
+	@echo ""
+	@echo "$(YELLOW)4/4 Running with Kimi 8K...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/suv_example.json
+	@echo ""
+	@echo "$(GREEN)✓ SUV example submitted (4 models)!$(NC)"
+
+example-diaper: ## Run 4-model example for examples/diaper_example.json
+	@echo "$(YELLOW)Running diaper example with 4 models...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)1/4 Running with Qwen...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/diaper_example.json
+	@echo ""
+	@echo "$(YELLOW)2/4 Running with DeepSeek Chat...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/diaper_example.json
+	@echo ""
+	@echo "$(YELLOW)3/4 Running with DeepSeek Reasoner...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner --example-file=examples/diaper_example.json
+	@echo ""
+	@echo "$(YELLOW)4/4 Running with Kimi 8K...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/diaper_example.json
+	@echo ""
+	@echo "$(GREEN)✓ Diaper example submitted (4 models)!$(NC)"
+
+example-hiking-shoes: ## Run 4-model example for examples/hiking_shoes_example.json
+	@echo "$(YELLOW)Running hiking shoes example with 4 models...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)1/4 Running with Qwen...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/hiking_shoes_example.json
+	@echo ""
+	@echo "$(YELLOW)2/4 Running with DeepSeek Chat...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/hiking_shoes_example.json
+	@echo ""
+	@echo "$(YELLOW)3/4 Running with DeepSeek Reasoner...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner --example-file=examples/hiking_shoes_example.json
+	@echo ""
+	@echo "$(YELLOW)4/4 Running with Kimi 8K...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/hiking_shoes_example.json
+	@echo ""
+	@echo "$(GREEN)✓ Hiking shoes example submitted (4 models)!$(NC)"
 
 example-fresh: ## Run example from scratch (delete existing data, don't reuse prompt results)
 	@echo "$(YELLOW)Running example SUV tracking job from scratch...$(NC)"
