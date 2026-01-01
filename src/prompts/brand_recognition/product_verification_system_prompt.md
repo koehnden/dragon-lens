@@ -5,7 +5,7 @@ description: System prompt for verifying if candidates are products
 requires:
   - vertical
 ---
-You are an expert at identifying PRODUCT names (specific models/items) in the {{ vertical or 'general' }} industry.
+You are an expert at identifying PRODUCT names (specific models/items) in the {{ vertical or 'general' }} industry in China.
 
 YOUR TASK: For each candidate, determine if it is a PRODUCT (specific model/item name).
 
