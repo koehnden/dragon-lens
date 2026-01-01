@@ -1,6 +1,5 @@
 import logging
 import os
-import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Set, Tuple
@@ -25,6 +24,7 @@ from models import (
     ValidationStatus,
     Vertical,
 )
+from services.canonicalization_metrics import normalize_entity_key
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,11 @@ class ConsolidationResult:
     canonical_products_created: int
 
 
-def consolidate_run(db: Session, run_id: int) -> ConsolidationResult:
+def consolidate_run(
+    db: Session,
+    run_id: int,
+    normalized_brands: Optional[Dict[str, str]] = None,
+) -> ConsolidationResult:
     logger.info(f"Starting entity consolidation for run {run_id}")
 
     run = db.query(Run).filter(Run.id == run_id).first()
@@ -62,9 +66,16 @@ def consolidate_run(db: Session, run_id: int) -> ConsolidationResult:
     brand_mentions = _collect_brand_mentions(db, run_id)
     product_mentions = _collect_product_mentions(db, run_id)
 
+    qwen_candidates, grouped_names = _build_qwen_brand_candidates(
+        db, vertical_id, normalized_brands
+    )
     brand_merge_candidates = find_merge_candidates(
         list(brand_mentions.keys()), EntityType.BRAND
     )
+    brand_merge_candidates = [
+        c for c in brand_merge_candidates if c.source_name not in grouped_names
+    ]
+    brand_merge_candidates.extend(qwen_candidates)
     product_merge_candidates = find_merge_candidates(
         list(product_mentions.keys()), EntityType.PRODUCT
     )
@@ -174,10 +185,7 @@ def find_merge_candidates(
 
 
 def _normalize_for_comparison(name: str) -> str:
-    name = name.lower().strip()
-    name = re.sub(r'[\s\-_]+', '', name)
-    name = re.sub(r'[（）\(\)]', '', name)
-    return name
+    return normalize_entity_key(name)
 
 
 def _calculate_similarity(name1: str, name2: str) -> float:
@@ -193,19 +201,155 @@ def _calculate_similarity(name1: str, name2: str) -> float:
 
 
 def _determine_canonical(name1: str, name2: str) -> Tuple[str, str]:
-    if len(name1) > len(name2):
+    score1 = _canonical_score(name1)
+    score2 = _canonical_score(name2)
+    if score1 < score2:
         return name1, name2
-    if len(name2) > len(name1):
+    if score2 < score1:
         return name2, name1
-
-    has_english1 = bool(re.search(r'[A-Za-z]', name1))
-    has_english2 = bool(re.search(r'[A-Za-z]', name2))
-    if has_english1 and not has_english2:
-        return name1, name2
-    if has_english2 and not has_english1:
-        return name2, name1
-
     return (name1, name2) if name1 < name2 else (name2, name1)
+
+
+def _canonical_score(name: str) -> Tuple[int, int, str]:
+    normalized = _normalize_for_comparison(name)
+    return (len(normalized), len(name), name.casefold())
+
+
+def _build_qwen_brand_candidates(
+    db: Session,
+    vertical_id: int,
+    normalized_brands: Optional[Dict[str, str]],
+) -> Tuple[List[MergeCandidate], Set[str]]:
+    if not normalized_brands:
+        return [], set()
+    brands = _load_brands(db, vertical_id)
+    exact, norm = _qwen_maps(normalized_brands)
+    groups = _group_brands_by_qwen(brands, exact, norm)
+    validated = _validated_canonical_names(db, vertical_id)
+    return _qwen_merge_candidates(groups, validated), _grouped_display_names(groups)
+
+
+def _load_brands(db: Session, vertical_id: int) -> List[Brand]:
+    return db.query(Brand).filter(Brand.vertical_id == vertical_id).all()
+
+
+def _qwen_maps(normalized_brands: Dict[str, str]) -> Tuple[Dict[str, str], Dict[str, str]]:
+    exact = {k.casefold(): v for k, v in normalized_brands.items() if k}
+    norm = { _normalize_for_comparison(k): v for k, v in normalized_brands.items() if k}
+    return exact, norm
+
+
+def _brand_variants_for_qwen(brand: Brand) -> List[str]:
+    values = [brand.display_name, brand.original_name, brand.translated_name or ""]
+    return [v for v in values if v]
+
+
+def _resolve_qwen_canonical(
+    brand: Brand,
+    exact: Dict[str, str],
+    norm: Dict[str, str],
+) -> Optional[str]:
+    for name in _brand_variants_for_qwen(brand):
+        if key := exact.get(name.casefold()):
+            return key
+        if key := norm.get(_normalize_for_comparison(name)):
+            return key
+    return None
+
+
+def _group_brands_by_qwen(
+    brands: List[Brand],
+    exact: Dict[str, str],
+    norm: Dict[str, str],
+) -> Dict[str, List[Brand]]:
+    grouped: Dict[str, List[Brand]] = {}
+    for brand in brands:
+        key = _resolve_qwen_canonical(brand, exact, norm)
+        if key:
+            grouped.setdefault(key, []).append(brand)
+    return grouped
+
+
+def _validated_canonical_names(db: Session, vertical_id: int) -> Set[str]:
+    rows = db.query(CanonicalBrand.canonical_name).filter(
+        CanonicalBrand.vertical_id == vertical_id,
+        CanonicalBrand.is_validated == True,
+    ).all()
+    return {name.casefold() for (name,) in rows if name}
+
+
+def _group_name_keys(brands: List[Brand]) -> Set[str]:
+    keys: Set[str] = set()
+    for brand in brands:
+        for name in _brand_variants_for_qwen(brand):
+            keys.add(_normalize_for_comparison(name))
+    return keys
+
+
+def _qwen_canonical_allowed(
+    canonical: Optional[str],
+    brands: List[Brand],
+    validated: Set[str],
+) -> bool:
+    if not canonical:
+        return False
+    if canonical.casefold() in validated:
+        return True
+    return _normalize_for_comparison(canonical) in _group_name_keys(brands)
+
+
+def _cleanest_name_from_group(brands: List[Brand]) -> str:
+    names = [b.display_name for b in brands if b.display_name]
+    return sorted(names, key=_canonical_score)[0]
+
+
+def _choose_group_canonical(
+    brands: List[Brand],
+    qwen_key: str,
+    validated: Set[str],
+) -> str:
+    users = [b for b in brands if b.is_user_input]
+    if users:
+        return _cleanest_name_from_group(users)
+    if _qwen_canonical_allowed(qwen_key, brands, validated):
+        return qwen_key
+    return _cleanest_name_from_group(brands)
+
+
+def _brand_candidate(source_name: str, target_name: str) -> MergeCandidate:
+    return MergeCandidate(
+        source_name=source_name,
+        target_name=target_name,
+        similarity=1.0,
+        entity_type=EntityType.BRAND,
+    )
+
+
+def _qwen_group_candidates(
+    qwen_key: str,
+    brands: List[Brand],
+    validated: Set[str],
+) -> List[MergeCandidate]:
+    target = _choose_group_canonical(brands, qwen_key, validated)
+    return [
+        _brand_candidate(brand.display_name, target)
+        for brand in brands
+        if brand.display_name != target
+    ]
+
+
+def _qwen_merge_candidates(
+    groups: Dict[str, List[Brand]],
+    validated: Set[str],
+) -> List[MergeCandidate]:
+    candidates: List[MergeCandidate] = []
+    for key, brands in groups.items():
+        candidates.extend(_qwen_group_candidates(key, brands, validated))
+    return candidates
+
+
+def _grouped_display_names(groups: Dict[str, List[Brand]]) -> Set[str]:
+    return {brand.display_name for group in groups.values() for brand in group}
 
 
 def apply_brand_merges(
