@@ -17,6 +17,7 @@ from services.entity_consolidation import (
     ConsolidationResult,
     MergeCandidate,
     _calculate_similarity,
+    _build_qwen_brand_candidates,
     _determine_canonical,
     _normalize_for_comparison,
     apply_brand_merges,
@@ -42,7 +43,10 @@ class TestNormalizeForComparison:
         assert _normalize_for_comparison("Mercedes-Benz") == "mercedesbenz"
 
     def test_removes_brackets(self):
-        assert _normalize_for_comparison("Toyota (丰田)") == "toyota丰田"
+        assert _normalize_for_comparison("Toyota (丰田)") == "toyota"
+
+    def test_removes_punctuation(self):
+        assert _normalize_for_comparison("Goo.n") == "goon"
 
     def test_chinese_characters_preserved(self):
         assert _normalize_for_comparison("比亚迪") == "比亚迪"
@@ -68,15 +72,10 @@ class TestCalculateSimilarity:
 
 class TestDetermineCanonical:
 
-    def test_longer_name_is_canonical(self):
-        target, source = _determine_canonical("Volkswagen", "VW")
-        assert target == "Volkswagen"
-        assert source == "VW"
-
-    def test_english_preferred_over_chinese(self):
-        target, source = _determine_canonical("Toyota", "丰田")
-        assert target == "Toyota"
-        assert source == "丰田"
+    def test_prefers_shorter_clean_name(self):
+        target, source = _determine_canonical("Ford Motor Company", "Ford")
+        assert target == "Ford"
+        assert source == "Ford Motor Company"
 
     def test_same_length_alphabetical(self):
         target, source = _determine_canonical("BMW", "VWA")
@@ -172,6 +171,156 @@ class TestApplyBrandMerges:
         names = [c.canonical_name for c in canonicals]
         assert "Toyota" in names
         assert "Honda" in names
+
+
+class TestQwenCanonicalGroups:
+
+    def test_user_brand_overrides_qwen(self, db_session: Session):
+        vertical = Vertical(name="CarsQ1")
+        db_session.add(vertical)
+        db_session.flush()
+
+        user_brand = Brand(
+            vertical_id=vertical.id,
+            display_name="VW",
+            original_name="VW",
+            aliases={"zh": [], "en": []},
+            is_user_input=True,
+        )
+        discovered_brand = Brand(
+            vertical_id=vertical.id,
+            display_name="Volkswagen",
+            original_name="Volkswagen",
+            aliases={"zh": [], "en": []},
+            is_user_input=False,
+        )
+        db_session.add_all([user_brand, discovered_brand])
+        db_session.flush()
+
+        mentions = {"VW": 2, "Volkswagen": 1}
+        normalized_brands = {"VW": "Volkswagen", "Volkswagen": "Volkswagen"}
+
+        candidates, _ = _build_qwen_brand_candidates(
+            db_session, vertical.id, normalized_brands
+        )
+
+        apply_brand_merges(
+            db_session,
+            vertical.id,
+            mentions,
+            candidates,
+        )
+
+        canonical = db_session.query(CanonicalBrand).filter(
+            CanonicalBrand.canonical_name == "VW"
+        ).first()
+        assert canonical is not None
+        assert canonical.mention_count == 3
+
+        aliases = db_session.query(BrandAlias).filter(
+            BrandAlias.canonical_brand_id == canonical.id
+        ).all()
+        assert len(aliases) == 1
+        assert aliases[0].alias == "Volkswagen"
+
+    def test_qwen_canonical_used_when_in_group(self, db_session: Session):
+        vertical = Vertical(name="CarsQ2")
+        db_session.add(vertical)
+        db_session.flush()
+
+        brand1 = Brand(
+            vertical_id=vertical.id,
+            display_name="Unicharm",
+            original_name="Unicharm",
+            aliases={"zh": [], "en": []},
+            is_user_input=False,
+        )
+        brand2 = Brand(
+            vertical_id=vertical.id,
+            display_name="Unicharm (尤妮佳)",
+            original_name="Unicharm (尤妮佳)",
+            aliases={"zh": [], "en": []},
+            is_user_input=False,
+        )
+        db_session.add_all([brand1, brand2])
+        db_session.flush()
+
+        mentions = {"Unicharm": 1, "Unicharm (尤妮佳)": 2}
+        normalized_brands = {
+            "Unicharm": "Unicharm",
+            "Unicharm (尤妮佳)": "Unicharm",
+        }
+
+        candidates, _ = _build_qwen_brand_candidates(
+            db_session, vertical.id, normalized_brands
+        )
+
+        apply_brand_merges(
+            db_session,
+            vertical.id,
+            mentions,
+            candidates,
+        )
+
+        canonical = db_session.query(CanonicalBrand).filter(
+            CanonicalBrand.canonical_name == "Unicharm"
+        ).first()
+        assert canonical is not None
+        assert canonical.mention_count == 3
+
+        aliases = db_session.query(BrandAlias).filter(
+            BrandAlias.canonical_brand_id == canonical.id
+        ).all()
+        assert len(aliases) == 1
+        assert aliases[0].alias == "Unicharm (尤妮佳)"
+
+    def test_fallback_when_qwen_canonical_not_in_group(self, db_session: Session):
+        vertical = Vertical(name="CarsQ3")
+        db_session.add(vertical)
+        db_session.flush()
+
+        brand1 = Brand(
+            vertical_id=vertical.id,
+            display_name="Ford Motor Company of Canada",
+            original_name="Ford Motor Company of Canada",
+            aliases={"zh": [], "en": []},
+            is_user_input=False,
+        )
+        brand2 = Brand(
+            vertical_id=vertical.id,
+            display_name="Ford Motor Canada",
+            original_name="Ford Motor Canada",
+            aliases={"zh": [], "en": []},
+            is_user_input=False,
+        )
+        db_session.add_all([brand1, brand2])
+        db_session.flush()
+
+        mentions = {
+            "Ford Motor Company of Canada": 2,
+            "Ford Motor Canada": 1,
+        }
+        normalized_brands = {
+            "Ford Motor Company of Canada": "Ford",
+            "Ford Motor Canada": "Ford",
+        }
+
+        candidates, _ = _build_qwen_brand_candidates(
+            db_session, vertical.id, normalized_brands
+        )
+
+        apply_brand_merges(
+            db_session,
+            vertical.id,
+            mentions,
+            candidates,
+        )
+
+        canonical = db_session.query(CanonicalBrand).filter(
+            CanonicalBrand.canonical_name == "Ford Motor Canada"
+        ).first()
+        assert canonical is not None
+        assert canonical.mention_count == 3
 
 
 class TestApplyProductMerges:

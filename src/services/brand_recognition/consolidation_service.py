@@ -71,6 +71,7 @@ class EnhancedConsolidationResult:
     """Result of the enhanced consolidation process."""
     final_brands: Dict[str, List[str]]
     final_products: Dict[str, List[str]]
+    normalized_brands: Dict[str, str]
     debug_info: ConsolidationDebugInfo
 
 
@@ -521,6 +522,7 @@ async def run_enhanced_consolidation(
         return EnhancedConsolidationResult(
             final_brands={},
             final_products={},
+            normalized_brands={},
             debug_info=debug_info,
         )
 
@@ -598,6 +600,7 @@ async def run_enhanced_consolidation(
     return EnhancedConsolidationResult(
         final_brands=final_brands,
         final_products=final_products,
+        normalized_brands=normalization_result.normalized_brands,
         debug_info=debug_info,
     )
 

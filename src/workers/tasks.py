@@ -266,7 +266,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
         logger.info(f"Off-vertical gate rejected {rejected} discovered brands")
 
         logger.info(f"Consolidating entities for run {run_id}...")
-        consolidation_result = consolidate_run(self.db, run_id)
+        consolidation_result = consolidate_run(self.db, run_id, normalized_brands=enhanced_result.normalized_brands)
         logger.info(
             f"Entity consolidation complete: {consolidation_result.brands_merged} brands merged, "
             f"{consolidation_result.products_merged} products merged, "

@@ -47,6 +47,7 @@ You are the coding agent helping build and maintain this project.
 - Frameworks: pytest, pytest-asyncio, pytest-cov.
 - Prefer unit tests in `tests/unit/`, integration tests in `tests/integration/`, and smoke tests in `tests/smoke/`.
 - Run focused tests with `poetry run pytest tests/unit/test_file.py -v` before the full suite.
+- Run a small example using `make example-all-mini-qwen` after each implementation to test if everything works
 
 ## Commit & Pull Request Guidelines
 - Commit messages are short, imperative, and usually lower-case (e.g., "add knowledge graph", "fix make example re-run logic").
