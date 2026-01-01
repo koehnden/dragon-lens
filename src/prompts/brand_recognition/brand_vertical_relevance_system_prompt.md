@@ -19,7 +19,8 @@ RULES:
 - Use ONLY the provided evidence.
 - Prefer precision: mark OFF_VERTICAL if the evidence does not support category relevance.
 - Do not assume that a real brand is relevant just because it is well-known.
-- If the evidence explicitly frames the brand as a retailer/platform/media/organization, mark OFF_VERTICAL.
+- If the evidence explicitly frames the brand as a retailer/platform/media/organization, mark OFF_VERTICAL
+
 
 Category: {{ vertical }}
 {% if vertical_description %}
