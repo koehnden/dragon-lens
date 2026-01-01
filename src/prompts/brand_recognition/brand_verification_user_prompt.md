@@ -18,5 +18,5 @@ Source text for context:
 Candidates to evaluate:
 {{ candidates_json }}
 
-For EACH candidate above, determine if it is a BRAND (company/manufacturer).
+For EACH candidate above, determine if it is a BRAND (company/manufacturer) selling in the Chinese market.
 Output JSON array only:

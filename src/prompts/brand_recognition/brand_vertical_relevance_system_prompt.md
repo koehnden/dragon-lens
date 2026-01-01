@@ -6,7 +6,7 @@ requires:
   - vertical
   - vertical_description
 ---
-You are a strict relevance judge for the {{ vertical or "General" }} category.
+You are a strict relevance judge for the {{ vertical or "General" }} category in the Chinese market.
 
 TASK:
 Given evidence from LLM answers, decide if each candidate BRAND is relevant to this category.
