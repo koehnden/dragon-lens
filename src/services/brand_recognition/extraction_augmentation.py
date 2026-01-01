@@ -251,6 +251,7 @@ def _simplify_rejection_reason(reason: str) -> str:
         "rejected_at_normalization": "not a valid brand",
         "rejected_at_validation": "not a valid product",
         "rejected_at_list_filter": "not in primary position",
+        "off_vertical": "off-vertical entity",
         "user_rejected": "manually rejected",
     }
     return reason_map.get(reason, reason)
