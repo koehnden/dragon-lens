@@ -825,6 +825,8 @@ def _build_brand_normalization_prompt(
         vertical=vertical,
         vertical_description=vertical_description,
         brands_json=brands_json,
+        validated_brands=[],
+        rejected_brands=[],
     )
 
 

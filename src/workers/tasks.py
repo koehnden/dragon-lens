@@ -93,7 +93,6 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
 
         llm_router = LLMRouter(self.db)
         translator = TranslaterService()
-        _apply_brand_translations(brands, translator, self.db)
         from services.ollama import OllamaService
         ollama_service = OllamaService()
 
@@ -194,8 +193,6 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                     extraction_method="qwen",
                 )
                 self.db.add(debug_record)
-
-            _apply_brand_translations(all_brands, translator, self.db)
 
             logger.info("Discovering products in response...")
             discovered_products = discover_and_store_products(
@@ -320,19 +317,6 @@ def extract_brand_mentions(answer_text: str, brands: List[dict]) -> List[dict]:
 def classify_sentiment(text: str) -> str:
     logger.info("Classifying sentiment")
     return "neutral"
-
-
-def _apply_brand_translations(brands: List[Brand], translator: TranslaterService, db: Session) -> None:
-    updated = False
-    for brand in brands:
-        if brand.translated_name:
-            continue
-        brand.original_name = brand.display_name
-        brand.translated_name = translator.translate_entity_sync(brand.display_name)
-        updated = True
-    if updated:
-        db.commit()
-
 
 def _detect_mentions(answer_text: str, brands: List[Brand]) -> dict[int, List[str]]:
     if not brands:

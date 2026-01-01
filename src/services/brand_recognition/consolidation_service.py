@@ -179,6 +179,10 @@ async def normalize_brands_batch(
     if need_normalization:
         ollama = OllamaService()
         brands_json = json.dumps(need_normalization, ensure_ascii=False)
+        allowed_canonicals = _allowed_canonicals_for_normalization(
+            need_normalization,
+            augmentation_context.get("validated_brands", []),
+        )
 
         prompt = load_prompt(
             "brand_normalization_prompt",
@@ -196,7 +200,11 @@ async def normalize_brands_batch(
                 system_prompt="",
                 temperature=0.0,
             )
-            qwen_result = _parse_normalization_response(response, need_normalization)
+            qwen_result = _parse_normalization_response(
+                response,
+                need_normalization,
+                allowed_canonicals,
+            )
         except Exception as e:
             logger.error(f"Brand normalization failed: {e}")
             qwen_result = NormalizationResult(
@@ -221,43 +229,26 @@ async def normalize_brands_batch(
 def _parse_normalization_response(
     response: str,
     original_brands: List[str],
+    allowed_canonicals: Set[str],
 ) -> NormalizationResult:
     """Parse the brand normalization response from Qwen."""
     import re
 
-    response = response.strip()
-    if response.startswith("```json"):
-        response = response[7:]
-    if response.startswith("```"):
-        response = response[3:]
-    if response.endswith("```"):
-        response = response[:-3]
-    response = response.strip()
-
-    try:
-        data = json.loads(response)
-    except json.JSONDecodeError:
-        json_match = re.search(r'\{[\s\S]*\}', response)
-        if json_match:
-            try:
-                data = json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                return NormalizationResult(
-                    normalized_brands={b: b for b in original_brands},
-                    rejected_brands=[],
-                )
-        else:
-            return NormalizationResult(
-                normalized_brands={b: b for b in original_brands},
-                rejected_brands=[],
-            )
+    data = _extract_json_obj(response, re)
+    if data is None:
+        return NormalizationResult(
+            normalized_brands={b: b for b in original_brands},
+            rejected_brands=[],
+        )
 
     normalized_brands: Dict[str, str] = {}
     rejected_brands: List[dict] = data.get("rejected", [])
 
     for brand_info in data.get("brands", []):
-        canonical = brand_info.get("canonical", "")
+        canonical = str(brand_info.get("canonical", "")).strip()
         original_forms = brand_info.get("original_forms", [])
+        if not _canonical_allowed(canonical, allowed_canonicals, original_brands):
+            continue
 
         for form in original_forms:
             if form in original_brands:
@@ -271,6 +262,42 @@ def _parse_normalization_response(
         normalized_brands=normalized_brands,
         rejected_brands=rejected_brands,
     )
+
+
+def _allowed_canonicals_for_normalization(
+    brands: List[str],
+    validated_brands: List[Dict[str, Any]],
+) -> Set[str]:
+    allowed = {b for b in brands if b}
+    for item in validated_brands or []:
+        allowed |= {item.get("canonical_name"), item.get("display_name")}
+        allowed |= set(item.get("aliases") or [])
+    return {a for a in allowed if a}
+
+
+def _canonical_allowed(canonical: str, allowed: Set[str], originals: List[str]) -> bool:
+    from services.translater import has_chinese_characters
+    if not canonical:
+        return False
+    if canonical in allowed:
+        return True
+    if has_chinese_characters(canonical):
+        return any(canonical in o for o in originals)
+    return any(canonical.casefold() in o.casefold() for o in originals)
+
+
+def _extract_json_obj(response: str, re_module) -> dict | None:
+    cleaned = (response or "").strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re_module.search(r"\{[\s\S]*\}", cleaned)
+        if not match:
+            return None
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return None
 
 
 async def validate_products_batch(
