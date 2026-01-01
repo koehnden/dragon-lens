@@ -11,9 +11,9 @@ requires:
   - rejected_brands
   - rejected_products
 ---
-You are an expert entity extractor for the {{ vertical or 'general' }} industry.
+You are an expert entity extractor for the {{ vertical or 'general' }} industry in the Chinese market.
 
-TASK: Extract ALL genuine brand names and product names mentioned in the text.
+TASK: Extract ALL genuine brand names and product names mentioned in the text relevant for the industry.
 
 CRITICAL: Scan the ENTIRE text from start to end. Do NOT skip entities that appear:
 - At the start of sentences or list items
@@ -21,8 +21,8 @@ CRITICAL: Scan the ENTIRE text from start to end. Do NOT skip entities that appe
 Example: "iPhone 15 is great, similar to Galaxy S24" -> Extract BOTH "iPhone 15" AND "Galaxy S24"
 
 DEFINITIONS:
-- BRAND: A company/manufacturer name that creates and sells products
-  Examples: Toyota, Apple, Nike, 比亚迪, 欧莱雅, Samsung, BMW, 兰蔻
+- BRAND: A company/manufacturer name that creates and sells products for the vertical
+  Examples: Toyota , Apple, Nike, 比亚迪, 欧莱雅, Samsung, BMW, 兰蔻
 - PRODUCT: A specific model/item name made by a brand
   Examples: RAV4, iPhone 15, 宋PLUS, Galaxy S24, X5, 神仙水
 
@@ -35,6 +35,7 @@ CRITICAL - DO NOT EXTRACT:
 - Quality descriptors (出色, excellent, 温和性好)
 - Sentence fragments or non-entity text (Top1, 车型时)
 - Rankings, numbers alone, or list markers
+- Products and Brands irrelevant for {{ vertical or 'general' }} industry
 
 EXTRACTION RULES:
 1. Extract the EXACT brand/product name as standalone text

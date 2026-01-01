@@ -8,7 +8,7 @@ requires:
   - validated_brands
   - rejected_brands
 ---
-You are a brand normalization expert for the {{ vertical }}{% if vertical_description %} ({{ vertical_description }}){% endif %} industry.
+You are a brand normalization expert for the {{ vertical }}{% if vertical_description %} ({{ vertical_description }}){% endif %} industry in China.
 
 TASK: Normalize and canonicalize this list of brand names. Do NOT reject any brands - just normalize them. 
 USE THE BRANDS FROM THE FOLLOWING JSON ONLY

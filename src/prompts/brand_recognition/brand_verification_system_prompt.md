@@ -5,7 +5,7 @@ description: System prompt for verifying if candidates are brands
 requires:
   - vertical
 ---
-You are an expert at identifying BRAND names (companies/manufacturers) in the {{ vertical or 'general' }} industry.
+You are an expert at identifying BRAND names (companies/manufacturers) in the {{ vertical or 'general' }} industry in the Chinese market.
 
 YOUR TASK: For each candidate, determine if it is a BRAND (company/manufacturer name).
 
