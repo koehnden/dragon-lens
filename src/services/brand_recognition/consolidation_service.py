@@ -21,6 +21,10 @@ from models import (
     RejectedEntity,
     Run,
 )
+from services.canonicalization_metrics import (
+    build_user_brand_variant_maps,
+    resolve_user_brand_display_name,
+)
 from services.brand_recognition.models import ConsolidationDebugInfo
 from services.brand_recognition.list_processor import (
     is_list_format,
@@ -148,6 +152,8 @@ async def normalize_brands_batch(
     need_normalization: List[str] = []
     validated_brand_names: Set[str] = set()
     augmentation_context: Dict = {}
+    user_exact: Dict[str, str] = {}
+    user_norm: Dict[str, str] = {}
 
     if db is not None and vertical_id is not None:
         from services.brand_recognition.extraction_augmentation import (
@@ -157,12 +163,17 @@ async def normalize_brands_batch(
             get_canonical_for_validated_brand,
         )
         validated_brand_names, _ = get_validated_entity_names(db, vertical_id)
+        user_exact, user_norm = build_user_brand_variant_maps(db, vertical_id)
         augmentation_context = {
             "validated_brands": get_validated_brands_for_prompt(db, vertical_id),
             "rejected_brands": get_rejected_brands_for_prompt(db, vertical_id),
         }
 
         for brand in brands:
+            user_display = resolve_user_brand_display_name(brand, user_exact, user_norm)
+            if user_display:
+                bypass_brands[brand] = user_display
+                continue
             if brand in validated_brand_names or brand.lower() in validated_brand_names:
                 canonical = get_canonical_for_validated_brand(db, brand, vertical_id)
                 bypass_brands[brand] = canonical

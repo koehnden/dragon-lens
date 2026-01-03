@@ -232,6 +232,78 @@ def test_latest_metrics_calculation(client: TestClient, complete_test_data):
     assert audi["dragon_lens_visibility"] == pytest.approx(0.063, rel=1e-2)
 
 
+def test_latest_metrics_aggregates_user_aliases(client: TestClient, db_session: Session):
+    vertical = Vertical(name="Alias Metrics", description="Alias aggregation")
+    db_session.add(vertical)
+    db_session.flush()
+
+    run = Run(
+        vertical_id=vertical.id,
+        model_name="qwen",
+        status=RunStatus.COMPLETED,
+    )
+    prompt = Prompt(
+        vertical_id=vertical.id,
+        text_zh="VW 大众",
+        language_original=PromptLanguage.ZH,
+    )
+    db_session.add_all([run, prompt])
+    db_session.flush()
+
+    answer = LLMAnswer(
+        run_id=run.id,
+        prompt_id=prompt.id,
+        model_name="qwen",
+        raw_answer_zh="VW 大众",
+    )
+    user_brand = Brand(
+        vertical_id=vertical.id,
+        display_name="VW",
+        original_name="VW",
+        translated_name="VW",
+        aliases={"zh": ["大众"], "en": ["Volkswagen"]},
+        is_user_input=True,
+    )
+    discovered_brand = Brand(
+        vertical_id=vertical.id,
+        display_name="大众",
+        original_name="大众",
+        translated_name="Volkswagen",
+        aliases={"zh": [], "en": []},
+        is_user_input=False,
+    )
+    db_session.add_all([answer, user_brand, discovered_brand])
+    db_session.flush()
+
+    mention1 = BrandMention(
+        llm_answer_id=answer.id,
+        brand_id=user_brand.id,
+        mentioned=True,
+        rank=1,
+        sentiment=Sentiment.NEUTRAL,
+        evidence_snippets={"zh": ["VW"], "en": []},
+    )
+    mention2 = BrandMention(
+        llm_answer_id=answer.id,
+        brand_id=discovered_brand.id,
+        mentioned=True,
+        rank=2,
+        sentiment=Sentiment.NEUTRAL,
+        evidence_snippets={"zh": ["大众"], "en": []},
+    )
+    db_session.add_all([mention1, mention2])
+    db_session.commit()
+
+    response = client.get(
+        f"/api/v1/metrics/latest?vertical_id={vertical.id}&model_name=qwen"
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["brands"]) == 1
+    assert data["brands"][0]["brand_name"] == "VW"
+
+
 def test_latest_metrics_with_multiple_runs(client: TestClient, db_session: Session, complete_test_data):
     """Test that only the latest run is used for metrics."""
     vertical_id = complete_test_data["vertical_id"]
