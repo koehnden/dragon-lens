@@ -286,7 +286,8 @@ class ConsolidationDebug(Base):
     input_products: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     rejected_at_normalization: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     rejected_at_validation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    rejected_at_list_filter: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_list_filter_brands: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_list_filter_products: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     final_brands: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     final_products: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -113,6 +113,23 @@ def _migrate_prompts_table(connection, inspector):
             )
 
 
+def _migrate_consolidation_debug_table(connection, inspector):
+    if "consolidation_debug" in inspector.get_table_names():
+        debug_columns = {col["name"] for col in inspector.get_columns("consolidation_debug")}
+        if "rejected_at_list_filter_brands" not in debug_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE consolidation_debug ADD COLUMN rejected_at_list_filter_brands TEXT"
+                )
+            )
+        if "rejected_at_list_filter_products" not in debug_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE consolidation_debug ADD COLUMN rejected_at_list_filter_products TEXT"
+                )
+            )
+
+
 def _migrate_api_keys_table(connection, inspector):
     if "api_keys" not in inspector.get_table_names():
         connection.execute(
@@ -147,6 +164,7 @@ def init_db() -> None:
         _migrate_llm_answers_table(connection, inspector)
         _migrate_daily_metrics_table(connection, inspector)
         _migrate_prompts_table(connection, inspector)
+        _migrate_consolidation_debug_table(connection, inspector)
         _migrate_api_keys_table(connection, inspector)
 
     Base.metadata.create_all(bind=engine)
