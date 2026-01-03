@@ -189,7 +189,7 @@ paths:
                 type: array
                 items:
                   type: string
-                example: ["qwen", "deepseek", "kimi"]
+                example: ["qwen", "deepseek", "kimi", "openrouter"]
         '404':
           description: Vertical not found
         '422':
@@ -588,7 +588,7 @@ paths:
           - type: string
           - type: 'null'
           title: Provider
-        description: Filter by provider (qwen, deepseek, kimi)
+        description: Filter by provider (deepseek, kimi, openrouter)
       - name: active_only
         in: query
         required: false
@@ -778,9 +778,9 @@ components:
       properties:
         provider:
           type: string
-          enum: [qwen, deepseek, kimi]
+          enum: [deepseek, kimi, openrouter]
           title: Provider
-          description: LLM provider
+          description: LLM provider (deepseek, kimi, openrouter)
         api_key:
           type: string
           minLength: 1
@@ -1027,6 +1027,12 @@ components:
         model_name:
           type: string
           title: Model Name
+        route:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Route
+          description: Routing path for this run (local, vendor, openrouter)
         status:
           type: string
           title: Status
@@ -1080,12 +1086,12 @@ components:
         provider:
           type: string
           title: Provider
-          description: LLM provider (qwen, deepseek, kimi)
+          description: LLM provider (qwen, deepseek, kimi, openrouter)
           default: qwen
         model_name:
           type: string
           title: Model Name
-          description: Specific model name (e.g., deepseek-chat, deepseek-reasoner)
+          description: Specific model name or OpenRouter model ID
           default: qwen2.5:7b-instruct-q4_0
       type: object
       required:
@@ -1107,6 +1113,12 @@ components:
         model_name:
           type: string
           title: Model Name
+        route:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Route
+          description: Routing path for this run (local, vendor, openrouter)
         status:
           type: string
           title: Status

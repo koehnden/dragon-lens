@@ -7,7 +7,7 @@ from models.domain import LLMProvider
 
 def show():
     st.title("🔑 API Key Management")
-    st.write("Manage API keys for remote LLM providers (DeepSeek, Kimi)")
+    st.write("Manage API keys for remote LLM providers (DeepSeek, Kimi, OpenRouter)")
 
     st.markdown("---")
 
@@ -157,6 +157,22 @@ def show():
         - `moonshot-v1-128k`: Long context model (128K)
         
         **Note:** Kimi integration is now available in V1!
+        """)
+
+    with st.expander("OpenRouter API"):
+        st.markdown("""
+        **Getting an API Key:**
+        1. Visit [OpenRouter](https://openrouter.ai/)
+        2. Sign up or log in
+        3. Navigate to API Keys
+        4. Create a new API key
+
+        **Models:**
+        - `baidu/ernie-4.5-300b-a47b`
+        - `bytedance-seed/seed-1.6-flash`
+        - Any other OpenRouter model ID
+
+        **Pricing:** Not available yet for OpenRouter runs in DragonLens.
         """)
 
     st.markdown("---")
