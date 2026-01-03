@@ -135,6 +135,7 @@ async def create_tracking_job(
             vertical_id=vertical.id,
             provider=job.provider,
             model_name=job.model_name,
+            route=run.route.value if run.route else None,
             status=run.status.value,
             message="Tracking job queued for inline processing."
         )
@@ -160,6 +161,7 @@ async def create_tracking_job(
         vertical_id=vertical.id,
         provider=job.provider,
         model_name=job.model_name,
+        route=run.route.value if run.route else None,
         status=run.status.value,
         message=enqueue_message,
     )
@@ -426,6 +428,7 @@ async def get_run_details(
                 prompt_text_en=prompt.text_en if prompt else None,
                 provider=llm_answer.provider,
                 model_name=llm_answer.model_name,
+                route=llm_answer.route.value if llm_answer.route else None,
                 raw_answer_zh=llm_answer.raw_answer_zh,
                 raw_answer_en=llm_answer.raw_answer_en,
                 tokens_in=llm_answer.tokens_in,
@@ -443,6 +446,7 @@ async def get_run_details(
         vertical_name=vertical.name if vertical else "Unknown",
         provider=run.provider,
         model_name=run.model_name,
+        route=run.route.value if run.route else None,
         status=run.status.value,
         run_time=run.run_time,
         completed_at=run.completed_at,

@@ -61,8 +61,8 @@ class TrackingJobCreate(BaseModel):
     vertical_description: Optional[str] = None
     brands: List[BrandCreate] = Field(default_factory=list)
     prompts: List[PromptCreate]
-    provider: str = Field(default="qwen", description="LLM provider (qwen, deepseek, kimi)")
-    model_name: str = Field(default="qwen2.5:7b-instruct-q4_0", description="Specific model name (e.g., deepseek-chat, deepseek-reasoner)")
+    provider: str = Field(default="qwen", description="LLM provider (qwen, deepseek, kimi, openrouter)")
+    model_name: str = Field(default="qwen2.5:7b-instruct-q4_0", description="Specific model name or OpenRouter model ID")
     reuse_answers: bool = Field(default=False, description="Whether to reuse answers from previous runs")
     web_search_enabled: bool = Field(default=False, description="Whether web search is enabled for this run")
 
@@ -72,6 +72,7 @@ class TrackingJobResponse(BaseModel):
     vertical_id: int
     provider: str
     model_name: str
+    route: Optional[str] = None
     status: str
     message: str
 
@@ -119,6 +120,7 @@ class RunResponse(BaseModel):
     vertical_id: int
     provider: str
     model_name: str
+    route: Optional[str] = None
     status: str
     run_time: datetime
     completed_at: Optional[datetime]
@@ -144,6 +146,7 @@ class LLMAnswerResponse(BaseModel):
     prompt_text_en: Optional[str]
     provider: str
     model_name: str
+    route: Optional[str] = None
     raw_answer_zh: str
     raw_answer_en: Optional[str]
     tokens_in: Optional[int]
@@ -162,6 +165,7 @@ class RunDetailedResponse(BaseModel):
     vertical_name: str
     provider: str
     model_name: str
+    route: Optional[str] = None
     status: str
     run_time: datetime
     completed_at: Optional[datetime]
@@ -204,7 +208,7 @@ class DeleteVerticalResponse(BaseModel):
 
 
 class APIKeyCreate(BaseModel):
-    provider: str = Field(..., description="LLM provider (deepseek, kimi)")
+    provider: str = Field(..., description="LLM provider (deepseek, kimi, openrouter)")
     api_key: str = Field(..., min_length=1, description="API key to encrypt and store")
 
 
