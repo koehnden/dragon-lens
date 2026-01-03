@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,22 @@ def build_user_brand_variant_maps(db: Session, vertical_id: int) -> Tuple[Dict[s
     for b in brands:
         _add_user_brand_variants(exact, normalized, b)
     return exact, normalized
+
+
+def build_user_brand_variant_set(db: Session, vertical_id: int) -> Set[str]:
+    result: Set[str] = set()
+    for brand in _user_brands(db, vertical_id):
+        for variant in _brand_variants(brand):
+            _add_variant_set(result, variant)
+    return result
+
+
+def resolve_user_brand_display_name(
+    name: str, exact: Dict[str, str], normalized: Dict[str, str]
+) -> Optional[str]:
+    if key := exact.get((name or "").casefold()):
+        return key
+    return normalized.get(normalize_entity_key(name))
 
 
 def build_brand_canonical_maps(db: Session, vertical_id: int) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
@@ -98,6 +114,14 @@ def _add_user_brand_variants(exact: Dict[str, str], normalized: Dict[str, str], 
             continue
         exact.setdefault(v.casefold(), brand.display_name)
         normalized.setdefault(normalize_entity_key(v), brand.display_name)
+
+
+def _add_variant_set(result: Set[str], variant: str) -> None:
+    if not variant:
+        return
+    result.add(variant)
+    result.add(variant.casefold())
+    result.add(normalize_entity_key(variant))
 
 
 def _brand_variants(brand: Brand) -> Iterable[str]:

@@ -17,8 +17,10 @@ import os
 def ensure_src_on_path() -> None:
     root = Path(__file__).resolve().parent.parent
     src_path = root / "src"
-    if str(src_path) not in sys.path:
-        sys.path.append(str(src_path))
+    src_value = str(src_path)
+    if src_value in sys.path:
+        sys.path.remove(src_value)
+    sys.path.insert(0, src_value)
 
 
 ensure_src_on_path()
