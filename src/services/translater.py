@@ -2,8 +2,13 @@ import asyncio
 import re
 from typing import TYPE_CHECKING
 
+from prompts import load_prompt
+
 if TYPE_CHECKING:
     from services.ollama import OllamaService
+
+
+MAX_ENTITY_TRANSLATION_LENGTH = 50
 
 
 def has_latin_letters(text: str) -> bool:
@@ -91,6 +96,21 @@ def _find_chinese_name(original: str, translated: str) -> str:
     return ""
 
 
+def _clean_entity_translation(text: str, original: str) -> str:
+    if not text:
+        return original
+    cleaned = re.sub(r"\s*\([Nn]ote:.*\)$", "", text)
+    cleaned = re.sub(r"\s*\([Tt]his\s+(is|means).*\)$", "", cleaned)
+    cleaned = re.sub(r"\s*\(.*translation.*\)$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*\(.*misspelling.*\)$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.strip()
+    if len(cleaned) > MAX_ENTITY_TRANSLATION_LENGTH:
+        return original
+    if not cleaned:
+        return original
+    return cleaned
+
+
 class TranslaterService:
     def __init__(self, ollama_service: "OllamaService | None" = None):
         if ollama_service is None:
@@ -103,7 +123,9 @@ class TranslaterService:
             return name
         prompt = _build_entity_prompt(name)
         system_prompt = _entity_system_prompt()
-        return await _translate_with_guardrails(self.ollama, name, prompt, system_prompt)
+        return await _translate_with_guardrails(
+            self.ollama, name, prompt, system_prompt, is_entity=True
+        )
 
     def translate_entity_sync(self, name: str) -> str:
         return asyncio.run(self.translate_entity(name))
@@ -118,27 +140,27 @@ class TranslaterService:
 
 
 def _build_entity_prompt(name: str) -> str:
-    prefix = "Translate this brand or product name to English and preserve the entity exactly:"
-    return f"{prefix}\n{name}"
+    return load_prompt("translation/entity_translation_user_prompt", name=name)
 
 
 def _entity_system_prompt() -> str:
-    return (
-        "You are a precise translator for brand and product names."
-        " Translate to English without inventing or altering names."
-        " If you cannot translate confidently, return the original text unchanged."
-        " Respond with only the translated name."
-    )
+    return load_prompt("translation/entity_translation_system_prompt")
 
 
 def _build_text_prompt(text: str, source_lang: str, target_lang: str) -> str:
-    return f"Translate from {source_lang} to {target_lang}:\n{text}"
+    return load_prompt(
+        "translation/text_translation_user_prompt",
+        text=text,
+        source_lang=source_lang,
+        target_lang=target_lang,
+    )
 
 
 def _text_system_prompt(source_lang: str, target_lang: str) -> str:
-    return (
-        f"You are a careful translator. Convert {source_lang} text to {target_lang} without adding, "
-        "removing, or fabricating content. Respond only with the translated text."
+    return load_prompt(
+        "translation/text_translation_system_prompt",
+        source_lang=source_lang,
+        target_lang=target_lang,
     )
 
 
@@ -147,6 +169,7 @@ async def _translate_with_guardrails(
     fallback: str,
     prompt: str,
     system_prompt: str,
+    is_entity: bool = False,
 ) -> str:
     try:
         response = await service._call_ollama(
@@ -158,4 +181,6 @@ async def _translate_with_guardrails(
     except Exception:
         return fallback
     cleaned = (response or "").strip()
+    if is_entity:
+        cleaned = _clean_entity_translation(cleaned, fallback)
     return cleaned or fallback

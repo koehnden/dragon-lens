@@ -1,28 +1,37 @@
 {
   "vertical_name": "Hiking Shoes",
-  "vertical_description": "Hiking shoes buying decisions in China (day hikes, mountains, wet season, mixed terrain)",
+  "vertical_description": "Chinese consumer purchase-intent prompts for hiking shoes (day hikes, mountains, rainy season, mixed terrain)",
   "model_name": "qwen",
-  "brands": [],
+"brands": [
+  {
+    "display_name": "Salomon",
+    "aliases": {
+      "zh": ["萨洛蒙", "SALOMON", "萨洛蒙（Salomon）"],
+      "en": ["Salomon"]
+    }
+  }
+],
+
   "prompts": [
-    {"text_zh": "第一次去徒步（新手），郊区轻徒步和爬山碎石路，鞋子到底怎么选？", "language_original": "zh"},
-    {"text_zh": "低帮/中帮/高帮徒步鞋有什么区别？我容易崴脚，选哪种更稳？", "language_original": "zh"},
-    {"text_zh": "南方雨季路面泥泞又湿滑，徒步鞋最关键看哪些点才不容易打滑？", "language_original": "zh"},
-    {"text_zh": "走湿滑石头和台阶老是滑，鞋底纹路/材质应该怎么选？有避坑建议吗？", "language_original": "zh"},
-    {"text_zh": "冬天北方可能遇到结冰/积雪，徒步鞋需要注意哪些功能才安全？", "language_original": "zh"},
-    {"text_zh": "我脚宽、脚背高，试鞋总觉得挤脚，徒步鞋怎么挑鞋楦和尺码？", "language_original": "zh"},
-    {"text_zh": "我体重大概90kg+，需要更强支撑和缓震吗？徒步鞋应该怎么选？", "language_original": "zh"},
-    {"text_zh": "扁平足/足弓低的人穿徒步鞋容易累吗？要不要配鞋垫？怎么选更舒服？", "language_original": "zh"},
-    {"text_zh": "长距离徒步最怕磨脚起泡，尺码、袜子、系带有什么技巧？", "language_original": "zh"},
-    {"text_zh": "新鞋磨脚正常吗？徒步鞋要不要磨合？怎么磨合更快不伤脚？", "language_original": "zh"},
-    {"text_zh": "防水徒步鞋会不会很闷？夏天徒步到底选透气还是防水更合适？", "language_original": "zh"},
-    {"text_zh": "一日轻装徒步 vs 露营过夜背重装，鞋子需求差别大吗？应该怎么选？", "language_original": "zh"},
-    {"text_zh": "沙地/戈壁徒步会进沙磨脚吗？徒步鞋怎么选更防沙、防磨？", "language_original": "zh"},
-    {"text_zh": "经常要过小溪/涉水，普通徒步鞋能用吗？怎么选才不容易湿脚和磨脚？", "language_original": "zh"},
-    {"text_zh": "徒步鞋的鞋底耐磨一般能用多久？怎么判断该换鞋了？", "language_original": "zh"},
-    {"text_zh": "徒步鞋怎么清洗和晾干才不伤材料？能不能用洗衣机洗？", "language_original": "zh"},
-    {"text_zh": "我平时也想通勤穿徒步鞋，会不会太硬太累？雨天防滑靠谱吗？", "language_original": "zh"},
-    {"text_zh": "网购徒步鞋试穿怎么判断合脚？前掌要留多少空间、脚跟怎么不掉？", "language_original": "zh"},
-    {"text_zh": "预算300-800、800-1500、1500+，不同价位最值得看的配置分别是什么？", "language_original": "zh"},
-    {"text_zh": "我膝盖不太好，走下坡会疼，徒步鞋选更软的缓震还是更硬的支撑更省膝？", "language_original": "zh"}
+    {"text_zh": "新手第一次徒步，周末轻徒步+偶尔爬山碎石路，你推荐哪些徒步鞋/徒步靴？请给TOP10并说明适合场景。", "language_original": "zh"},
+    {"text_zh": "我容易崴脚，想买更稳的徒步鞋：低帮/中帮/高帮分别推荐哪些代表款？请对比优缺点。", "language_original": "zh"},
+    {"text_zh": "南方雨季泥泞湿滑路面，主打“防滑抓地”的徒步鞋推荐TOP10有哪些？请说明为什么不打滑。", "language_original": "zh"},
+    {"text_zh": "经常走湿滑石头、青苔路、台阶，哪类大底更抓地？请推荐10款并说清楚适用地形。", "language_original": "zh"},
+    {"text_zh": "北方冬天可能遇到冰雪路，适合冬季徒步的鞋子推荐哪些？请给TOP10并说明保暖/防滑怎么兼顾。", "language_original": "zh"},
+    {"text_zh": "我脚宽、脚背高，求“宽楦不挤脚”的徒步鞋推荐TOP10（含尺码建议）。", "language_original": "zh"},
+    {"text_zh": "我体重大概90kg+，想要支撑强、下坡不顶脚的徒步鞋/靴，推荐哪些型号？请给TOP10。", "language_original": "zh"},
+    {"text_zh": "扁平足/足弓低，走久容易累，哪些徒步鞋更适合？请推荐10款并说明是否需要搭配鞋垫。", "language_original": "zh"},
+    {"text_zh": "我最怕磨脚起泡，适合长距离的“防磨舒适”徒步鞋推荐TOP10有哪些？请说明为什么不容易起泡。", "language_original": "zh"},
+    {"text_zh": "想买一双“买来就能穿、不怎么磨合”的徒步鞋，推荐哪些？请列TOP10并说明脚感特点。", "language_original": "zh"},
+    {"text_zh": "夏天徒步很热，想要更透气不闷脚的徒步鞋推荐TOP10；同时说明它们在雨天会不会很尴尬。", "language_original": "zh"},
+    {"text_zh": "经常遇到小雨/露水/浅水坑，想买“防水但别太闷”的徒步鞋，推荐TOP10并说明取舍点。", "language_original": "zh"},
+    {"text_zh": "我计划一日轻装徒步为主，但偶尔露营背重装，最通用的一类徒步鞋/靴推荐哪些？请给TOP10。", "language_original": "zh"},
+    {"text_zh": "需要过小溪/涉水，想买更适合涉水快干、不易磨脚的鞋，推荐10款并说明搭配技巧。", "language_original": "zh"},
+    {"text_zh": "沙地/戈壁容易进沙磨脚，适合防沙的徒步鞋推荐哪些？请给TOP10并说明怎么选不进沙。", "language_original": "zh"},
+    {"text_zh": "我想“徒步+通勤两用”，雨天还要防滑，推荐哪些更像运动鞋脚感的徒步鞋？请列TOP10。", "language_original": "zh"},
+    {"text_zh": "预算300-800、800-1500、1500+，每个价位最值得买的徒步鞋分别推荐TOP5，并说明差在哪。", "language_original": "zh"},
+    {"text_zh": "我膝盖不太好，下坡容易疼，哪些徒步鞋更适合减轻下坡冲击？请推荐10款并说明中底/支撑特点。", "language_original": "zh"},
+    {"text_zh": "我想要更耐穿、鞋底耐磨的徒步鞋，推荐TOP10并说明大概能穿多久、适合哪些路况。", "language_original": "zh"},
+    {"text_zh": "网购徒步鞋怕买错，给我推荐10款“尺码相对稳定、试穿好判断”的，并附上试穿要点。", "language_original": "zh"}
   ]
 }

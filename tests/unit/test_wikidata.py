@@ -173,12 +173,12 @@ class TestWikidataCacheModels:
 
 
 class TestBrandRecognitionWikidataIntegration:
-    @patch("src.services.brand_recognition.wikidata_cache_available")
-    @patch("src.services.brand_recognition.wikidata_is_known_brand")
+    @patch("services.wikidata_lookup.get_cache_available")
+    @patch("services.wikidata_lookup.is_known_brand")
     def test_check_wikidata_brand_boosts_confidence(
         self, mock_is_known, mock_cache_available
     ):
-        from src.services.brand_recognition import _check_wikidata_brand
+        from services.brand_recognition import _check_wikidata_brand
 
         mock_cache_available.return_value = True
         mock_is_known.return_value = True
@@ -186,23 +186,23 @@ class TestBrandRecognitionWikidataIntegration:
         result = _check_wikidata_brand("Toyota", "automotive")
         assert result is True
 
-    @patch("src.services.brand_recognition.wikidata_cache_available")
+    @patch("services.wikidata_lookup.get_cache_available")
     def test_check_wikidata_brand_returns_false_when_cache_unavailable(
         self, mock_cache_available
     ):
-        from src.services.brand_recognition import _check_wikidata_brand
+        from services.brand_recognition import _check_wikidata_brand
 
         mock_cache_available.return_value = False
 
         result = _check_wikidata_brand("Toyota", "automotive")
         assert result is False
 
-    @patch("src.services.brand_recognition.wikidata_cache_available")
-    @patch("src.services.brand_recognition.wikidata_is_known_product")
+    @patch("services.wikidata_lookup.get_cache_available")
+    @patch("services.wikidata_lookup.is_known_product")
     def test_check_wikidata_product_boosts_confidence(
         self, mock_is_known, mock_cache_available
     ):
-        from src.services.brand_recognition import _check_wikidata_product
+        from services.brand_recognition import _check_wikidata_product
 
         mock_cache_available.return_value = True
         mock_is_known.return_value = True

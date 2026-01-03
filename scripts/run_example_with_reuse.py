@@ -22,12 +22,12 @@ def check_existing_vertical(vertical_name: str) -> Optional[int]:
     try:
         response = requests.get(
             f"http://localhost:{settings.api_port}/api/v1/verticals",
-            params={"name": vertical_name}
         )
         if response.status_code == 200:
             verticals = response.json()
-            if verticals:
-                return verticals[0]["id"]
+            for v in verticals:
+                if v.get("name") == vertical_name:
+                    return v.get("id")
     except requests.RequestException:
         pass
     return None

@@ -23,6 +23,7 @@ def clear_data(clear_prompts_results: bool = False) -> None:
     
     try:
         session.execute(text("BEGIN"))
+        status_mode = _detect_run_status_storage(session)
         
         if clear_prompts_results:
             logger.info("Clearing ALL data including prompt results...")
@@ -64,13 +65,7 @@ def clear_data(clear_prompts_results: bool = False) -> None:
                 logger.info(f"    {table}: {count} rows remaining")
             
             logger.info("  Resetting run statuses to PENDING...")
-            session.execute(text("""
-                UPDATE runs 
-                SET status = 'pending', 
-                    completed_at = NULL,
-                    error_message = NULL
-                WHERE status IN ('completed', 'failed')
-            """))
+            session.execute(text(_reset_runs_sql(status_mode)))
             updated = session.execute(text("SELECT changes()")).scalar()
             logger.info(f"    Updated {updated} runs")
         
@@ -83,6 +78,25 @@ def clear_data(clear_prompts_results: bool = False) -> None:
         raise
     finally:
         session.close()
+
+
+def _detect_run_status_storage(session) -> str:
+    sample = session.execute(text("SELECT status FROM runs LIMIT 1")).scalar()
+    if not sample:
+        return "name"
+    return "value" if str(sample).islower() else "name"
+
+
+def _reset_runs_sql(status_mode: str) -> str:
+    if status_mode == "value":
+        return (
+            "UPDATE runs SET status = 'pending', completed_at = NULL, error_message = NULL "
+            "WHERE lower(status) IN ('completed', 'failed', 'in_progress')"
+        )
+    return (
+        "UPDATE runs SET status = 'PENDING', completed_at = NULL, error_message = NULL "
+        "WHERE upper(status) IN ('COMPLETED', 'FAILED', 'IN_PROGRESS')"
+    )
 
 
 def main() -> None:

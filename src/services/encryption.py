@@ -6,7 +6,7 @@ import logging
 import os
 from typing import Optional
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
@@ -46,8 +46,11 @@ class EncryptionService:
         return encrypted.decode()
 
     def decrypt(self, ciphertext: str) -> str:
-        decrypted = self._fernet.decrypt(ciphertext.encode())
-        return decrypted.decode()
+        try:
+            decrypted = self._fernet.decrypt(ciphertext.encode())
+            return decrypted.decode()
+        except InvalidToken:
+            raise ValueError("Invalid encrypted key")
 
     @staticmethod
     def hash_key(api_key: str) -> str:

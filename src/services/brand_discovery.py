@@ -37,6 +37,8 @@ def discover_all_brands(
         text, "", {},
         vertical=vertical_name or "",
         vertical_description=vertical_description or "",
+        db=db,
+        vertical_id=vertical_id,
     )
 
     for brand_name in extraction_result.brands.keys():
@@ -76,6 +78,8 @@ def discover_brands_and_products(
         text, "", {},
         vertical=vertical_name or "",
         vertical_description=vertical_description or "",
+        db=db,
+        vertical_id=vertical_id,
     )
 
     all_brands_map: Dict[str, Brand] = {}

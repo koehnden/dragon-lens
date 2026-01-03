@@ -18,7 +18,7 @@ def test_filters_feature_descriptions_keeps_brands():
     """
 
     entities = extract_entities(response, "比亚迪", {"zh": ["BYD"], "en": ["BYD"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
 
     # Should keep brands and products
     assert any("比亚迪" in name.lower() for name in extracted_names), f"Expected BYD brand in {extracted_names}"
@@ -52,7 +52,7 @@ def test_extracts_volkswagen_variants():
     """
 
     entities = extract_entities(response, "大众", {"zh": ["大众汽车", "上汽大众", "一汽大众"], "en": ["VW", "Volkswagen"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
 
     # Should keep VW brand variants
     assert any("大众" in name.lower() or "volkswagen" in name.lower() or "vw" in name.lower() for name in extracted_names), f"Expected VW in {extracted_names}"
@@ -76,7 +76,7 @@ def test_extracts_tesla_model_variants():
     """
 
     entities = extract_entities(response, "特斯拉", {"zh": ["特斯拉"], "en": ["Tesla"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
 
     # Should keep Tesla and models
     assert any("特斯拉" in name.lower() or "tesla" in name.lower() for name in extracted_names), f"Expected Tesla in {extracted_names}"
@@ -102,7 +102,7 @@ def test_filters_safety_and_reliability_descriptions():
     """
 
     entities = extract_entities(response, "大众", {"zh": ["大众"], "en": ["VW", "Volkswagen"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
 
     # Should keep brands and models
     assert any("大众" in name.lower() or "volkswagen" in name.lower() for name in extracted_names), f"Expected VW in {extracted_names}"
@@ -132,7 +132,7 @@ def test_filters_space_and_comfort_descriptions():
     """
 
     entities = extract_entities(response, "理想", {"zh": ["理想汽车"], "en": ["Li Auto"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
 
     # Should keep brands and models
     assert any("理想" in name.lower() for name in extracted_names), f"Expected Li Auto in {extracted_names}"
@@ -161,7 +161,7 @@ def test_extracts_chinese_plus_pro_max_models():
     """
 
     entities = extract_entities(response, "比亚迪", {"zh": ["BYD"], "en": ["BYD"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
 
     # Should keep brands with PLUS/Pro/Max
     assert any("比亚迪" in name.lower() for name in extracted_names), f"Expected BYD in {extracted_names}"
@@ -189,7 +189,7 @@ def test_extracts_japanese_brands_correctly():
     """
 
     entities = extract_entities(response, "丰田", {"zh": ["丰田"], "en": ["Toyota"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
 
     # Should keep Japanese brands and models
     assert any("丰田" in name.lower() or "toyota" in name.lower() for name in extracted_names), f"Expected Toyota in {extracted_names}"

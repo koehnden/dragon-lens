@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class VerticalCreate(BaseModel):
@@ -59,7 +59,7 @@ class PromptResponse(BaseModel):
 class TrackingJobCreate(BaseModel):
     vertical_name: str = Field(..., min_length=1)
     vertical_description: Optional[str] = None
-    brands: List[BrandCreate]
+    brands: List[BrandCreate] = Field(default_factory=list)
     prompts: List[PromptCreate]
     provider: str = Field(default="qwen", description="LLM provider (qwen, deepseek, kimi)")
     model_name: str = Field(default="qwen2.5:7b-instruct-q4_0", description="Specific model name (e.g., deepseek-chat, deepseek-reasoner)")
@@ -226,3 +226,62 @@ class APIKeyResponse(BaseModel):
 class DeleteJobsResponse(BaseModel):
     deleted_count: int
     vertical_ids: List[int]
+
+
+class ConsolidationResultResponse(BaseModel):
+    brands_merged: int
+    products_merged: int
+    brands_flagged: int
+    products_flagged: int
+    canonical_brands_created: int
+    canonical_products_created: int
+
+
+class CanonicalBrandResponse(BaseModel):
+    id: int
+    vertical_id: int
+    canonical_name: str
+    display_name: str
+    is_validated: bool
+    validation_source: Optional[str]
+    mention_count: int
+    aliases: List[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CanonicalProductResponse(BaseModel):
+    id: int
+    vertical_id: int
+    canonical_brand_id: Optional[int]
+    canonical_name: str
+    display_name: str
+    is_validated: bool
+    validation_source: Optional[str]
+    mention_count: int
+    aliases: List[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ValidationCandidateResponse(BaseModel):
+    id: int
+    vertical_id: int
+    entity_type: str
+    name: str
+    canonical_id: Optional[int]
+    mention_count: int
+    status: str
+    reviewed_at: Optional[datetime]
+    reviewed_by: Optional[str]
+    rejection_reason: Optional[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ValidateCandidateRequest(BaseModel):
+    approved: bool
+    rejection_reason: Optional[str] = None
