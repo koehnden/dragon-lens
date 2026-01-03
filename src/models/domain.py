@@ -395,6 +395,33 @@ class ProductAlias(Base):
     canonical_product: Mapped["CanonicalProduct"] = relationship(CanonicalProduct, back_populates="aliases")
 
 
+class ProductBrandMapping(Base):
+    __tablename__ = "product_brand_mappings"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    product_id: Mapped[Optional[int]] = mapped_column(ForeignKey("products.id"), nullable=True)
+    brand_id: Mapped[Optional[int]] = mapped_column(ForeignKey("brands.id"), nullable=True)
+    canonical_product_id: Mapped[Optional[int]] = mapped_column(ForeignKey("canonical_products.id"), nullable=True)
+    canonical_brand_id: Mapped[Optional[int]] = mapped_column(ForeignKey("canonical_brands.id"), nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    is_validated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    vertical: Mapped["Vertical"] = relationship(Vertical)
+    product: Mapped[Optional["Product"]] = relationship(Product)
+    brand: Mapped[Optional["Brand"]] = relationship(Brand)
+    canonical_product: Mapped[Optional["CanonicalProduct"]] = relationship(CanonicalProduct)
+    canonical_brand: Mapped[Optional["CanonicalBrand"]] = relationship(CanonicalBrand)
+
+
 class ValidationCandidate(Base):
     __tablename__ = "validation_candidates"
     __table_args__ = {'extend_existing': True}
