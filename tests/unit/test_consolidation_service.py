@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from sqlalchemy.orm import Session
 
@@ -31,6 +33,7 @@ from services.entity_consolidation import (
     get_pending_candidates,
     validate_candidate,
 )
+from services.brand_recognition.consolidation_service import normalize_brands_batch
 
 
 class TestNormalizeForComparison:
@@ -68,6 +71,41 @@ class TestCalculateSimilarity:
     def test_similar_strings(self):
         sim = _calculate_similarity("volkswagen", "volkswagon")
         assert sim > 0.8
+
+
+class TestUserBrandNormalizationBypass:
+
+    @pytest.mark.asyncio
+    async def test_user_alias_bypasses_normalization(self, db_session: Session):
+        vertical = Vertical(name="User Brand Bypass")
+        db_session.add(vertical)
+        db_session.flush()
+
+        user_brand = Brand(
+            vertical_id=vertical.id,
+            display_name="VW",
+            original_name="VW",
+            aliases={"zh": ["大众"], "en": ["Volkswagen"]},
+            is_user_input=True,
+        )
+        db_session.add(user_brand)
+        db_session.flush()
+
+        mock_ollama_instance = MagicMock()
+        mock_ollama_instance._call_ollama = AsyncMock(return_value='{"brands":[{"canonical":"大众","original_forms":["大众"]}],"rejected":[]}')
+        mock_ollama_instance.ner_model = "qwen"
+
+        with patch("services.ollama.OllamaService", return_value=mock_ollama_instance):
+            result = await normalize_brands_batch(
+                ["大众"],
+                vertical="Cars",
+                vertical_description="SUV",
+                db=db_session,
+                vertical_id=vertical.id,
+            )
+
+        assert result.normalized_brands["大众"] == "VW"
+        assert mock_ollama_instance._call_ollama.call_count == 0
 
 
 class TestDetermineCanonical:

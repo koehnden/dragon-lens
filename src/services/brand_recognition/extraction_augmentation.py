@@ -19,6 +19,7 @@ from models import (
     ProductAlias,
     RejectedEntity,
 )
+from services.canonicalization_metrics import build_user_brand_variant_set
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +152,7 @@ def get_validated_entity_names(
     product_aliases = _get_all_product_aliases(db, vertical_id)
 
     brand_names.update(brand_aliases)
+    brand_names.update(build_user_brand_variant_set(db, vertical_id))
     product_names.update(product_aliases)
 
     logger.debug(
