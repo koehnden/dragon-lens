@@ -190,6 +190,10 @@ async def normalize_brands_batch(
     if need_normalization:
         ollama = OllamaService()
         brands_json = json.dumps(need_normalization, ensure_ascii=False)
+        allowed_canonicals = _allowed_canonicals_for_normalization(
+            need_normalization,
+            augmentation_context.get("validated_brands", []),
+        )
 
         prompt = load_prompt(
             "brand_normalization_prompt",
@@ -207,7 +211,11 @@ async def normalize_brands_batch(
                 system_prompt="",
                 temperature=0.0,
             )
-            qwen_result = _parse_normalization_response(response, need_normalization)
+            qwen_result = _parse_normalization_response(
+                response,
+                need_normalization,
+                allowed_canonicals,
+            )
         except Exception as e:
             logger.error(f"Brand normalization failed: {e}")
             qwen_result = NormalizationResult(
@@ -232,43 +240,26 @@ async def normalize_brands_batch(
 def _parse_normalization_response(
     response: str,
     original_brands: List[str],
+    allowed_canonicals: Set[str],
 ) -> NormalizationResult:
     """Parse the brand normalization response from Qwen."""
     import re
 
-    response = response.strip()
-    if response.startswith("```json"):
-        response = response[7:]
-    if response.startswith("```"):
-        response = response[3:]
-    if response.endswith("```"):
-        response = response[:-3]
-    response = response.strip()
-
-    try:
-        data = json.loads(response)
-    except json.JSONDecodeError:
-        json_match = re.search(r'\{[\s\S]*\}', response)
-        if json_match:
-            try:
-                data = json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                return NormalizationResult(
-                    normalized_brands={b: b for b in original_brands},
-                    rejected_brands=[],
-                )
-        else:
-            return NormalizationResult(
-                normalized_brands={b: b for b in original_brands},
-                rejected_brands=[],
-            )
+    data = _extract_json_obj(response, re)
+    if data is None:
+        return NormalizationResult(
+            normalized_brands={b: b for b in original_brands},
+            rejected_brands=[],
+        )
 
     normalized_brands: Dict[str, str] = {}
     rejected_brands: List[dict] = data.get("rejected", [])
 
     for brand_info in data.get("brands", []):
-        canonical = brand_info.get("canonical", "")
+        canonical = str(brand_info.get("canonical", "")).strip()
         original_forms = brand_info.get("original_forms", [])
+        if not _canonical_allowed(canonical, allowed_canonicals, original_brands):
+            continue
 
         for form in original_forms:
             if form in original_brands:
@@ -282,6 +273,42 @@ def _parse_normalization_response(
         normalized_brands=normalized_brands,
         rejected_brands=rejected_brands,
     )
+
+
+def _allowed_canonicals_for_normalization(
+    brands: List[str],
+    validated_brands: List[Dict[str, Any]],
+) -> Set[str]:
+    allowed = {b for b in brands if b}
+    for item in validated_brands or []:
+        allowed |= {item.get("canonical_name"), item.get("display_name")}
+        allowed |= set(item.get("aliases") or [])
+    return {a for a in allowed if a}
+
+
+def _canonical_allowed(canonical: str, allowed: Set[str], originals: List[str]) -> bool:
+    from services.translater import has_chinese_characters
+    if not canonical:
+        return False
+    if canonical in allowed:
+        return True
+    if has_chinese_characters(canonical):
+        return any(canonical in o for o in originals)
+    return any(canonical.casefold() in o.casefold() for o in originals)
+
+
+def _extract_json_obj(response: str, re_module) -> dict | None:
+    cleaned = (response or "").strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re_module.search(r"\{[\s\S]*\}", cleaned)
+        if not match:
+            return None
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return None
 
 
 async def validate_products_batch(
@@ -421,13 +448,13 @@ def apply_list_position_filter_per_answer(
     valid_products: Set[str],
     validated_brand_names: Optional[Set[str]] = None,
     validated_product_names: Optional[Set[str]] = None,
-) -> Tuple[Set[str], Set[str], List[str]]:
+) -> Tuple[Set[str], Set[str], List[str], List[str]]:
     """Apply list position filter for a single answer using raw names.
 
     Validated brands/products bypass the filter and are always kept.
 
     Returns:
-        Tuple of (kept_normalized_brands, kept_products, rejected_entities)
+        Tuple of (kept_normalized_brands, kept_products, rejected_brands, rejected_products)
     """
     text = answer_entities.answer_text
     raw_brands = answer_entities.raw_brands
@@ -438,13 +465,13 @@ def apply_list_position_filter_per_answer(
     if not is_list_format(text):
         kept_brands = {brand_mapping.get(b, b) for b in raw_brands}
         kept_products = {p for p in raw_products if p in valid_products}
-        return kept_brands, kept_products, []
+        return kept_brands, kept_products, [], []
 
     list_items = split_into_list_items(text)
     if not list_items:
         kept_brands = {brand_mapping.get(b, b) for b in raw_brands}
         kept_products = {p for p in raw_products if p in valid_products}
-        return kept_brands, kept_products, []
+        return kept_brands, kept_products, [], []
 
     primary_brands: Set[str] = set()
     primary_products: Set[str] = set()
@@ -477,13 +504,14 @@ def apply_list_position_filter_per_answer(
             f"[Consolidation] List filter bypass: {bypassed_brands} brands, {bypassed_products} products"
         )
 
-    rejected = []
+    rejected_brands = []
     for brand in raw_brands:
         if brand not in primary_brands:
-            rejected.append(brand)
+            rejected_brands.append(brand)
+    rejected_products = []
     for product in raw_products:
         if product not in primary_products and product in valid_products:
-            rejected.append(product)
+            rejected_products.append(product)
 
     kept_normalized_brands = {brand_mapping.get(b, b) for b in primary_brands}
 
@@ -492,7 +520,7 @@ def apply_list_position_filter_per_answer(
         f"kept {len(kept_normalized_brands)} brands, {len(primary_products)} products"
     )
 
-    return kept_normalized_brands, primary_products, rejected
+    return kept_normalized_brands, primary_products, rejected_brands, rejected_products
 
 
 def _find_first_entity_in_text(text: str, entities: List[str]) -> Optional[str]:
@@ -526,7 +554,8 @@ async def run_enhanced_consolidation(
             input_products=[],
             rejected_at_normalization=[],
             rejected_at_validation=[],
-            rejected_at_list_filter=[],
+            rejected_at_list_filter_brands=[],
+            rejected_at_list_filter_products=[],
             final_brands=[],
             final_products=[],
         )
@@ -565,10 +594,11 @@ async def run_enhanced_consolidation(
 
     all_kept_brands: Set[str] = set()
     all_kept_products: Set[str] = set()
-    all_rejected_at_list_filter: List[str] = []
+    all_rejected_at_list_filter_brands: List[str] = []
+    all_rejected_at_list_filter_products: List[str] = []
 
     for answer_entities in consolidation_input.answer_entities:
-        kept_brands, kept_products, rejected = apply_list_position_filter_per_answer(
+        kept_brands, kept_products, rejected_brands, rejected_products = apply_list_position_filter_per_answer(
             answer_entities,
             normalization_result.normalized_brands,
             validation_result.valid_products,
@@ -577,9 +607,11 @@ async def run_enhanced_consolidation(
         )
         all_kept_brands.update(kept_brands)
         all_kept_products.update(kept_products)
-        all_rejected_at_list_filter.extend(rejected)
+        all_rejected_at_list_filter_brands.extend(rejected_brands)
+        all_rejected_at_list_filter_products.extend(rejected_products)
 
-    all_rejected_at_list_filter = list(set(all_rejected_at_list_filter))
+    all_rejected_at_list_filter_brands = list(set(all_rejected_at_list_filter_brands))
+    all_rejected_at_list_filter_products = list(set(all_rejected_at_list_filter_products))
 
     final_brands = {b: [b] for b in all_kept_brands}
     final_products = {p: [p] for p in all_kept_products}
@@ -589,7 +621,8 @@ async def run_enhanced_consolidation(
         input_products=list(consolidation_input.all_unique_products),
         rejected_at_normalization=normalization_result.rejected_brands,
         rejected_at_validation=validation_result.rejected_products,
-        rejected_at_list_filter=all_rejected_at_list_filter,
+        rejected_at_list_filter_brands=all_rejected_at_list_filter_brands,
+        rejected_at_list_filter_products=all_rejected_at_list_filter_products,
         final_brands=list(final_brands.keys()),
         final_products=list(final_products.keys()),
     )
@@ -600,7 +633,8 @@ async def run_enhanced_consolidation(
         consolidation_input.vertical_id,
         normalization_result.rejected_brands,
         validation_result.rejected_products,
-        all_rejected_at_list_filter,
+        all_rejected_at_list_filter_brands,
+        all_rejected_at_list_filter_products,
         list(consolidation_input.all_rejected_at_light_filter),
     )
 
@@ -628,7 +662,12 @@ def _store_consolidation_debug(
         input_products=json.dumps(debug_info.input_products, ensure_ascii=False),
         rejected_at_normalization=json.dumps(debug_info.rejected_at_normalization, ensure_ascii=False),
         rejected_at_validation=json.dumps(debug_info.rejected_at_validation, ensure_ascii=False),
-        rejected_at_list_filter=json.dumps(debug_info.rejected_at_list_filter, ensure_ascii=False),
+        rejected_at_list_filter_brands=json.dumps(
+            debug_info.rejected_at_list_filter_brands, ensure_ascii=False
+        ),
+        rejected_at_list_filter_products=json.dumps(
+            debug_info.rejected_at_list_filter_products, ensure_ascii=False
+        ),
         final_brands=json.dumps(debug_info.final_brands, ensure_ascii=False),
         final_products=json.dumps(debug_info.final_products, ensure_ascii=False),
     )
@@ -640,7 +679,8 @@ def _store_rejected_entities(
     vertical_id: int,
     rejected_at_normalization: List[dict],
     rejected_at_validation: List[str],
-    rejected_at_list_filter: List[str],
+    rejected_at_list_filter_brands: List[str],
+    rejected_at_list_filter_products: List[str],
     rejected_at_light_filter: List[str],
 ) -> None:
     """Store rejected entities for future analysis."""
@@ -654,9 +694,14 @@ def _store_rejected_entities(
             db, vertical_id, EntityType.PRODUCT, product, "rejected_at_validation"
         )
 
-    for entity in rejected_at_list_filter:
+    for entity in rejected_at_list_filter_brands:
         _add_rejected_entity(
             db, vertical_id, EntityType.BRAND, entity, "rejected_at_list_filter"
+        )
+
+    for entity in rejected_at_list_filter_products:
+        _add_rejected_entity(
+            db, vertical_id, EntityType.PRODUCT, entity, "rejected_at_list_filter"
         )
 
     for entity in rejected_at_light_filter:

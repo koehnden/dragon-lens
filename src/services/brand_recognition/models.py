@@ -43,7 +43,8 @@ class ConsolidationDebugInfo:
     input_products: List[str]
     rejected_at_normalization: List[dict]
     rejected_at_validation: List[str]
-    rejected_at_list_filter: List[str]
+    rejected_at_list_filter_brands: List[str]
+    rejected_at_list_filter_products: List[str]
     final_brands: List[str]
     final_products: List[str]
 

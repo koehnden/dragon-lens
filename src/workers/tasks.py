@@ -21,6 +21,7 @@ from models import (
 )
 from models.database import SessionLocal
 from models.domain import PromptLanguage, RunStatus, Sentiment
+from models.db_retry import commit_with_retry, flush_with_retry
 from services.answer_reuse import find_reusable_answer
 from services.brand_discovery import discover_brands_and_products
 from services.brand_recognition import extract_entities
@@ -77,7 +78,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             raise ValueError(f"Run {run_id} not found")
 
         run.status = RunStatus.IN_PROGRESS
-        self.db.commit()
+        commit_with_retry(self.db)
 
         vertical = self.db.query(Vertical).filter(Vertical.id == vertical_id).first()
         if not vertical:
@@ -93,7 +94,6 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
 
         llm_router = LLMRouter(self.db)
         translator = TranslaterService()
-        _apply_brand_translations(brands, translator, self.db)
         from services.ollama import OllamaService
         ollama_service = OllamaService()
 
@@ -129,7 +129,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                 self.db.query(ProductMention).filter(
                     ProductMention.llm_answer_id == existing_answer.id
                 ).delete()
-                self.db.flush()
+                flush_with_retry(self.db)
 
             else:
                 reusable = find_reusable_answer(
@@ -173,7 +173,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                     cost_estimate=cost_estimate,
                 )
                 self.db.add(llm_answer)
-                self.db.flush()
+                flush_with_retry(self.db)
 
             logger.info("Discovering all brands in response...")
             all_brands, extraction_result = discover_brands_and_products(
@@ -194,8 +194,6 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                     extraction_method="qwen",
                 )
                 self.db.add(debug_record)
-
-            _apply_brand_translations(all_brands, translator, self.db)
 
             logger.info("Discovering products in response...")
             discovered_products = discover_and_store_products(
@@ -252,7 +250,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                 )
                 self.db.add(mention)
 
-            self.db.commit()
+            commit_with_retry(self.db)
 
         logger.info(f"Running enhanced consolidation for run {run_id}...")
         enhanced_result = _run_async(run_enhanced_consolidation(self.db, run_id))
@@ -279,7 +277,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
 
         run.status = RunStatus.COMPLETED
         run.completed_at = datetime.utcnow()
-        self.db.commit()
+        commit_with_retry(self.db)
 
         logger.info(f"Completed vertical analysis: run={run_id}")
 
@@ -291,7 +289,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             run.status = RunStatus.FAILED
             run.error_message = str(e)
             run.completed_at = datetime.utcnow()
-            self.db.commit()
+            commit_with_retry(self.db)
 
         raise
 
@@ -321,19 +319,6 @@ def classify_sentiment(text: str) -> str:
     logger.info("Classifying sentiment")
     return "neutral"
 
-
-def _apply_brand_translations(brands: List[Brand], translator: TranslaterService, db: Session) -> None:
-    updated = False
-    for brand in brands:
-        if brand.translated_name:
-            continue
-        brand.original_name = brand.display_name
-        brand.translated_name = translator.translate_entity_sync(brand.display_name)
-        updated = True
-    if updated:
-        db.commit()
-
-
 def _detect_mentions(answer_text: str, brands: List[Brand]) -> dict[int, List[str]]:
     if not brands:
         return {}
@@ -358,7 +343,7 @@ def _ensure_brand(vertical_id: int, canonical_name: str, aliases: dict) -> Brand
     )
     if brand.id is None:
         session.add(brand)
-        session.commit()
+        commit_with_retry(session)
         session.refresh(brand)
     session.close()
     return brand
@@ -414,7 +399,7 @@ def _create_product_mentions(
             evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
         )
         db.add(mention)
-    db.flush()
+    flush_with_retry(db)
 
 
 def _products_to_variants(products: List[Product]) -> tuple[list[str], list[list[str]]]:
