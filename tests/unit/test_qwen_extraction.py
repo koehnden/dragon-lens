@@ -60,6 +60,15 @@ def test_build_extraction_system_prompt_includes_vertical():
     assert "DO NOT EXTRACT" in prompt
 
 
+def test_extraction_prompt_includes_rejected_brands():
+    from services.brand_recognition import _build_extraction_system_prompt
+
+    context = {"rejected_brands": [{"name": "BadBrand", "reason": "off_vertical"}]}
+    prompt = _build_extraction_system_prompt("Cars", "", context)
+
+    assert "BadBrand" in prompt
+
+
 def test_build_extraction_prompt_truncates_long_text():
     from services.brand_recognition import _build_extraction_prompt
 
