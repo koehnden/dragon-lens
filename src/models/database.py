@@ -1,9 +1,10 @@
 from typing import Generator
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from src.config import settings
+from models.sqlite_config import apply_sqlite_pragmas, is_sqlite_url, sqlite_connect_args
 
 
 class Base(DeclarativeBase):
@@ -12,11 +13,19 @@ class Base(DeclarativeBase):
 
 engine = create_engine(
     settings.database_url,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {},
+    connect_args=sqlite_connect_args(settings.database_url),
     echo=settings.debug,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def _apply_sqlite_pragmas(dbapi_connection, _):
+    apply_sqlite_pragmas(dbapi_connection)
+
+
+if is_sqlite_url(settings.database_url):
+    event.listen(engine, "connect", _apply_sqlite_pragmas)
 
 
 def get_db() -> Generator[Session, None, None]:

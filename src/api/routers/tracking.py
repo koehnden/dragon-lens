@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, sessionmaker
 
 from models import Brand, BrandMention, LLMAnswer, Prompt, Run, Vertical, get_db
+from models.db_retry import commit_with_retry, flush_with_retry
 from models.domain import PromptLanguage, RunStatus, Sentiment
 from models.schemas import (
     BrandMentionResponse,
@@ -80,7 +81,7 @@ async def create_tracking_job(
             description=job.vertical_description,
         )
         db.add(vertical)
-        db.flush()
+        flush_with_retry(db)
 
     for brand_data in job.brands:
         existing_brand = (
@@ -111,7 +112,7 @@ async def create_tracking_job(
         web_search_enabled=job.web_search_enabled,
     )
     db.add(run)
-    db.flush()
+    flush_with_retry(db)
 
     for prompt_data in job.prompts:
         prompt = Prompt(
@@ -123,7 +124,7 @@ async def create_tracking_job(
         )
         db.add(prompt)
 
-    db.commit()
+    commit_with_retry(db)
     db.refresh(run)
 
     if RUN_TASKS_INLINE:
@@ -148,7 +149,7 @@ async def create_tracking_job(
             "Failed to enqueue vertical analysis for run %s: %s", run.id, exc
         )
         run.error_message = str(exc)
-        db.commit()
+        commit_with_retry(db)
         enqueue_message = (
             "Tracking job created, but background processing could not be enqueued. "
             "Please ensure the Celery worker and broker are available."
@@ -247,7 +248,7 @@ async def delete_tracking_jobs(
     for run in runs_to_delete:
         db.delete(run)
 
-    db.commit()
+    commit_with_retry(db)
 
     return DeleteJobsResponse(
         deleted_count=len(runs_to_delete),
@@ -469,7 +470,7 @@ def _complete_run_inline(db: Session, run: Run, vertical: Vertical) -> None:
     if not prompt or not brand:
         run.status = RunStatus.COMPLETED
         run.completed_at = datetime.utcnow()
-        db.commit()
+        commit_with_retry(db)
         return
 
     answer = LLMAnswer(
@@ -482,7 +483,7 @@ def _complete_run_inline(db: Session, run: Run, vertical: Vertical) -> None:
         cost_estimate=0.0,
     )
     db.add(answer)
-    db.flush()
+    flush_with_retry(db)
 
     mention = BrandMention(
         llm_answer_id=answer.id,
@@ -496,6 +497,6 @@ def _complete_run_inline(db: Session, run: Run, vertical: Vertical) -> None:
 
     run.status = RunStatus.COMPLETED
     run.completed_at = datetime.utcnow()
-    db.commit()
+    commit_with_retry(db)
 
     calculate_and_save_metrics(db, run.id)
