@@ -62,6 +62,7 @@ def consolidate_run(
         raise ValueError(f"Run {run_id} not found")
 
     vertical_id = run.vertical_id
+    ensure_user_brand_canonicals(db, vertical_id)
 
     brand_mentions = _collect_brand_mentions(db, run_id)
     product_mentions = _collect_product_mentions(db, run_id)
@@ -350,6 +351,24 @@ def _qwen_merge_candidates(
 
 def _grouped_display_names(groups: Dict[str, List[Brand]]) -> Set[str]:
     return {brand.display_name for group in groups.values() for brand in group}
+
+
+def _user_brand_aliases(brand: Brand) -> List[str]:
+    aliases = brand.aliases or {}
+    values = (aliases.get("zh") or []) + (aliases.get("en") or [])
+    candidates = [brand.original_name, brand.translated_name or ""] + values
+    return [v for v in candidates if v and v != brand.display_name]
+
+
+def ensure_user_brand_canonicals(db: Session, vertical_id: int) -> None:
+    brands = db.query(Brand).filter(Brand.vertical_id == vertical_id, Brand.is_user_input == True).all()
+    for brand in brands:
+        canonical = _get_or_create_canonical_brand(db, vertical_id, brand.display_name, 0)
+        canonical.display_name = brand.display_name
+        canonical.is_validated = True
+        canonical.validation_source = "user"
+        for alias in _user_brand_aliases(brand):
+            _add_brand_alias(db, canonical.id, alias)
 
 
 def apply_brand_merges(
