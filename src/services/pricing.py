@@ -14,7 +14,24 @@ PRICING = {
 }
 
 
-def calculate_cost(provider: str, model: str, tokens_in: int, tokens_out: int) -> float:
+def _normalize_route(route: str | None) -> str | None:
+    if route is None:
+        return None
+    if hasattr(route, "value"):
+        return route.value
+    return str(route)
+
+
+def calculate_cost(
+    provider: str,
+    model: str,
+    tokens_in: int,
+    tokens_out: int,
+    route: str | None = None,
+) -> float:
+    route_value = _normalize_route(route)
+    if route_value and route_value.lower() == "openrouter":
+        return 0.0
     try:
         provider_enum = LLMProvider(provider.lower())
     except ValueError:

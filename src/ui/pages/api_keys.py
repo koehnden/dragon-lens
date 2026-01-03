@@ -171,6 +171,8 @@ def show():
         - `baidu/ernie-4.5-300b-a47b`
         - `bytedance-seed/seed-1.6-flash`
         - Any other OpenRouter model ID
+
+        **Pricing:** Not available yet for OpenRouter runs in DragonLens.
         """)
 
     st.markdown("---")

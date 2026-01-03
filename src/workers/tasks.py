@@ -160,7 +160,13 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                         answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English")
                         logger.info(f"Translated answer: {answer_en[:100]}...")
 
-                    cost_estimate = calculate_cost(provider, model_name, tokens_in, tokens_out)
+                    cost_estimate = calculate_cost(
+                        provider,
+                        model_name,
+                        tokens_in,
+                        tokens_out,
+                        route=resolution.route,
+                    )
 
                 answer_route = resolution.route
                 if reusable and reusable.route:
