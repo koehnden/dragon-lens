@@ -6,6 +6,22 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from src.config import settings
 from models.sqlite_config import apply_sqlite_pragmas, is_sqlite_url, sqlite_connect_args
 
+PRODUCT_BRAND_MAPPING_TABLE_SQL = """
+CREATE TABLE product_brand_mappings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vertical_id INTEGER NOT NULL REFERENCES verticals(id),
+    product_id INTEGER REFERENCES products(id),
+    brand_id INTEGER REFERENCES brands(id),
+    canonical_product_id INTEGER REFERENCES canonical_products(id),
+    canonical_brand_id INTEGER REFERENCES canonical_brands(id),
+    confidence FLOAT NOT NULL DEFAULT 0.0,
+    is_validated BOOLEAN NOT NULL DEFAULT 0,
+    source VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+)
+"""
+
 
 class Base(DeclarativeBase):
     pass
@@ -155,6 +171,12 @@ def _migrate_api_keys_table(connection, inspector):
         )
 
 
+def _migrate_product_brand_mapping_table(connection, inspector):
+    if "product_brand_mappings" in inspector.get_table_names():
+        return
+    connection.execute(text(PRODUCT_BRAND_MAPPING_TABLE_SQL))
+
+
 def init_db() -> None:
     with engine.begin() as connection:
         inspector = inspect(connection)
@@ -166,5 +188,6 @@ def init_db() -> None:
         _migrate_prompts_table(connection, inspector)
         _migrate_consolidation_debug_table(connection, inspector)
         _migrate_api_keys_table(connection, inspector)
+        _migrate_product_brand_mapping_table(connection, inspector)
 
     Base.metadata.create_all(bind=engine)

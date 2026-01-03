@@ -27,6 +27,7 @@ from services.brand_discovery import discover_brands_and_products
 from services.brand_recognition import extract_entities
 from services.entity_consolidation import consolidate_run
 from services.brand_recognition.consolidation_service import run_enhanced_consolidation
+from services.brand_recognition.product_brand_mapping import map_products_to_brands_for_run
 from services.brand_recognition.vertical_gate import apply_vertical_gate_to_run
 from services.product_discovery import discover_and_store_products
 from services.translater import TranslaterService
@@ -283,6 +284,10 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             f"{consolidation_result.products_merged} products merged, "
             f"{consolidation_result.brands_flagged} brands flagged for review"
         )
+
+        logger.info(f"Mapping products to brands for run {run_id}...")
+        mapped = _run_async(map_products_to_brands_for_run(self.db, run_id))
+        logger.info(f"Product brand mapping complete: {len(mapped)} products mapped")
 
         logger.info(f"Calculating metrics for run {run_id}...")
         calculate_and_save_metrics(self.db, run_id)
