@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     kimi_api_key: Optional[str] = None
     kimi_api_base: str = "https://api.moonshot.ai/v1"
 
+    openrouter_api_key: Optional[str] = None
+    openrouter_api_base: str = "https://openrouter.ai/api/v1"
+    openrouter_http_referer: Optional[str] = None
+    openrouter_app_title: Optional[str] = None
+
     ollama_base_url: str = "http://localhost:11434"
     ollama_model_translation: str = "qwen2.5:7b-instruct-q4_0"
     ollama_model_sentiment: str = "qwen2.5:7b-instruct-q4_0"  # Fallback model

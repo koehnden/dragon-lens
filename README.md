@@ -6,7 +6,7 @@ DragonLens is a brand visibility tracking system for Chinese LLMs. It helps you 
 
 ## Features
 
-- 🤖 **Multi-LLM Support**: Track across Qwen (local), DeepSeek, and Kimi (V2)
+- 🤖 **Multi-LLM Support**: Track across Qwen (local), DeepSeek, Kimi, and OpenRouter
 - 📊 **Visibility Metrics**: Mention rates, rankings, sentiment analysis
 - 🌐 **Bilingual**: Works with English and Chinese prompts
 - 🎨 **Easy UI**: Streamlit-based interface for setup and visualization
@@ -48,7 +48,15 @@ This will:
 ```bash
 # Copy environment template and configure (optional)
 cp .env.example .env
-# Edit .env if you need to use remote LLMs (DeepSeek, Kimi)
+# Edit .env if you need to use remote LLMs (DeepSeek, Kimi, OpenRouter)
+```
+
+### Database Migration (Existing DB)
+
+If you already have `dragonlens.db`, add the new `route` columns with:
+
+```bash
+poetry run python scripts/add_route_columns.py
 ```
 
 ### Running All Services
@@ -90,18 +98,31 @@ This starts Redis and Ollama, then runs FastAPI with auto-reload enabled. Keep t
    - Enter your vertical (e.g., "SUV Cars")
    - Add brands with Chinese/English aliases
    - Add prompts to ask LLMs
-   - Select model (Qwen, DeepSeek, Kimi)
+   - Select model (Qwen, DeepSeek, Kimi, OpenRouter)
    - Click "Start Tracking"
 
-2. **View Results**: Go to "View Results" page
+2. **API Keys (for remote models)**: Go to "API Keys" page
+   - Choose provider (DeepSeek, Kimi, OpenRouter)
+   - Paste your API key and save
+   - For DeepSeek/Kimi, a vendor key is always used first if present
+   - Use OpenRouter when no vendor key is configured or when provider is set to OpenRouter
+
+3. **View Results**: Go to "View Results" page
    - Select vertical and model
    - View mention rates, rankings, sentiment
    - Analyze brand visibility metrics
 
-3. **Track History**: Go to "Runs History" page
+4. **Track History**: Go to "Runs History" page
    - See all tracking runs
    - Monitor job status
    - View run details
+
+## Supported Models
+
+- **Local (Ollama / Qwen)**: `qwen2.5:7b-instruct-q4_0`, `qwen2.5:14b-instruct-q4_0`, `qwen2.5:32b-instruct-q4_0`
+- **DeepSeek (vendor API)**: `deepseek-chat`, `deepseek-reasoner`
+- **Kimi (Moonshot vendor API)**: `moonshot-v1-8k`, `moonshot-v1-32k`, `moonshot-v1-128k`
+- **OpenRouter**: Any model ID, e.g. `baidu/ernie-4.5-300b-a47b`, `bytedance-seed/seed-1.6-flash`
 
 ## Project Structure
 
@@ -208,7 +229,7 @@ make clean
 - **Task Queue**: Celery + Redis (via Docker Compose) for async processing
 - **Database**: SQLAlchemy (SQLite default, Postgres ready)
 - **Frontend**: Streamlit for UI
-- **LLMs**: Ollama (local Qwen) + Remote APIs (DeepSeek, Kimi)
+- **LLMs**: Ollama (local Qwen) + Remote APIs (DeepSeek, Kimi, OpenRouter)
 - **Orchestration**: Make for build automation, Docker Compose for Redis
 
 ## Roadmap

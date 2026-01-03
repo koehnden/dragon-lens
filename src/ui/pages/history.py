@@ -31,7 +31,7 @@ def show():
             vertical_filter = None
 
     with col2:
-        model_filter = st.selectbox("Filter by Model", ["All", "qwen", "deepseek", "kimi"])
+        model_filter = st.selectbox("Filter by Model", ["All", "qwen", "deepseek", "kimi", "openrouter"])
         if model_filter == "All":
             model_filter = None
 

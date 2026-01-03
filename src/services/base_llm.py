@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 ENV_API_KEYS = {
     LLMProvider.DEEPSEEK: lambda: settings.deepseek_api_key,
     LLMProvider.KIMI: lambda: settings.kimi_api_key,
+    LLMProvider.OPENROUTER: lambda: settings.openrouter_api_key,
 }
 
 
@@ -36,28 +37,39 @@ class BaseLLMService(ABC):
         return self._encryption_service
 
     def _get_api_key(self) -> str:
+        api_key = self._find_api_key()
+        if api_key:
+            return api_key
+        raise ValueError(f"No active {self.provider.value} API key found")
+
+    def has_api_key(self) -> bool:
+        return self._find_api_key() is not None
+
+    def _find_api_key(self) -> Optional[str]:
         if self._api_key:
             return self._api_key
+        env_key = self._get_env_key()
+        if env_key:
+            return env_key
+        return self._get_db_key()
 
+    def _get_env_key(self) -> Optional[str]:
         env_key_getter = ENV_API_KEYS.get(self.provider)
-        if env_key_getter:
-            env_key = env_key_getter()
-            if env_key:
-                return env_key
+        if not env_key_getter:
+            return None
+        env_key = env_key_getter()
+        return env_key or None
 
-        if self.db:
-            api_key_record = (
-                self.db.query(APIKey)
-                .filter(
-                    APIKey.provider == self.provider.value,
-                    APIKey.is_active == True,
-                )
-                .first()
-            )
-            if api_key_record:
-                return self._get_encryption_service().decrypt(api_key_record.encrypted_key)
-
-        raise ValueError(f"No active {self.provider.value} API key found")
+    def _get_db_key(self) -> Optional[str]:
+        if not self.db:
+            return None
+        api_key_record = self.db.query(APIKey).filter(
+            APIKey.provider == self.provider.value,
+            APIKey.is_active == True,
+        ).first()
+        if not api_key_record:
+            return None
+        return self._get_encryption_service().decrypt(api_key_record.encrypted_key)
 
     def _build_headers(self, api_key: str) -> dict:
         return {

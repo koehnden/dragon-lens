@@ -1,9 +1,10 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from models.domain import LLMProvider
+from config import settings
+from models.domain import LLMProvider, LLMRoute
 from services.base_llm import BaseLLMService, OpenAICompatibleService
-from services.remote_llms import DeepSeekService, KimiService, LLMRouter
+from services.remote_llms import DeepSeekService, KimiService, LLMRouter, OpenRouterService
 
 
 class TestOpenAICompatibleService:
@@ -89,6 +90,14 @@ class TestKimiService:
         assert messages[1]["content"] == "测试提示"
 
 
+class TestOpenRouterService:
+    def test_has_correct_provider(self):
+        assert OpenRouterService.provider == LLMProvider.OPENROUTER
+
+    def test_inherits_openai_compatible_service(self):
+        assert issubclass(OpenRouterService, OpenAICompatibleService)
+
+
 class TestLLMRouter:
     def test_lazy_service_creation(self):
         router = LLMRouter()
@@ -104,6 +113,11 @@ class TestLLMRouter:
         service = router._get_service(LLMProvider.KIMI)
         assert isinstance(service, KimiService)
 
+    def test_creates_openrouter_service(self):
+        router = LLMRouter()
+        service = router._get_service(LLMProvider.OPENROUTER)
+        assert isinstance(service, OpenRouterService)
+
     def test_caches_services(self):
         router = LLMRouter()
         service1 = router._get_service(LLMProvider.DEEPSEEK)
@@ -114,6 +128,30 @@ class TestLLMRouter:
         router = LLMRouter()
         with pytest.raises(ValueError, match="No remote service"):
             router._create_service(LLMProvider.QWEN)
+
+    def test_resolve_prefers_vendor_key(self, monkeypatch):
+        monkeypatch.setattr(settings, "deepseek_api_key", "test-deepseek")
+        monkeypatch.setattr(settings, "openrouter_api_key", "test-openrouter")
+        router = LLMRouter()
+        resolution = router.resolve("deepseek", "deepseek-chat")
+        assert resolution.route == LLMRoute.VENDOR
+        assert isinstance(resolution.service, DeepSeekService)
+
+    def test_resolve_falls_back_to_openrouter(self, monkeypatch):
+        monkeypatch.setattr(settings, "deepseek_api_key", None)
+        monkeypatch.setattr(settings, "openrouter_api_key", "test-openrouter")
+        router = LLMRouter()
+        resolution = router.resolve("deepseek", "deepseek-chat")
+        assert resolution.route == LLMRoute.OPENROUTER
+        assert isinstance(resolution.service, OpenRouterService)
+
+    def test_resolve_openrouter_preserves_model_name(self, monkeypatch):
+        monkeypatch.setattr(settings, "openrouter_api_key", "test-openrouter")
+        router = LLMRouter()
+        model_name = "baidu/ernie-4.5-300b-a47b"
+        resolution = router.resolve("openrouter", model_name)
+        assert resolution.model_name == model_name
+        assert resolution.route == LLMRoute.OPENROUTER
 
 
 class TestBaseLLMService:

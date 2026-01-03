@@ -78,7 +78,6 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             raise ValueError(f"Run {run_id} not found")
 
         run.status = RunStatus.IN_PROGRESS
-        commit_with_retry(self.db)
 
         vertical = self.db.query(Vertical).filter(Vertical.id == vertical_id).first()
         if not vertical:
@@ -93,6 +92,9 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             raise ValueError(f"No brands found for vertical {vertical_id}")
 
         llm_router = LLMRouter(self.db)
+        resolution = llm_router.resolve(provider, model_name)
+        run.route = resolution.route
+        commit_with_retry(self.db)
         translator = TranslaterService()
         from services.ollama import OllamaService
         ollama_service = OllamaService()
@@ -148,7 +150,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                 else:
                     logger.info(f"Querying {provider}/{model_name} with prompt: {prompt_text_zh[:100]}...")
                     answer_zh, tokens_in, tokens_out, latency = _run_async(
-                        llm_router.query(provider, model_name, prompt_text_zh)
+                        llm_router.query_with_resolution(resolution, prompt_text_zh)
                     )
                     logger.info(f"Received answer: {answer_zh[:100]}...")
 
@@ -158,13 +160,24 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                         answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English")
                         logger.info(f"Translated answer: {answer_en[:100]}...")
 
-                    cost_estimate = calculate_cost(provider, model_name, tokens_in, tokens_out)
+                    cost_estimate = calculate_cost(
+                        provider,
+                        model_name,
+                        tokens_in,
+                        tokens_out,
+                        route=resolution.route,
+                    )
+
+                answer_route = resolution.route
+                if reusable and reusable.route:
+                    answer_route = reusable.route
 
                 llm_answer = LLMAnswer(
                     run_id=run_id,
                     prompt_id=prompt.id,
                     provider=provider,
                     model_name=model_name,
+                    route=answer_route,
                     raw_answer_zh=answer_zh,
                     raw_answer_en=answer_en,
                     tokens_in=tokens_in,
