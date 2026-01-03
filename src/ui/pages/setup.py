@@ -134,7 +134,7 @@ def show():
                 )
             else:
                 model_name = selected_model
-            st.warning("⚠️ OpenRouter requires an API key (configure in API Keys page)")
+            st.warning("⚠️ OpenRouter requires an API key. Pricing estimates are not available yet.")
 
     st.markdown("---")
     if st.button("🚀 Start Tracking", type="primary", use_container_width=True):
