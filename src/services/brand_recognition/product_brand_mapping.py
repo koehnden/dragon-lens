@@ -172,7 +172,6 @@ def _rejected_brand_names(db, vertical_id: int) -> set[str]:
     rows = db.query(RejectedEntity.name).filter(
         RejectedEntity.vertical_id == vertical_id,
         RejectedEntity.entity_type == EntityType.BRAND,
-        RejectedEntity.rejection_reason == "off_vertical",
     ).all()
     return {name.casefold() for (name,) in rows if name}
 
