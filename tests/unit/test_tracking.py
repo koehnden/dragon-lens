@@ -28,6 +28,7 @@ def test_create_tracking_job(client: TestClient):
     assert "vertical_id" in data
     assert data["model_name"] == "qwen"
     assert data["status"] == "pending"
+    assert "route" in data
     assert "message" in data
 
 

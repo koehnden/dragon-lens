@@ -90,7 +90,7 @@ def show():
     with col1:
         provider = st.selectbox(
             "LLM Provider",
-            ["qwen", "deepseek", "kimi"],
+            ["qwen", "deepseek", "kimi", "openrouter"],
             help="Choose which Chinese LLM provider to use",
         )
     
@@ -108,14 +108,33 @@ def show():
                 ["deepseek-chat", "deepseek-reasoner"],
                 help="Select DeepSeek model variant",
             )
-            st.warning("⚠️ DeepSeek requires API key (configure in API Keys page)")
+            st.warning("⚠️ DeepSeek uses vendor API key first, then OpenRouter if needed")
         elif provider == "kimi":
             model_name = st.selectbox(
                 "Kimi Model",
-                ["kimi2"],
+                ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
                 help="Select Kimi model variant",
             )
-            st.warning("⚠️ Kimi requires API key (configure in API Keys page)")
+            st.warning("⚠️ Kimi uses vendor API key first, then OpenRouter if needed")
+        elif provider == "openrouter":
+            preset_models = [
+                "baidu/ernie-4.5-300b-a47b",
+                "bytedance-seed/seed-1.6-flash",
+                "Custom model ID",
+            ]
+            selected_model = st.selectbox(
+                "OpenRouter Model",
+                preset_models,
+                help="Pick a preset or enter a custom OpenRouter model ID",
+            )
+            if selected_model == "Custom model ID":
+                model_name = st.text_input(
+                    "Custom OpenRouter Model ID",
+                    placeholder="provider/model",
+                )
+            else:
+                model_name = selected_model
+            st.warning("⚠️ OpenRouter requires an API key (configure in API Keys page)")
 
     st.markdown("---")
     if st.button("🚀 Start Tracking", type="primary", use_container_width=True):
@@ -129,6 +148,9 @@ def show():
 
         if not prompts:
             st.error("❌ Please add at least one prompt")
+            return
+        if provider == "openrouter" and not model_name:
+            st.error("❌ Please enter an OpenRouter model ID")
             return
 
         payload = {

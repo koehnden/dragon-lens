@@ -76,6 +76,13 @@ class LLMProvider(str, enum.Enum):
     QWEN = "qwen"
     DEEPSEEK = "deepseek"
     KIMI = "kimi"
+    OPENROUTER = "openrouter"
+
+
+class LLMRoute(str, enum.Enum):
+    LOCAL = "local"
+    VENDOR = "vendor"
+    OPENROUTER = "openrouter"
 
 
 class Prompt(Base):
@@ -114,6 +121,7 @@ class Run(Base):
     vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
     provider: Mapped[str] = mapped_column(String(50), nullable=False, default="qwen")
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    route: Mapped[Optional[LLMRoute]] = mapped_column(Enum(LLMRoute), nullable=True)
     status: Mapped[RunStatus] = mapped_column(Enum(RunStatus), nullable=False, default=RunStatus.PENDING)
     reuse_answers: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     web_search_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -135,6 +143,7 @@ class LLMAnswer(Base):
     prompt_id: Mapped[int] = mapped_column(ForeignKey("prompts.id"), nullable=False)
     provider: Mapped[str] = mapped_column(String(50), nullable=False, default="qwen")
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    route: Mapped[Optional[LLMRoute]] = mapped_column(Enum(LLMRoute), nullable=True)
     raw_answer_zh: Mapped[str] = mapped_column(Text, nullable=False)
     raw_answer_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tokens_in: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
