@@ -18,7 +18,7 @@ def ensure_src_on_path() -> None:
     root = Path(__file__).resolve().parent.parent
     src_path = root / "src"
     if str(src_path) not in sys.path:
-        sys.path.append(str(src_path))
+        sys.path.insert(0, str(src_path))
 
 
 ensure_src_on_path()
@@ -31,9 +31,9 @@ os.environ.setdefault("ENABLE_LLM_CLUSTERING", "false")
 os.environ.setdefault("RUN_TASKS_INLINE", "true")
 
 try:
-    from api.routers import metrics, tracking, verticals
+    from api.routers import consolidation, metrics, tracking, verticals
 except ImportError:
-    from src.api.routers import metrics, tracking, verticals
+    from src.api.routers import consolidation, metrics, tracking, verticals
 
 from models import Base, get_db
 
@@ -79,6 +79,7 @@ def test_app():
     app.include_router(verticals.router, prefix="/api/v1/verticals", tags=["verticals"])
     app.include_router(tracking.router, prefix="/api/v1/tracking", tags=["tracking"])
     app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
+    app.include_router(consolidation.router, prefix="/api/v1/consolidation", tags=["consolidation"])
 
     @app.get("/")
     async def root():

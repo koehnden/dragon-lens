@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlalchemy import Boolean, JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from models.database import Base
+from .database import Base
 
 
 class Vertical(Base):
@@ -252,3 +252,175 @@ class APIKey(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
+
+
+class ExtractionDebug(Base):
+    __tablename__ = "extraction_debug"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    llm_answer_id: Mapped[int] = mapped_column(ForeignKey("llm_answers.id"), nullable=False)
+    raw_brands: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    raw_products: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_light_filter: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_normalization: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_validation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_list_filter: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    final_brands: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    final_products: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    extraction_method: Mapped[str] = mapped_column(String(50), nullable=False, default="qwen")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    llm_answer: Mapped["LLMAnswer"] = relationship(LLMAnswer)
+
+
+class ConsolidationDebug(Base):
+    __tablename__ = "consolidation_debug"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
+    input_brands: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    input_products: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_normalization: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_validation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_list_filter_brands: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at_list_filter_products: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    final_brands: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    final_products: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    run: Mapped["Run"] = relationship(Run)
+
+
+class ValidationStatus(str, enum.Enum):
+    PENDING = "pending"
+    VALIDATED = "validated"
+    REJECTED = "rejected"
+
+
+class EntityType(str, enum.Enum):
+    BRAND = "brand"
+    PRODUCT = "product"
+
+
+class CanonicalBrand(Base):
+    __tablename__ = "canonical_brands"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    canonical_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_validated: Mapped[bool] = mapped_column(nullable=False, default=False)
+    validation_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    mention_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    vertical: Mapped["Vertical"] = relationship(Vertical)
+    aliases: Mapped[List["BrandAlias"]] = relationship(
+        "BrandAlias", back_populates="canonical_brand", cascade="all, delete-orphan"
+    )
+
+
+class BrandAlias(Base):
+    __tablename__ = "brand_aliases"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    canonical_brand_id: Mapped[int] = mapped_column(ForeignKey("canonical_brands.id"), nullable=False)
+    alias: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    canonical_brand: Mapped["CanonicalBrand"] = relationship(CanonicalBrand, back_populates="aliases")
+
+
+class CanonicalProduct(Base):
+    __tablename__ = "canonical_products"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    canonical_brand_id: Mapped[Optional[int]] = mapped_column(ForeignKey("canonical_brands.id"), nullable=True)
+    canonical_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_validated: Mapped[bool] = mapped_column(nullable=False, default=False)
+    validation_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    mention_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    vertical: Mapped["Vertical"] = relationship(Vertical)
+    canonical_brand: Mapped[Optional["CanonicalBrand"]] = relationship(CanonicalBrand)
+    aliases: Mapped[List["ProductAlias"]] = relationship(
+        "ProductAlias", back_populates="canonical_product", cascade="all, delete-orphan"
+    )
+
+
+class ProductAlias(Base):
+    __tablename__ = "product_aliases"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    canonical_product_id: Mapped[int] = mapped_column(ForeignKey("canonical_products.id"), nullable=False)
+    alias: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    canonical_product: Mapped["CanonicalProduct"] = relationship(CanonicalProduct, back_populates="aliases")
+
+
+class ValidationCandidate(Base):
+    __tablename__ = "validation_candidates"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    canonical_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    mention_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[ValidationStatus] = mapped_column(
+        Enum(ValidationStatus), nullable=False, default=ValidationStatus.PENDING
+    )
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    vertical: Mapped["Vertical"] = relationship(Vertical)
+
+
+class RejectedEntity(Base):
+    __tablename__ = "rejected_entities"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    rejection_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    example_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    vertical: Mapped["Vertical"] = relationship(Vertical)

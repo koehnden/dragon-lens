@@ -89,12 +89,14 @@ def setup_product_metrics_data(db_session: Session):
     answer1 = LLMAnswer(
         run_id=run.id,
         prompt_id=prompt1.id,
+        model_name="qwen",
         raw_answer_zh="推荐RAV4和CR-V",
         raw_answer_en="Recommend RAV4 and CR-V",
     )
     answer2 = LLMAnswer(
         run_id=run.id,
         prompt_id=prompt2.id,
+        model_name="qwen",
         raw_answer_zh="推荐凯美瑞",
         raw_answer_en="Recommend Camry",
     )

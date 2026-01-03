@@ -1,39 +1,22 @@
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.models.domain import LLMProvider
-from src.services.base_llm import BaseLLMService
-from src.services.remote_llms import DeepSeekService, KimiService, LLMRouter
+from models.domain import LLMProvider
+from services.base_llm import BaseLLMService, OpenAICompatibleService
+from services.remote_llms import DeepSeekService, KimiService, LLMRouter
 
 
-class TestDeepSeekService:
-    def test_has_correct_provider(self):
-        assert DeepSeekService.provider == LLMProvider.DEEPSEEK
-
-    def test_has_default_model(self):
-        assert DeepSeekService.default_model == "deepseek-chat"
-
+class TestOpenAICompatibleService:
     def test_inherits_base_llm_service(self):
-        assert issubclass(DeepSeekService, BaseLLMService)
+        assert issubclass(OpenAICompatibleService, BaseLLMService)
 
-    def test_builds_correct_payload(self):
+    def test_builds_messages_without_system_prompt(self):
         service = DeepSeekService()
-        messages = [{"role": "user", "content": "test"}]
-        payload = service._build_payload(messages, "deepseek-chat")
+        messages = service._build_messages("测试提示")
 
-        assert payload["model"] == "deepseek-chat"
-        assert payload["messages"] == messages
-        assert "temperature" in payload
-
-
-class TestKimiService:
-    def test_has_correct_provider(self):
-        assert KimiService.provider == LLMProvider.KIMI
-
-    def test_has_default_model(self):
-        assert KimiService.default_model == "moonshot-v1-8k"
-
-    def test_inherits_base_llm_service(self):
-        assert issubclass(KimiService, BaseLLMService)
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"] == "测试提示"
 
     def test_builds_messages_with_system_prompt(self):
         service = KimiService()
@@ -44,15 +27,66 @@ class TestKimiService:
         assert messages[1]["role"] == "user"
         assert messages[1]["content"] == "测试提示"
 
-    def test_builds_correct_payload(self):
-        service = KimiService()
-        messages = [{"role": "user", "content": "test"}]
-        payload = service._build_payload(messages, "moonshot-v1-8k")
+    @pytest.mark.asyncio
+    async def test_query_uses_openai_client(self):
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="测试回答"))]
+        mock_response.usage = MagicMock(prompt_tokens=10, completion_tokens=20)
 
-        assert payload["model"] == "moonshot-v1-8k"
-        assert payload["messages"] == messages
-        assert "temperature" in payload
-        assert "max_tokens" in payload
+        with patch("services.base_llm.AsyncOpenAI") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            service = DeepSeekService(api_key="test-key")
+            answer, tokens_in, tokens_out, latency = await service.query("测试")
+
+            assert answer == "测试回答"
+            assert tokens_in == 10
+            assert tokens_out == 20
+            mock_client_class.assert_called_once()
+            mock_client.chat.completions.create.assert_called_once()
+
+
+class TestDeepSeekService:
+    def test_has_correct_provider(self):
+        assert DeepSeekService.provider == LLMProvider.DEEPSEEK
+
+    def test_has_default_model(self):
+        assert DeepSeekService.default_model == "deepseek-chat"
+
+    def test_inherits_openai_compatible_service(self):
+        assert issubclass(DeepSeekService, OpenAICompatibleService)
+
+    def test_has_temperature(self):
+        assert DeepSeekService.temperature == 0.7
+
+
+class TestKimiService:
+    def test_has_correct_provider(self):
+        assert KimiService.provider == LLMProvider.KIMI
+
+    def test_has_default_model(self):
+        assert KimiService.default_model == "moonshot-v1-8k"
+
+    def test_inherits_openai_compatible_service(self):
+        assert issubclass(KimiService, OpenAICompatibleService)
+
+    def test_has_system_prompt(self):
+        assert KimiService.system_prompt is not None
+        assert "中文" in KimiService.system_prompt
+
+    def test_has_max_tokens(self):
+        assert KimiService.max_tokens == 2000
+
+    def test_builds_messages_with_system_prompt(self):
+        service = KimiService()
+        messages = service._build_messages("测试提示")
+
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+        assert messages[1]["content"] == "测试提示"
 
 
 class TestLLMRouter:

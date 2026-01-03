@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 from typing import Optional
 
@@ -11,6 +12,7 @@ from src.services.brand_recognition import (
     split_into_list_items,
     extract_snippet_with_list_awareness,
 )
+from src.services.mention_ranking import rank_entities
 
 logger = logging.getLogger(__name__)
 
@@ -119,90 +121,144 @@ class OllamaService:
         brand_names: list[str],
         brand_aliases: list[list[str]],
     ) -> list[dict]:
-        mentions = []
-        text_lower = text_zh.lower()
+        return await _extract_mentions(
+            text_zh,
+            brand_names,
+            brand_aliases,
+            index_key="brand_index",
+            self_mask_token="[BRAND]",
+            extra_masks=[],
+        )
 
-        all_brand_positions = {}
-        all_brand_names_lower = set()
-        flat_positions: list[tuple[int, int]] = []
+    async def extract_products(
+        self,
+        text_zh: str,
+        product_names: list[str],
+        product_aliases: list[list[str]],
+        brand_names: list[str],
+        brand_aliases: list[list[str]],
+    ) -> list[dict]:
+        masks = [("[BRAND]", _flatten_variants(brand_names, brand_aliases))]
+        return await _extract_mentions(
+            text_zh,
+            product_names,
+            product_aliases,
+            index_key="product_index",
+            self_mask_token="[PRODUCT]",
+            extra_masks=masks,
+        )
 
-        for i, (brand_name, aliases) in enumerate(zip(brand_names, brand_aliases)):
-            all_names = [brand_name.lower()] + [alias.lower() for alias in aliases]
-            all_brand_names_lower.update(all_names)
 
-            for name in all_names:
-                start_pos = 0
-                while True:
-                    pos = text_lower.find(name, start_pos)
-                    if pos == -1:
-                        break
-                    if i not in all_brand_positions:
-                        all_brand_positions[i] = []
-                    all_brand_positions[i].append({
-                        'name': name,
-                        'start': pos,
-                        'end': pos + len(name),
-                        'original_name': brand_name
-                    })
-                    flat_positions.append((pos, pos + len(name)))
-                    start_pos = pos + 1
+def _flatten_variants(names: list[str], aliases: list[list[str]]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for name, alias_list in zip(names, aliases):
+        for v in [name] + list(alias_list):
+            if not v or v in seen:
+                continue
+            seen.add(v)
+            result.append(v)
+    return result
 
-        flat_positions.sort(key=lambda x: x[0])
 
-        for brand_idx, positions in all_brand_positions.items():
-            brand_name = brand_names[brand_idx]
-            aliases = brand_aliases[brand_idx]
-            all_names = [brand_name.lower()] + [alias.lower() for alias in aliases]
+async def _extract_mentions(
+    text_zh: str,
+    entity_names: list[str],
+    entity_aliases: list[list[str]],
+    index_key: str,
+    self_mask_token: str,
+    extra_masks: list[tuple[str, list[str]]],
+) -> list[dict]:
+    mentions: list[dict] = []
+    positions, flat = _find_all_positions(text_zh, entity_names, entity_aliases)
+    ranks = rank_entities(text_zh, [[n] + a for n, a in zip(entity_names, entity_aliases)])
 
-            clean_snippets = []
-            rank = None
+    for entity_idx, entity_positions in positions.items():
+        variants = [entity_names[entity_idx].lower()] + [a.lower() for a in entity_aliases[entity_idx]]
+        snippets = [_snippet_for_position(text_zh, p, flat, variants) for p in entity_positions]
+        masked = [_mask_other_entities(s, text_zh, entity_idx, positions, self_mask_token) for s in snippets]
+        masked = [_apply_extra_masks(s, extra_masks) for s in masked]
+        mentions.append({index_key: entity_idx, "mentioned": bool(masked), "snippets": masked, "rank": ranks[entity_idx]})
 
-            for pos_info in positions:
-                snippet = extract_snippet_with_list_awareness(
-                    text_zh,
-                    pos_info['start'],
-                    pos_info['end'],
-                    flat_positions,
-                    all_names,
-                    max_length=50,
-                )
+    for i in range(len(entity_names)):
+        if i not in positions:
+            mentions.append({index_key: i, "mentioned": False, "snippets": [], "rank": None})
+    return mentions
 
-                clean_snippet = snippet
-                for other_idx, other_positions in all_brand_positions.items():
-                    if other_idx != brand_idx:
-                        for other_pos in other_positions:
-                            other_name = text_zh[other_pos['start']:other_pos['end']]
-                            clean_snippet = clean_snippet.replace(other_name, '[BRAND]')
 
-                clean_snippets.append(clean_snippet)
+def _find_all_positions(
+    text_zh: str,
+    entity_names: list[str],
+    entity_aliases: list[list[str]],
+) -> tuple[dict[int, list[dict]], list[tuple[int, int]]]:
+    text_lower = (text_zh or "").lower()
+    positions: dict[int, list[dict]] = {}
+    flat: list[tuple[int, int]] = []
+    for i, (name, aliases) in enumerate(zip(entity_names, entity_aliases)):
+        for v in [name.lower()] + [a.lower() for a in aliases]:
+            for start, end in _find_occurrences(text_lower, v):
+                positions.setdefault(i, []).append({"start": start, "end": end})
+                flat.append((start, end))
+    return positions, sorted(flat, key=lambda x: x[0])
 
-                prefix = text_zh[max(0, pos_info['start'] - 20):pos_info['start']]
-                for num in range(1, 21):
-                    if f"{num}." in prefix or f"{num}、" in prefix:
-                        rank = num
-                        break
 
-            if brand_idx not in all_brand_positions:
-                clean_snippets = []
-                rank = None
+def _find_occurrences(text_lower: str, needle: str) -> list[tuple[int, int]]:
+    if not needle:
+        return []
+    hits: list[tuple[int, int]] = []
+    start = 0
+    while True:
+        pos = text_lower.find(needle, start)
+        if pos < 0:
+            return hits
+        hits.append((pos, pos + len(needle)))
+        start = pos + 1
 
-            mentions.append({
-                "brand_index": brand_idx,
-                "mentioned": len(clean_snippets) > 0,
-                "snippets": clean_snippets,
-                "rank": rank,
-            })
 
-        for i, (brand_name, aliases) in enumerate(zip(brand_names, brand_aliases)):
-            if i not in all_brand_positions:
-                mentions.append({
-                    "brand_index": i,
-                    "mentioned": False,
-                    "snippets": [],
-                    "rank": None,
-                })
+def _snippet_for_position(
+    text_zh: str,
+    pos: dict,
+    all_positions: list[tuple[int, int]],
+    variants_lower: list[str],
+) -> str:
+    return extract_snippet_with_list_awareness(
+        text_zh,
+        pos["start"],
+        pos["end"],
+        all_positions,
+        variants_lower,
+        max_length=50,
+    )
 
-        return mentions
+
+def _mask_other_entities(
+    snippet: str,
+    text_zh: str,
+    entity_idx: int,
+    positions: dict[int, list[dict]],
+    token: str,
+) -> str:
+    masked = snippet
+    for other_idx, other_positions in positions.items():
+        if other_idx == entity_idx:
+            continue
+        for p in other_positions:
+            masked = masked.replace(text_zh[p["start"]:p["end"]], token)
+    return masked
+
+
+def _apply_extra_masks(snippet: str, masks: list[tuple[str, list[str]]]) -> str:
+    masked = snippet
+    for token, variants in masks:
+        masked = _mask_variants(masked, variants, token)
+    return masked
+
+
+def _mask_variants(text: str, variants: list[str], token: str) -> str:
+    if not variants:
+        return text
+    pattern = "|".join(re.escape(v) for v in sorted(set(variants), key=len, reverse=True) if v)
+    return re.sub(pattern, token, text, flags=re.IGNORECASE) if pattern else text
 
     async def get_embeddings(self, texts: list[str], model: str = "bge-small-zh-v1.5") -> list[list[float]]:
         url = f"{self.base_url}/api/embeddings"

@@ -14,7 +14,7 @@ def test_full_smartphone_vertical():
     """
 
     entities = extract_entities(response, "iPhone", {"zh": ["苹果"], "en": ["iPhone", "Apple"]})
-    extracted_names = set(entities.keys())
+    extracted_names = set(entities.all_entities().keys())
     print(f"Extracted: {extracted_names}")
 
     assert any("iphone" in name.lower() for name in extracted_names), f"Expected iPhone in {extracted_names}"
