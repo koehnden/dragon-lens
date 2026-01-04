@@ -91,7 +91,7 @@ async def list_canonical_products(
         CanonicalProductResponse(
             id=p.id,
             vertical_id=p.vertical_id,
-            canonical_brand_id=p.canonical_brand_id,
+            canonical_brand_id=getattr(p, "canonical_brand_id", None) or getattr(p, "brand_id", None),
             canonical_name=p.canonical_name,
             display_name=p.display_name,
             is_validated=p.is_validated,
