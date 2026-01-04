@@ -7,15 +7,31 @@ from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload, sessionmaker
 
-from models import Brand, BrandMention, LLMAnswer, Prompt, Run, Vertical, get_db
+from models import (
+    Brand,
+    BrandMention,
+    LLMAnswer,
+    Product,
+    ProductBrandMapping,
+    ProductMention,
+    Prompt,
+    Run,
+    Vertical,
+    get_db,
+)
 from models.db_retry import commit_with_retry, flush_with_retry
 from models.domain import PromptLanguage, RunStatus, Sentiment
 from models.schemas import (
     BrandMentionResponse,
     DeleteJobsResponse,
     LLMAnswerResponse,
+    RunEntitiesResponse,
+    RunEntityBrand,
+    RunEntityMapping,
+    RunEntityProduct,
     RunDetailedResponse,
     RunResponse,
     TrackingJobCreate,
@@ -452,6 +468,164 @@ async def get_run_details(
         completed_at=run.completed_at,
         error_message=run.error_message,
         answers=answers_data,
+    )
+
+
+@router.get("/runs/{run_id}/entities", response_model=RunEntitiesResponse)
+async def get_run_entities(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> RunEntitiesResponse:
+    """Get extracted brands, products, and mappings for a run."""
+    run = _run_or_404(db, run_id)
+    vertical = _vertical_or_404(db, run.vertical_id)
+    brand_counts = _brand_counts(db, run_id)
+    product_counts = _product_counts(db, run_id)
+    brands = _brands_for_counts(db, brand_counts)
+    products = _products_for_counts(db, product_counts)
+    mappings = _mappings_for_products(db, run.vertical_id, list(product_counts.keys()))
+    return _run_entities_response(run, vertical, brands, products, mappings, brand_counts, product_counts)
+
+
+def _run_entities_response(
+    run: Run,
+    vertical: Vertical,
+    brands: list[Brand],
+    products: list[Product],
+    mappings: list[RunEntityMapping],
+    brand_counts: dict[int, int],
+    product_counts: dict[int, int],
+) -> RunEntitiesResponse:
+    return RunEntitiesResponse(
+        run_id=run.id, vertical_id=vertical.id, vertical_name=vertical.name,
+        provider=run.provider, model_name=run.model_name, status=run.status.value,
+        run_time=run.run_time, completed_at=run.completed_at,
+        brands=_brand_items(brands, brand_counts),
+        products=_product_items(products, product_counts), mappings=mappings,
+    )
+
+
+def _run_or_404(db: Session, run_id: int) -> Run:
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    return run
+
+
+def _vertical_or_404(db: Session, vertical_id: int) -> Vertical:
+    vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+    if not vertical:
+        raise HTTPException(status_code=404, detail=f"Vertical {vertical_id} not found")
+    return vertical
+
+
+def _brand_counts(db: Session, run_id: int) -> dict[int, int]:
+    rows = (
+        db.query(BrandMention.brand_id, func.count(BrandMention.id))
+        .join(LLMAnswer, LLMAnswer.id == BrandMention.llm_answer_id)
+        .filter(LLMAnswer.run_id == run_id, BrandMention.mentioned == True)
+        .group_by(BrandMention.brand_id)
+        .all()
+    )
+    return {brand_id: count for brand_id, count in rows}
+
+
+def _product_counts(db: Session, run_id: int) -> dict[int, int]:
+    rows = (
+        db.query(ProductMention.product_id, func.count(ProductMention.id))
+        .join(LLMAnswer, LLMAnswer.id == ProductMention.llm_answer_id)
+        .filter(LLMAnswer.run_id == run_id, ProductMention.mentioned == True)
+        .group_by(ProductMention.product_id)
+        .all()
+    )
+    return {product_id: count for product_id, count in rows}
+
+
+def _brands_for_counts(db: Session, counts: dict[int, int]) -> list[Brand]:
+    if not counts:
+        return []
+    return db.query(Brand).filter(Brand.id.in_(counts.keys())).all()
+
+
+def _products_for_counts(db: Session, counts: dict[int, int]) -> list[Product]:
+    if not counts:
+        return []
+    return db.query(Product).options(joinedload(Product.brand)).filter(
+        Product.id.in_(counts.keys())
+    ).all()
+
+
+def _brand_items(brands: list[Brand], counts: dict[int, int]) -> list[RunEntityBrand]:
+    return [_brand_item(brand, counts.get(brand.id, 0)) for brand in brands]
+
+
+def _product_items(products: list[Product], counts: dict[int, int]) -> list[RunEntityProduct]:
+    return [_product_item(product, counts.get(product.id, 0)) for product in products]
+
+
+def _brand_item(brand: Brand, count: int) -> RunEntityBrand:
+    return RunEntityBrand(
+        brand_id=brand.id,
+        brand_name=format_entity_label(brand.original_name, brand.translated_name),
+        original_name=brand.original_name,
+        translated_name=brand.translated_name,
+        mention_count=count,
+    )
+
+
+def _product_item(product: Product, count: int) -> RunEntityProduct:
+    brand_name = ""
+    if product.brand:
+        brand_name = format_entity_label(product.brand.original_name, product.brand.translated_name)
+    return RunEntityProduct(
+        product_id=product.id,
+        product_name=format_entity_label(product.original_name, product.translated_name),
+        original_name=product.original_name,
+        translated_name=product.translated_name,
+        brand_id=product.brand_id,
+        brand_name=brand_name,
+        mention_count=count,
+    )
+
+
+def _mappings_for_products(
+    db: Session,
+    vertical_id: int,
+    product_ids: list[int],
+) -> list[RunEntityMapping]:
+    rows = _mapping_rows(db, vertical_id, product_ids)
+    return [_mapping_item(mapping, product, brand) for mapping, product, brand in rows]
+
+
+def _mapping_rows(
+    db: Session,
+    vertical_id: int,
+    product_ids: list[int],
+) -> list[tuple[ProductBrandMapping, Product, Brand | None]]:
+    if not product_ids:
+        return []
+    return db.query(ProductBrandMapping, Product, Brand).join(
+        Product, Product.id == ProductBrandMapping.product_id
+    ).outerjoin(
+        Brand, Brand.id == ProductBrandMapping.brand_id
+    ).filter(
+        ProductBrandMapping.vertical_id == vertical_id,
+        ProductBrandMapping.product_id.in_(product_ids),
+    ).all()
+
+
+def _mapping_item(
+    mapping: ProductBrandMapping,
+    product: Product,
+    brand: Brand | None,
+) -> RunEntityMapping:
+    brand_name = format_entity_label(brand.original_name, brand.translated_name) if brand else ""
+    return RunEntityMapping(
+        product_id=product.id,
+        product_name=format_entity_label(product.original_name, product.translated_name),
+        brand_id=mapping.brand_id, brand_name=brand_name,
+        confidence=mapping.confidence, source=mapping.source,
+        is_validated=mapping.is_validated,
     )
 
 
