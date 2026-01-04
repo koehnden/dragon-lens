@@ -37,7 +37,7 @@ docker run -d -p 6379:6379 redis:alpine
 # Terminal 1: Start FastAPI server
 poetry run python -m src
 # Or with hot reload for development:
-poetry run uvicorn src.api:app --reload --port 8000
+poetry run uvicorn api.app:app --reload --port 8000
 
 # Terminal 2: Start Celery worker
 poetry run celery -A src.workers.celery_app worker --loglevel=info
@@ -316,4 +316,3 @@ If you need to make architectural choices not specified here, prefer:
 - Simpler over more complex.
 - Standard, well-documented patterns over cleverness.
 - Ease of local dev and later AWS/GCP deployment.
-
