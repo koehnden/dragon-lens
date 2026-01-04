@@ -19,6 +19,15 @@ class VerticalResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class KnowledgeVerticalResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class BrandCreate(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=255)
     aliases: Dict[str, List[str]] = Field(
@@ -174,6 +183,54 @@ class RunDetailedResponse(BaseModel):
     answers: List[LLMAnswerResponse]
 
     model_config = {"from_attributes": True}
+
+
+class RunEntityBrand(BaseModel):
+    brand_id: int
+    brand_name: str
+    original_name: str
+    translated_name: Optional[str]
+    mention_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class RunEntityProduct(BaseModel):
+    product_id: int
+    product_name: str
+    original_name: str
+    translated_name: Optional[str]
+    brand_id: Optional[int]
+    brand_name: str
+    mention_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class RunEntityMapping(BaseModel):
+    product_id: int
+    product_name: str
+    brand_id: Optional[int]
+    brand_name: str
+    confidence: float
+    source: Optional[str]
+    is_validated: bool
+
+    model_config = {"from_attributes": True}
+
+
+class RunEntitiesResponse(BaseModel):
+    run_id: int
+    vertical_id: int
+    vertical_name: str
+    provider: str
+    model_name: str
+    status: str
+    run_time: datetime
+    completed_at: Optional[datetime]
+    brands: List[RunEntityBrand]
+    products: List[RunEntityProduct]
+    mappings: List[RunEntityMapping]
 
 
 class RunMetricsResponse(BaseModel):

@@ -34,9 +34,9 @@ os.environ.setdefault("RUN_TASKS_INLINE", "true")
 os.environ.setdefault("KNOWLEDGE_DATABASE_URL", "sqlite:///:memory:")
 
 try:
-    from api.routers import consolidation, metrics, tracking, verticals, feedback
+    from api.routers import consolidation, feedback, knowledge, metrics, tracking, verticals
 except ImportError:
-    from src.api.routers import consolidation, metrics, tracking, verticals, feedback
+    from src.api.routers import consolidation, feedback, knowledge, metrics, tracking, verticals
 
 from models import Base, get_db
 from models.knowledge_database import KnowledgeBase, get_knowledge_db, knowledge_engine
@@ -111,6 +111,7 @@ def test_app():
     app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
     app.include_router(consolidation.router, prefix="/api/v1/consolidation", tags=["consolidation"])
     app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"])
+    app.include_router(knowledge.router, prefix="/api/v1", tags=["knowledge"])
 
     @app.get("/")
     async def root():

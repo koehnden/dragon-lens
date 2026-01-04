@@ -5,7 +5,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routers import api_keys, consolidation, feedback, metrics, tracking, verticals
+from src.api.routers import api_keys, consolidation, feedback, knowledge, metrics, tracking, verticals
 from src.config import settings
 from models import init_db
 from models.knowledge_database import init_knowledge_db
@@ -44,6 +44,7 @@ app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
 app.include_router(api_keys.router, prefix="/api/v1", tags=["api-keys"])
 app.include_router(consolidation.router, prefix="/api/v1/consolidation", tags=["consolidation"])
 app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"])
+app.include_router(knowledge.router, prefix="/api/v1", tags=["knowledge"])
 
 
 @app.get("/")
