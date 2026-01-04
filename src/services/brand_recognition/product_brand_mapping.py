@@ -6,6 +6,13 @@ from services.canonicalization_metrics import normalize_entity_key
 from services.brand_recognition.list_processor import is_list_format, split_into_list_items
 from services.brand_recognition.prompts import load_prompt
 from services.brand_recognition.text_utils import _parse_json_response
+from services.knowledge_session import knowledge_session
+from services.knowledge_verticals import resolve_knowledge_vertical_id
+from models import EntityType, Vertical
+from models.knowledge_domain import (
+    KnowledgeProductBrandMapping,
+    KnowledgeRejectedEntity,
+)
 
 MIN_CONFIDENCE = float(os.getenv("MAPPING_CONFIDENCE_THRESHOLD", "0.7"))
 MIN_PROXIMITY_SHARE = float(os.getenv("MAPPING_PROXIMITY_SHARE", "0.6"))
@@ -75,13 +82,19 @@ def build_mapping_prompt(
 
 def load_mapping_examples(db, vertical_id: int) -> List[dict]:
     """Load stored mappings for prompt examples."""
-    from models import ProductBrandMapping
-
-    records = db.query(ProductBrandMapping).filter(
-        ProductBrandMapping.vertical_id == vertical_id
-    ).all()
-    examples = [_record_to_example(record) for record in records]
-    return select_mapping_examples([example for example in examples if example])
+    legacy = _legacy_mapping_examples(db, vertical_id)
+    vertical_name = _vertical_name(db, vertical_id)
+    if not vertical_name:
+        return legacy
+    with knowledge_session() as knowledge_db:
+        knowledge_id = resolve_knowledge_vertical_id(knowledge_db, vertical_name)
+        if not knowledge_id:
+            return legacy
+        records = _knowledge_mappings(knowledge_db, knowledge_id)
+        examples = [_record_to_example(record) for record in records]
+        if examples:
+            return select_mapping_examples([example for example in examples if example])
+        return legacy
 
 
 def _iter_items(text: str) -> List[str]:
@@ -167,13 +180,18 @@ def _product_lookup(db, vertical_id: int) -> Dict[str, object]:
 
 
 def _rejected_brand_names(db, vertical_id: int) -> set[str]:
-    from models import EntityType, RejectedEntity
-
-    rows = db.query(RejectedEntity.name).filter(
-        RejectedEntity.vertical_id == vertical_id,
-        RejectedEntity.entity_type == EntityType.BRAND,
-    ).all()
-    return {name.casefold() for (name,) in rows if name}
+    vertical_name = _vertical_name(db, vertical_id)
+    if not vertical_name:
+        return set()
+    with knowledge_session() as knowledge_db:
+        knowledge_id = resolve_knowledge_vertical_id(knowledge_db, vertical_name)
+        if not knowledge_id:
+            return set()
+        rows = knowledge_db.query(KnowledgeRejectedEntity.name).filter(
+            KnowledgeRejectedEntity.vertical_id == knowledge_id,
+            KnowledgeRejectedEntity.entity_type == EntityType.BRAND,
+        ).all()
+        return {name.casefold() for (name,) in rows if name}
 
 
 def _brand_variant_map(brands: List[object], rejected: set[str]) -> Dict[str, int]:
@@ -444,20 +462,52 @@ def _record_to_example(record) -> dict:
     brand = _record_brand_name(record)
     if not product or not brand:
         return {}
-    return {"product": product, "brand": brand, "confidence": record.confidence, "is_validated": record.is_validated}
+    confidence = _record_confidence(record)
+    return {"product": product, "brand": brand, "confidence": confidence, "is_validated": record.is_validated}
 
 
 def _record_product_name(record) -> str:
-    if record.canonical_product:
-        return record.canonical_product.display_name
-    if record.product:
-        return record.product.display_name
-    return ""
+    canonical = getattr(record, "canonical_product", None)
+    if canonical:
+        return canonical.display_name
+    product = getattr(record, "product", None)
+    return product.display_name if product else ""
 
 
 def _record_brand_name(record) -> str:
-    if record.canonical_brand:
-        return record.canonical_brand.display_name
-    if record.brand:
-        return record.brand.display_name
-    return ""
+    canonical = getattr(record, "canonical_brand", None)
+    if canonical:
+        return canonical.display_name
+    brand = getattr(record, "brand", None)
+    return brand.display_name if brand else ""
+
+
+def _record_confidence(record) -> float:
+    value = getattr(record, "confidence", None)
+    if value is None:
+        return 1.0 if record.is_validated else 0.0
+    return value
+
+
+def _vertical_name(db, vertical_id: int) -> str:
+    vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+    return vertical.name if vertical else ""
+
+
+def _knowledge_mappings(
+    knowledge_db,
+    vertical_id: int,
+) -> List[KnowledgeProductBrandMapping]:
+    return knowledge_db.query(KnowledgeProductBrandMapping).filter(
+        KnowledgeProductBrandMapping.vertical_id == vertical_id
+    ).all()
+
+
+def _legacy_mapping_examples(db, vertical_id: int) -> List[dict]:
+    from models import ProductBrandMapping
+
+    records = db.query(ProductBrandMapping).filter(
+        ProductBrandMapping.vertical_id == vertical_id
+    ).all()
+    examples = [_record_to_example(record) for record in records]
+    return select_mapping_examples([example for example in examples if example])

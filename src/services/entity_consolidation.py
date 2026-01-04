@@ -5,7 +5,7 @@ from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Set, Tuple
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from models import (
     Brand,
@@ -24,7 +24,20 @@ from models import (
     ValidationStatus,
     Vertical,
 )
+from models.knowledge_domain import (
+    KnowledgeBrand,
+    KnowledgeBrandAlias,
+    KnowledgeProduct,
+    KnowledgeProductAlias,
+    KnowledgeRejectedEntity,
+)
 from services.canonicalization_metrics import normalize_entity_key
+from services.knowledge_session import knowledge_session
+from services.knowledge_verticals import (
+    ensure_vertical_alias,
+    get_or_create_vertical,
+    resolve_knowledge_vertical_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +75,7 @@ def consolidate_run(
         raise ValueError(f"Run {run_id} not found")
 
     vertical_id = run.vertical_id
+    _ensure_knowledge_vertical_id(db, vertical_id)
     ensure_user_brand_canonicals(db, vertical_id)
 
     brand_mentions = _collect_brand_mentions(db, run_id)
@@ -91,12 +105,7 @@ def consolidate_run(
     brands_flagged = flag_low_frequency_brands(db, vertical_id, brand_mentions)
     products_flagged = flag_low_frequency_products(db, vertical_id, product_mentions)
 
-    canonical_brands = db.query(CanonicalBrand).filter(
-        CanonicalBrand.vertical_id == vertical_id
-    ).count()
-    canonical_products = db.query(CanonicalProduct).filter(
-        CanonicalProduct.vertical_id == vertical_id
-    ).count()
+    canonical_brands, canonical_products = _knowledge_canonical_counts(db, vertical_id)
 
     db.commit()
 
@@ -272,11 +281,10 @@ def _group_brands_by_qwen(
 
 
 def _validated_canonical_names(db: Session, vertical_id: int) -> Set[str]:
-    rows = db.query(CanonicalBrand.canonical_name).filter(
-        CanonicalBrand.vertical_id == vertical_id,
-        CanonicalBrand.is_validated == True,
-    ).all()
-    return {name.casefold() for (name,) in rows if name}
+    knowledge_id = _knowledge_vertical_id(db, vertical_id)
+    if knowledge_id:
+        return _knowledge_validated_brand_names(knowledge_id)
+    return _legacy_validated_brand_names(db, vertical_id)
 
 
 def _group_name_keys(brands: List[Brand]) -> Set[str]:
@@ -367,8 +375,9 @@ def ensure_user_brand_canonicals(db: Session, vertical_id: int) -> None:
         canonical.display_name = brand.display_name
         canonical.is_validated = True
         canonical.validation_source = "user"
+        _mark_knowledge_brand_validated(db, vertical_id, brand.display_name, "user")
         for alias in _user_brand_aliases(brand):
-            _add_brand_alias(db, canonical.id, alias)
+            _add_brand_alias(db, vertical_id, canonical.id, alias)
 
 
 def apply_brand_merges(
@@ -411,7 +420,7 @@ def apply_brand_merges(
         ).first()
 
         if canonical:
-            _add_brand_alias(db, canonical.id, source_name)
+            _add_brand_alias(db, vertical_id, canonical.id, source_name)
             merged_count += 1
 
     for name, count in mentions.items():
@@ -465,7 +474,7 @@ def apply_product_merges(
         ).first()
 
         if canonical:
-            _add_product_alias(db, canonical.id, source_name)
+            _add_product_alias(db, vertical_id, canonical.id, source_name)
             merged_count += 1
 
     for name, count in mentions.items():
@@ -493,6 +502,7 @@ def _resolve_merge_chain(name: str, merge_map: Dict[str, str]) -> str:
 def _get_or_create_canonical_brand(
     db: Session, vertical_id: int, name: str, mention_count: int
 ) -> CanonicalBrand:
+    _upsert_knowledge_brand(db, vertical_id, name, mention_count, None)
     existing = db.query(CanonicalBrand).filter(
         CanonicalBrand.vertical_id == vertical_id,
         CanonicalBrand.canonical_name == name,
@@ -521,6 +531,7 @@ def _get_or_create_canonical_brand(
 def _get_or_create_canonical_product(
     db: Session, vertical_id: int, name: str, mention_count: int
 ) -> CanonicalProduct:
+    _upsert_knowledge_product(db, vertical_id, None, name, mention_count, None)
     existing = db.query(CanonicalProduct).filter(
         CanonicalProduct.vertical_id == vertical_id,
         CanonicalProduct.canonical_name == name,
@@ -546,7 +557,7 @@ def _get_or_create_canonical_product(
     return canonical
 
 
-def _add_brand_alias(db: Session, canonical_id: int, alias_name: str) -> None:
+def _add_brand_alias(db: Session, vertical_id: int, canonical_id: int, alias_name: str) -> None:
     existing = db.query(BrandAlias).filter(
         BrandAlias.canonical_brand_id == canonical_id,
         BrandAlias.alias == alias_name,
@@ -555,9 +566,10 @@ def _add_brand_alias(db: Session, canonical_id: int, alias_name: str) -> None:
     if not existing:
         alias = BrandAlias(canonical_brand_id=canonical_id, alias=alias_name)
         db.add(alias)
+    _add_knowledge_brand_alias(db, vertical_id, canonical_id, alias_name)
 
 
-def _add_product_alias(db: Session, canonical_id: int, alias_name: str) -> None:
+def _add_product_alias(db: Session, vertical_id: int, canonical_id: int, alias_name: str) -> None:
     existing = db.query(ProductAlias).filter(
         ProductAlias.canonical_product_id == canonical_id,
         ProductAlias.alias == alias_name,
@@ -566,6 +578,7 @@ def _add_product_alias(db: Session, canonical_id: int, alias_name: str) -> None:
     if not existing:
         alias = ProductAlias(canonical_product_id=canonical_id, alias=alias_name)
         db.add(alias)
+    _add_knowledge_product_alias(db, vertical_id, canonical_id, alias_name)
 
 
 def flag_low_frequency_brands(
@@ -653,10 +666,12 @@ def validate_candidate(
             _get_or_create_canonical_brand(
                 db, candidate.vertical_id, candidate.name, candidate.mention_count
             )
+            _mark_knowledge_brand_validated(db, candidate.vertical_id, candidate.name, "user")
         else:
             _get_or_create_canonical_product(
                 db, candidate.vertical_id, candidate.name, candidate.mention_count
             )
+            _mark_knowledge_product_validated(db, candidate.vertical_id, candidate.name, "user")
     else:
         candidate.status = ValidationStatus.REJECTED
         candidate.reviewed_at = datetime.utcnow()
@@ -670,6 +685,9 @@ def validate_candidate(
             rejection_reason=rejection_reason or "User rejected",
         )
         db.add(rejected)
+        _add_knowledge_rejection(
+            db, candidate.vertical_id, candidate.entity_type, candidate.name, rejection_reason
+        )
 
     db.commit()
     return candidate
@@ -689,13 +707,451 @@ def get_pending_candidates(
     return query.order_by(ValidationCandidate.mention_count.desc()).all()
 
 
-def get_canonical_brands(db: Session, vertical_id: int) -> List[CanonicalBrand]:
+def get_canonical_brands(db: Session, vertical_id: int) -> List[object]:
+    return _knowledge_brands_or_legacy(db, vertical_id)
+
+
+def get_canonical_products(db: Session, vertical_id: int) -> List[object]:
+    return _knowledge_products_or_legacy(db, vertical_id)
+
+
+def _knowledge_vertical_id(db: Session, vertical_id: int) -> int | None:
+    name = _vertical_name(db, vertical_id)
+    if not name:
+        return None
+    with knowledge_session() as knowledge_db:
+        return resolve_knowledge_vertical_id(knowledge_db, name)
+
+
+def _ensure_knowledge_vertical_id(db: Session, vertical_id: int) -> int | None:
+    name = _vertical_name(db, vertical_id)
+    if not name:
+        return None
+    with knowledge_session() as knowledge_db:
+        vertical = get_or_create_vertical(knowledge_db, name)
+        ensure_vertical_alias(knowledge_db, vertical.id, name)
+        knowledge_db.commit()
+        return vertical.id
+
+
+def _vertical_name(db: Session, vertical_id: int) -> str:
+    vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+    return vertical.name if vertical else ""
+
+
+def _knowledge_canonical_counts(db: Session, vertical_id: int) -> Tuple[int, int]:
+    knowledge_id = _knowledge_vertical_id(db, vertical_id)
+    if not knowledge_id:
+        return _legacy_canonical_counts(db, vertical_id)
+    with knowledge_session() as knowledge_db:
+        return _knowledge_counts(knowledge_db, knowledge_id)
+
+
+def _legacy_canonical_counts(db: Session, vertical_id: int) -> Tuple[int, int]:
+    return (
+        db.query(CanonicalBrand).filter(CanonicalBrand.vertical_id == vertical_id).count(),
+        db.query(CanonicalProduct).filter(CanonicalProduct.vertical_id == vertical_id).count(),
+    )
+
+
+def _knowledge_counts(knowledge_db: Session, vertical_id: int) -> Tuple[int, int]:
+    return (
+        knowledge_db.query(KnowledgeBrand).filter(KnowledgeBrand.vertical_id == vertical_id).count(),
+        knowledge_db.query(KnowledgeProduct).filter(KnowledgeProduct.vertical_id == vertical_id).count(),
+    )
+
+
+def _knowledge_validated_brand_names(knowledge_id: int) -> Set[str]:
+    with knowledge_session() as knowledge_db:
+        return _knowledge_name_set(knowledge_db, KnowledgeBrand, knowledge_id)
+
+
+def _legacy_validated_brand_names(db: Session, vertical_id: int) -> Set[str]:
+    return _legacy_name_set(db, CanonicalBrand, vertical_id)
+
+
+def _knowledge_name_set(knowledge_db: Session, model, vertical_id: int) -> Set[str]:
+    rows = knowledge_db.query(model.canonical_name).filter(
+        model.vertical_id == vertical_id,
+        model.is_validated == True,
+    ).all()
+    return {name.casefold() for (name,) in rows if name}
+
+
+def _legacy_name_set(db: Session, model, vertical_id: int) -> Set[str]:
+    rows = db.query(model.canonical_name).filter(
+        model.vertical_id == vertical_id,
+        model.is_validated == True,
+    ).all()
+    return {name.casefold() for (name,) in rows if name}
+
+
+def _upsert_knowledge_brand(
+    db: Session,
+    vertical_id: int,
+    name: str,
+    mention_count: int,
+    source: Optional[str],
+) -> KnowledgeBrand | None:
+    clean = _clean_name(name)
+    knowledge_id = _ensure_knowledge_vertical_id(db, vertical_id)
+    if not knowledge_id or not clean:
+        return None
+    with knowledge_session() as knowledge_db:
+        brand = _find_knowledge_brand(knowledge_db, knowledge_id, clean)
+        return _save_knowledge_brand(knowledge_db, brand, knowledge_id, clean, mention_count, source)
+
+
+def _upsert_knowledge_product(
+    db: Session,
+    vertical_id: int,
+    brand_id: int | None,
+    name: str,
+    mention_count: int,
+    source: Optional[str],
+) -> KnowledgeProduct | None:
+    clean = _clean_name(name)
+    knowledge_id = _ensure_knowledge_vertical_id(db, vertical_id)
+    if not knowledge_id or not clean:
+        return None
+    with knowledge_session() as knowledge_db:
+        product = _find_knowledge_product(knowledge_db, knowledge_id, clean)
+        return _save_knowledge_product(knowledge_db, product, knowledge_id, brand_id, clean, mention_count, source)
+
+
+def _mark_knowledge_brand_validated(
+    db: Session,
+    vertical_id: int,
+    name: str,
+    source: str,
+) -> None:
+    _upsert_knowledge_brand(db, vertical_id, name, 0, source)
+
+
+def _mark_knowledge_product_validated(
+    db: Session,
+    vertical_id: int,
+    name: str,
+    source: str,
+) -> None:
+    _upsert_knowledge_product(db, vertical_id, None, name, 0, source)
+
+
+def _find_knowledge_brand(
+    knowledge_db: Session,
+    vertical_id: int,
+    name: str,
+) -> KnowledgeBrand | None:
+    return knowledge_db.query(KnowledgeBrand).filter(
+        KnowledgeBrand.vertical_id == vertical_id,
+        func.lower(KnowledgeBrand.canonical_name) == name.casefold(),
+    ).first()
+
+
+def _find_knowledge_product(
+    knowledge_db: Session,
+    vertical_id: int,
+    name: str,
+) -> KnowledgeProduct | None:
+    return knowledge_db.query(KnowledgeProduct).filter(
+        KnowledgeProduct.vertical_id == vertical_id,
+        func.lower(KnowledgeProduct.canonical_name) == name.casefold(),
+    ).first()
+
+
+def _save_knowledge_brand(
+    knowledge_db: Session,
+    brand: KnowledgeBrand | None,
+    vertical_id: int,
+    name: str,
+    mention_count: int,
+    source: Optional[str],
+) -> KnowledgeBrand:
+    if brand:
+        _update_knowledge_brand(brand, mention_count, source)
+        return brand
+    return _create_knowledge_brand(knowledge_db, vertical_id, name, mention_count, source)
+
+
+def _save_knowledge_product(
+    knowledge_db: Session,
+    product: KnowledgeProduct | None,
+    vertical_id: int,
+    brand_id: int | None,
+    name: str,
+    mention_count: int,
+    source: Optional[str],
+) -> KnowledgeProduct:
+    if product:
+        _update_knowledge_product(product, brand_id, mention_count, source)
+        return product
+    return _create_knowledge_product(knowledge_db, vertical_id, brand_id, name, mention_count, source)
+
+
+def _update_knowledge_brand(
+    brand: KnowledgeBrand,
+    mention_count: int,
+    source: Optional[str],
+) -> None:
+    brand.mention_count += mention_count
+    _apply_validation(brand, mention_count, source)
+
+
+def _update_knowledge_product(
+    product: KnowledgeProduct,
+    brand_id: int | None,
+    mention_count: int,
+    source: Optional[str],
+) -> None:
+    product.mention_count += mention_count
+    if brand_id:
+        product.brand_id = brand_id
+    _apply_validation(product, mention_count, source)
+
+
+def _create_knowledge_brand(
+    knowledge_db: Session,
+    vertical_id: int,
+    name: str,
+    mention_count: int,
+    source: Optional[str],
+) -> KnowledgeBrand:
+    brand = KnowledgeBrand(
+        vertical_id=vertical_id,
+        canonical_name=name,
+        display_name=name,
+        mention_count=mention_count,
+        is_validated=_is_validated(mention_count, source),
+        validation_source=_validation_source(mention_count, source),
+    )
+    knowledge_db.add(brand)
+    knowledge_db.flush()
+    return brand
+
+
+def _create_knowledge_product(
+    knowledge_db: Session,
+    vertical_id: int,
+    brand_id: int | None,
+    name: str,
+    mention_count: int,
+    source: Optional[str],
+) -> KnowledgeProduct:
+    product = KnowledgeProduct(
+        vertical_id=vertical_id,
+        brand_id=brand_id,
+        canonical_name=name,
+        display_name=name,
+        mention_count=mention_count,
+        is_validated=_is_validated(mention_count, source),
+        validation_source=_validation_source(mention_count, source),
+    )
+    knowledge_db.add(product)
+    knowledge_db.flush()
+    return product
+
+
+def _apply_validation(entity, mention_count: int, source: Optional[str]) -> None:
+    if source:
+        entity.is_validated = True
+        entity.validation_source = source
+        return
+    if _is_validated(mention_count, source):
+        entity.is_validated = True
+        entity.validation_source = "auto"
+
+
+def _is_validated(mention_count: int, source: Optional[str]) -> bool:
+    return bool(source) or mention_count >= MIN_MENTION_COUNT_FOR_AUTO_VALIDATE
+
+
+def _validation_source(mention_count: int, source: Optional[str]) -> Optional[str]:
+    if source:
+        return source
+    return "auto" if mention_count >= MIN_MENTION_COUNT_FOR_AUTO_VALIDATE else None
+
+
+def _add_knowledge_brand_alias(
+    db: Session,
+    vertical_id: int,
+    canonical_id: int,
+    alias_name: str,
+) -> None:
+    name = _legacy_brand_name(db, canonical_id)
+    if name:
+        _add_knowledge_brand_alias_by_name(db, vertical_id, name, alias_name)
+
+
+def _add_knowledge_product_alias(
+    db: Session,
+    vertical_id: int,
+    canonical_id: int,
+    alias_name: str,
+) -> None:
+    name = _legacy_product_name(db, canonical_id)
+    if name:
+        _add_knowledge_product_alias_by_name(db, vertical_id, name, alias_name)
+
+
+def _legacy_brand_name(db: Session, canonical_id: int) -> str:
+    canonical = db.query(CanonicalBrand).filter(CanonicalBrand.id == canonical_id).first()
+    return canonical.canonical_name if canonical else ""
+
+
+def _legacy_product_name(db: Session, canonical_id: int) -> str:
+    canonical = db.query(CanonicalProduct).filter(CanonicalProduct.id == canonical_id).first()
+    return canonical.canonical_name if canonical else ""
+
+
+def _add_knowledge_brand_alias_by_name(
+    db: Session,
+    vertical_id: int,
+    canonical_name: str,
+    alias_name: str,
+) -> None:
+    knowledge_id = _ensure_knowledge_vertical_id(db, vertical_id)
+    if not knowledge_id:
+        return
+    with knowledge_session() as knowledge_db:
+        brand = _find_knowledge_brand(knowledge_db, knowledge_id, canonical_name)
+        if not brand:
+            return
+        if _knowledge_brand_alias_exists(knowledge_db, brand.id, alias_name):
+            return
+        _create_knowledge_brand_alias(knowledge_db, brand.id, alias_name)
+
+
+def _add_knowledge_product_alias_by_name(
+    db: Session,
+    vertical_id: int,
+    canonical_name: str,
+    alias_name: str,
+) -> None:
+    knowledge_id = _ensure_knowledge_vertical_id(db, vertical_id)
+    if not knowledge_id:
+        return
+    with knowledge_session() as knowledge_db:
+        product = _find_knowledge_product(knowledge_db, knowledge_id, canonical_name)
+        if not product:
+            return
+        if _knowledge_product_alias_exists(knowledge_db, product.id, alias_name):
+            return
+        _create_knowledge_product_alias(knowledge_db, product.id, alias_name)
+
+
+def _knowledge_brand_alias_exists(knowledge_db: Session, brand_id: int, alias_name: str) -> bool:
+    return bool(knowledge_db.query(KnowledgeBrandAlias).filter(
+        KnowledgeBrandAlias.brand_id == brand_id,
+        KnowledgeBrandAlias.alias == alias_name,
+    ).first())
+
+
+def _knowledge_product_alias_exists(knowledge_db: Session, product_id: int, alias_name: str) -> bool:
+    return bool(knowledge_db.query(KnowledgeProductAlias).filter(
+        KnowledgeProductAlias.product_id == product_id,
+        KnowledgeProductAlias.alias == alias_name,
+    ).first())
+
+
+def _create_knowledge_brand_alias(knowledge_db: Session, brand_id: int, alias_name: str) -> None:
+    knowledge_db.add(KnowledgeBrandAlias(brand_id=brand_id, alias=alias_name))
+    knowledge_db.flush()
+
+
+def _create_knowledge_product_alias(knowledge_db: Session, product_id: int, alias_name: str) -> None:
+    knowledge_db.add(KnowledgeProductAlias(product_id=product_id, alias=alias_name))
+    knowledge_db.flush()
+
+
+def _add_knowledge_rejection(
+    db: Session,
+    vertical_id: int,
+    entity_type: EntityType,
+    name: str,
+    reason: Optional[str],
+) -> None:
+    knowledge_id = _ensure_knowledge_vertical_id(db, vertical_id)
+    if not knowledge_id:
+        return
+    with knowledge_session() as knowledge_db:
+        if _knowledge_rejection_exists(knowledge_db, knowledge_id, entity_type, name):
+            return
+        knowledge_db.add(_knowledge_rejection(knowledge_id, entity_type, name, reason))
+        knowledge_db.flush()
+
+
+def _knowledge_rejection_exists(
+    knowledge_db: Session,
+    vertical_id: int,
+    entity_type: EntityType,
+    name: str,
+) -> bool:
+    return bool(knowledge_db.query(KnowledgeRejectedEntity).filter(
+        KnowledgeRejectedEntity.vertical_id == vertical_id,
+        KnowledgeRejectedEntity.entity_type == entity_type,
+        func.lower(KnowledgeRejectedEntity.name) == name.casefold(),
+    ).first())
+
+
+def _knowledge_rejection(
+    vertical_id: int,
+    entity_type: EntityType,
+    name: str,
+    reason: Optional[str],
+) -> KnowledgeRejectedEntity:
+    return KnowledgeRejectedEntity(
+        vertical_id=vertical_id,
+        entity_type=entity_type,
+        name=name,
+        reason=reason or "user_reject",
+    )
+
+
+def _knowledge_brands_or_legacy(db: Session, vertical_id: int) -> List[object]:
+    knowledge_id = _knowledge_vertical_id(db, vertical_id)
+    if not knowledge_id:
+        return _legacy_canonical_brands(db, vertical_id)
+    with knowledge_session() as knowledge_db:
+        brands = _knowledge_brands(knowledge_db, knowledge_id)
+        return brands or _legacy_canonical_brands(db, vertical_id)
+
+
+def _knowledge_products_or_legacy(db: Session, vertical_id: int) -> List[object]:
+    knowledge_id = _knowledge_vertical_id(db, vertical_id)
+    if not knowledge_id:
+        return _legacy_canonical_products(db, vertical_id)
+    with knowledge_session() as knowledge_db:
+        products = _knowledge_products(knowledge_db, knowledge_id)
+        return products or _legacy_canonical_products(db, vertical_id)
+
+
+def _legacy_canonical_brands(db: Session, vertical_id: int) -> List[CanonicalBrand]:
     return db.query(CanonicalBrand).filter(
         CanonicalBrand.vertical_id == vertical_id
     ).order_by(CanonicalBrand.mention_count.desc()).all()
 
 
-def get_canonical_products(db: Session, vertical_id: int) -> List[CanonicalProduct]:
+def _legacy_canonical_products(db: Session, vertical_id: int) -> List[CanonicalProduct]:
     return db.query(CanonicalProduct).filter(
         CanonicalProduct.vertical_id == vertical_id
     ).order_by(CanonicalProduct.mention_count.desc()).all()
+
+
+def _knowledge_brands(knowledge_db: Session, vertical_id: int) -> List[KnowledgeBrand]:
+    return knowledge_db.query(KnowledgeBrand).options(
+        joinedload(KnowledgeBrand.aliases)
+    ).filter(
+        KnowledgeBrand.vertical_id == vertical_id
+    ).order_by(KnowledgeBrand.mention_count.desc()).all()
+
+
+def _knowledge_products(knowledge_db: Session, vertical_id: int) -> List[KnowledgeProduct]:
+    return knowledge_db.query(KnowledgeProduct).options(
+        joinedload(KnowledgeProduct.aliases)
+    ).filter(
+        KnowledgeProduct.vertical_id == vertical_id
+    ).order_by(KnowledgeProduct.mention_count.desc()).all()
+
+
+def _clean_name(value: str) -> str:
+    return (value or "").strip()

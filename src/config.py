@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     database_url: str = "sqlite:///./dragonlens.db"
+    knowledge_database_url: str = "sqlite:///./data/knowledge.db"
 
     redis_url: str = "redis://localhost:6379/0"
 
