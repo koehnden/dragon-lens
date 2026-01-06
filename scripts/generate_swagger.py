@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 try:
     from api import app
 except ImportError:
-    from src.api import app
+    from api import app
 
 if __name__ == "__main__":
     openapi_schema = app.openapi()

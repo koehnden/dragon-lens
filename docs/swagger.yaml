@@ -394,6 +394,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tracking/runs/{run_id}/entities:
+    get:
+      tags:
+      - tracking
+      summary: Get Run Entities
+      description: "Get extracted brands, products, and mappings for a run.\n\nArgs:\n    run_id: Run ID\n\
+        \    db: Database session\n\nReturns:\n    Run entity summary\n\nRaises:\n    HTTPException:\
+        \ If run not found"
+      operationId: get_run_entities_api_v1_tracking_runs__run_id__entities_get
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Run Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunEntitiesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/metrics/latest:
     get:
       tags:
@@ -429,6 +458,29 @@ paths:
                 $ref: '#/components/schemas/MetricsResponse'
         '404':
           description: No runs found for vertical
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/knowledge/verticals:
+    get:
+      tags:
+      - knowledge
+      summary: List Knowledge Verticals
+      description: "List canonical verticals stored in the knowledge database."
+      operationId: list_knowledge_verticals_api_v1_knowledge_verticals_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KnowledgeVerticalResponse'
+                title: Response List Knowledge Verticals Api V1 Knowledge Verticals Get
         '422':
           description: Validation Error
           content:
@@ -752,6 +804,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/feedback/submit:
+    post:
+      tags:
+      - feedback
+      summary: Submit Feedback
+      description: "Submit user feedback for brands, products, mappings, and translations."
+      operationId: submit_feedback_api_v1_feedback_submit_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackSubmitRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackSubmitResponse'
+        '400':
+          description: Invalid feedback payload
+        '404':
+          description: Run or vertical not found
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /:
     get:
       summary: Root
@@ -853,6 +935,245 @@ components:
       required:
       - display_name
       title: BrandCreate
+    FeedbackAppliedSummary:
+      properties:
+        brands:
+          type: integer
+          title: Brands
+        products:
+          type: integer
+          title: Products
+        mappings:
+          type: integer
+          title: Mappings
+        translations:
+          type: integer
+          title: Translations
+      type: object
+      required:
+      - brands
+      - products
+      - mappings
+      - translations
+      title: FeedbackAppliedSummary
+    FeedbackCanonicalVertical:
+      properties:
+        id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Id
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        is_new:
+          type: boolean
+          title: Is New
+      type: object
+      required:
+      - is_new
+      title: FeedbackCanonicalVertical
+    FeedbackBrandFeedbackItem:
+      properties:
+        action:
+          type: string
+          title: Action
+          enum: [validate, replace, reject]
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        wrong_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Wrong Name
+        correct_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Correct Name
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      required:
+      - action
+      title: FeedbackBrandFeedbackItem
+    FeedbackProductFeedbackItem:
+      properties:
+        action:
+          type: string
+          title: Action
+          enum: [validate, replace, reject]
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        wrong_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Wrong Name
+        correct_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Correct Name
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      required:
+      - action
+      title: FeedbackProductFeedbackItem
+    FeedbackMappingFeedbackItem:
+      properties:
+        action:
+          type: string
+          title: Action
+          enum: [add, reject]
+        product_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Product Name
+        brand_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brand Name
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      required:
+      - action
+      title: FeedbackMappingFeedbackItem
+    FeedbackTranslationOverrideItem:
+      properties:
+        entity_type:
+          type: string
+          title: Entity Type
+          enum: [brand, product]
+        canonical_name:
+          type: string
+          title: Canonical Name
+        language:
+          type: string
+          title: Language
+          enum: [zh, en]
+        override_text:
+          type: string
+          title: Override Text
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      required:
+      - entity_type
+      - canonical_name
+      - language
+      - override_text
+      title: FeedbackTranslationOverrideItem
+    FeedbackSubmitRequest:
+      properties:
+        run_id:
+          type: integer
+          title: Run Id
+        vertical_id:
+          type: integer
+          title: Vertical Id
+        canonical_vertical:
+          $ref: '#/components/schemas/FeedbackCanonicalVertical'
+        brand_feedback:
+          items:
+            $ref: '#/components/schemas/FeedbackBrandFeedbackItem'
+          type: array
+          title: Brand Feedback
+        product_feedback:
+          items:
+            $ref: '#/components/schemas/FeedbackProductFeedbackItem'
+          type: array
+          title: Product Feedback
+        mapping_feedback:
+          items:
+            $ref: '#/components/schemas/FeedbackMappingFeedbackItem'
+          type: array
+          title: Mapping Feedback
+        translation_overrides:
+          items:
+            $ref: '#/components/schemas/FeedbackTranslationOverrideItem'
+          type: array
+          title: Translation Overrides
+      type: object
+      required:
+      - run_id
+      - vertical_id
+      - canonical_vertical
+      title: FeedbackSubmitRequest
+    FeedbackSubmitResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+        run_id:
+          type: integer
+          title: Run Id
+        canonical_vertical_id:
+          type: integer
+          title: Canonical Vertical Id
+        applied:
+          $ref: '#/components/schemas/FeedbackAppliedSummary'
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+      type: object
+      required:
+      - status
+      - run_id
+      - canonical_vertical_id
+      - applied
+      - warnings
+      title: FeedbackSubmitResponse
+    KnowledgeVerticalResponse:
+      properties:
+        id:
+          type: integer
+          title: Id
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - name
+      - description
+      - created_at
+      title: KnowledgeVerticalResponse
     BrandMetrics:
       properties:
         brand_id:
@@ -1062,6 +1383,166 @@ components:
       - completed_at
       - error_message
       title: RunResponse
+    RunEntityBrand:
+      properties:
+        brand_id:
+          type: integer
+          title: Brand Id
+        brand_name:
+          type: string
+          title: Brand Name
+        original_name:
+          type: string
+          title: Original Name
+        translated_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Translated Name
+        mention_count:
+          type: integer
+          title: Mention Count
+      type: object
+      required:
+      - brand_id
+      - brand_name
+      - original_name
+      - translated_name
+      - mention_count
+      title: RunEntityBrand
+    RunEntityProduct:
+      properties:
+        product_id:
+          type: integer
+          title: Product Id
+        product_name:
+          type: string
+          title: Product Name
+        original_name:
+          type: string
+          title: Original Name
+        translated_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Translated Name
+        brand_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Brand Id
+        brand_name:
+          type: string
+          title: Brand Name
+        mention_count:
+          type: integer
+          title: Mention Count
+      type: object
+      required:
+      - product_id
+      - product_name
+      - original_name
+      - translated_name
+      - brand_id
+      - brand_name
+      - mention_count
+      title: RunEntityProduct
+    RunEntityMapping:
+      properties:
+        product_id:
+          type: integer
+          title: Product Id
+        product_name:
+          type: string
+          title: Product Name
+        brand_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Brand Id
+        brand_name:
+          type: string
+          title: Brand Name
+        confidence:
+          type: number
+          title: Confidence
+        source:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source
+        is_validated:
+          type: boolean
+          title: Is Validated
+      type: object
+      required:
+      - product_id
+      - product_name
+      - brand_id
+      - brand_name
+      - confidence
+      - source
+      - is_validated
+      title: RunEntityMapping
+    RunEntitiesResponse:
+      properties:
+        run_id:
+          type: integer
+          title: Run Id
+        vertical_id:
+          type: integer
+          title: Vertical Id
+        vertical_name:
+          type: string
+          title: Vertical Name
+        provider:
+          type: string
+          title: Provider
+        model_name:
+          type: string
+          title: Model Name
+        status:
+          type: string
+          title: Status
+        run_time:
+          type: string
+          format: date-time
+          title: Run Time
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+        brands:
+          items:
+            $ref: '#/components/schemas/RunEntityBrand'
+          type: array
+          title: Brands
+        products:
+          items:
+            $ref: '#/components/schemas/RunEntityProduct'
+          type: array
+          title: Products
+        mappings:
+          items:
+            $ref: '#/components/schemas/RunEntityMapping'
+          type: array
+          title: Mappings
+      type: object
+      required:
+      - run_id
+      - vertical_id
+      - vertical_name
+      - provider
+      - model_name
+      - status
+      - run_time
+      - completed_at
+      - brands
+      - products
+      - mappings
+      title: RunEntitiesResponse
     TrackingJobCreate:
       properties:
         vertical_name:

@@ -1,3 +1,4 @@
+import enum
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -10,6 +11,15 @@ class VerticalCreate(BaseModel):
 
 
 class VerticalResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeVerticalResponse(BaseModel):
     id: int
     name: str
     description: Optional[str]
@@ -175,6 +185,54 @@ class RunDetailedResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RunEntityBrand(BaseModel):
+    brand_id: int
+    brand_name: str
+    original_name: str
+    translated_name: Optional[str]
+    mention_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class RunEntityProduct(BaseModel):
+    product_id: int
+    product_name: str
+    original_name: str
+    translated_name: Optional[str]
+    brand_id: Optional[int]
+    brand_name: str
+    mention_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class RunEntityMapping(BaseModel):
+    product_id: int
+    product_name: str
+    brand_id: Optional[int]
+    brand_name: str
+    confidence: float
+    source: Optional[str]
+    is_validated: bool
+
+    model_config = {"from_attributes": True}
+
+
+class RunEntitiesResponse(BaseModel):
+    run_id: int
+    vertical_id: int
+    vertical_name: str
+    provider: str
+    model_name: str
+    status: str
+    run_time: datetime
+    completed_at: Optional[datetime]
+    brands: List[RunEntityBrand]
+    products: List[RunEntityProduct]
+    mappings: List[RunEntityMapping]
+
+
 class RunMetricsResponse(BaseModel):
     brand_id: int
     brand_name: str
@@ -289,3 +347,86 @@ class ValidationCandidateResponse(BaseModel):
 class ValidateCandidateRequest(BaseModel):
     approved: bool
     rejection_reason: Optional[str] = None
+
+
+class FeedbackAction(str, enum.Enum):
+    VALIDATE = "validate"
+    REPLACE = "replace"
+    REJECT = "reject"
+
+
+class FeedbackMappingAction(str, enum.Enum):
+    ADD = "add"
+    REJECT = "reject"
+
+
+class FeedbackEntityType(str, enum.Enum):
+    BRAND = "brand"
+    PRODUCT = "product"
+
+
+class FeedbackLanguage(str, enum.Enum):
+    ZH = "zh"
+    EN = "en"
+
+
+class FeedbackCanonicalVertical(BaseModel):
+    id: Optional[int] = None
+    name: Optional[str] = None
+    is_new: bool
+
+
+class FeedbackBrandFeedbackItem(BaseModel):
+    action: FeedbackAction
+    name: Optional[str] = None
+    wrong_name: Optional[str] = None
+    correct_name: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class FeedbackProductFeedbackItem(BaseModel):
+    action: FeedbackAction
+    name: Optional[str] = None
+    wrong_name: Optional[str] = None
+    correct_name: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class FeedbackMappingFeedbackItem(BaseModel):
+    action: FeedbackMappingAction
+    product_name: Optional[str] = None
+    brand_name: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class FeedbackTranslationOverrideItem(BaseModel):
+    entity_type: FeedbackEntityType
+    canonical_name: str
+    language: FeedbackLanguage
+    override_text: str
+    reason: Optional[str] = None
+
+
+class FeedbackSubmitRequest(BaseModel):
+    run_id: int
+    vertical_id: int
+    canonical_vertical: FeedbackCanonicalVertical
+    brand_feedback: List[FeedbackBrandFeedbackItem] = Field(default_factory=list)
+    product_feedback: List[FeedbackProductFeedbackItem] = Field(default_factory=list)
+    mapping_feedback: List[FeedbackMappingFeedbackItem] = Field(default_factory=list)
+    translation_overrides: List[FeedbackTranslationOverrideItem] = Field(default_factory=list)
+
+
+class FeedbackAppliedSummary(BaseModel):
+    brands: int
+    products: int
+    mappings: int
+    translations: int
+
+
+class FeedbackSubmitResponse(BaseModel):
+    status: str
+    run_id: int
+    canonical_vertical_id: int
+    applied: FeedbackAppliedSummary
+    warnings: List[str]
