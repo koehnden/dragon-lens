@@ -112,14 +112,18 @@ def show():
         elif provider == "kimi":
             model_name = st.selectbox(
                 "Kimi Model",
-                ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
-                help="Select Kimi model variant",
+                ["kimi-k2-turbo-preview", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+                help="Select Kimi model variant (Moonshot API)",
             )
-            st.warning("⚠️ Kimi uses vendor API key first, then OpenRouter if needed")
+            st.info("ℹ️ Kimi K2 Turbo is the recommended K2 variant for the Moonshot API.")
         elif provider == "openrouter":
             preset_models = [
+                "moonshotai/kimi-k2-0905",
                 "baidu/ernie-4.5-300b-a47b",
+                "bytedance-seed/seed-1.6",
                 "bytedance-seed/seed-1.6-flash",
+                "qwen/qwen-2.5-72b-instruct",
+                "MiniMaxAI/MiniMax-M2.1",
                 "Custom model ID",
             ]
             selected_model = st.selectbox(

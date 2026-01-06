@@ -29,13 +29,56 @@ class DeepSeekService(OpenAICompatibleService):
 class KimiService(OpenAICompatibleService):
     provider = LLMProvider.KIMI
     default_model = "moonshot-v1-8k"
-    temperature = 0.7
+    temperature = 0.6
     max_tokens = 2000
     system_prompt = "你是一个中文助手，请用中文回答所有问题。"
 
     def __init__(self, db: Optional[Session] = None, api_key: Optional[str] = None):
         super().__init__(db, api_key)
         self.api_base = settings.kimi_api_base
+
+    def _is_k2_model(self, model_name: str) -> bool:
+        return any(k2 in model_name.lower() for k2 in ["kimi-k2", "k2-"])
+
+    async def query(
+        self,
+        prompt_zh: str,
+        model_name: Optional[str] = None,
+        **kwargs,
+    ) -> tuple[str, int, int, float]:
+        import httpx
+        import time
+        from openai import AsyncOpenAI
+
+        api_key = self._get_api_key()
+        model = model_name or self.default_model
+        is_k2 = self._is_k2_model(model)
+
+        http_client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=30.0))
+        client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=self.api_base,
+            http_client=http_client,
+        )
+
+        messages = self._build_messages(prompt_zh)
+        request_kwargs = {"model": model, "messages": messages, "temperature": self.temperature}
+
+        if not is_k2 and self.max_tokens is not None:
+            request_kwargs["max_tokens"] = self.max_tokens
+
+        logger.info(f"Kimi request: model={model}, is_k2={is_k2}, max_tokens={'none' if is_k2 else self.max_tokens}")
+
+        start_time = time.time()
+        try:
+            response = await client.chat.completions.create(**request_kwargs)
+            latency = time.time() - start_time
+            return self._parse_openai_response(response, latency)
+        except Exception as e:
+            logger.error(f"{self.provider.value} API error: {e}")
+            raise
+        finally:
+            await http_client.aclose()
 
 
 class OpenRouterService(OpenAICompatibleService):
