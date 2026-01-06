@@ -188,7 +188,7 @@ start-ollama: ## Start Ollama service (macOS with Homebrew)
 
 start-api: check-deps ## Start FastAPI server
 	@echo "$(YELLOW)Starting FastAPI server...$(NC)"
-	@poetry run uvicorn api.app:app --host 0.0.0.0 --port $(API_PORT) > $(API_LOG) 2>&1 & echo $$! > .api.pid
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run uvicorn api.app:app --host 0.0.0.0 --port $(API_PORT) > $(API_LOG) 2>&1 & echo $$! > .api.pid
 	@sleep 2
 	@if [ -f .api.pid ] && kill -0 $$(cat .api.pid) 2>/dev/null; then \
 		echo "$(GREEN)✓ FastAPI server started on http://localhost:$(API_PORT)$(NC)"; \
@@ -201,7 +201,7 @@ start-api: check-deps ## Start FastAPI server
 
 start-celery: check-deps start-redis ## Start Celery worker
 	@echo "$(YELLOW)Starting Celery worker...$(NC)"
-	@poetry run celery -A workers.celery_app worker --loglevel=info --pool=solo > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run celery -A workers.celery_app worker --loglevel=info --pool=solo > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
 	@sleep 2
 	@if [ -f .celery.pid ] && kill -0 $$(cat .celery.pid) 2>/dev/null; then \
 		echo "$(GREEN)✓ Celery worker started$(NC)"; \
@@ -220,7 +220,7 @@ start-streamlit: check-deps ## Start Streamlit UI
 		kill -9 $$(lsof -ti:$(STREAMLIT_PORT)) 2>/dev/null || true; \
 		sleep 1; \
 	fi
-	@poetry run streamlit run src/ui/app.py --server.port $(STREAMLIT_PORT) --server.headless true > $(STREAMLIT_LOG) 2>&1 & echo $$! > .streamlit.pid
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run streamlit run src/ui/app.py --server.port $(STREAMLIT_PORT) --server.headless true > $(STREAMLIT_LOG) 2>&1 & echo $$! > .streamlit.pid
 	@sleep 3
 	@if [ -f .streamlit.pid ] && kill -0 $$(cat .streamlit.pid) 2>/dev/null; then \
 		echo "$(GREEN)✓ Streamlit UI started on http://localhost:$(STREAMLIT_PORT)$(NC)"; \
@@ -679,4 +679,4 @@ dev: ## Start services in development mode (with auto-reload)
 	@echo "$(GREEN)Starting FastAPI with auto-reload...$(NC)"
 	@echo "$(YELLOW)Press Ctrl+C to stop$(NC)"
 	@echo ""
-	@poetry run uvicorn api.app:app --reload --host 0.0.0.0 --port $(API_PORT)
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run uvicorn api.app:app --reload --host 0.0.0.0 --port $(API_PORT)

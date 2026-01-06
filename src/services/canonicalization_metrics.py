@@ -10,7 +10,16 @@ from models import (
     CanonicalProduct,
     Product,
     ProductAlias,
+    Vertical,
 )
+from models.knowledge_domain import (
+    KnowledgeBrand,
+    KnowledgeBrandAlias,
+    KnowledgeProduct,
+    KnowledgeProductAlias,
+)
+from services.knowledge_session import knowledge_session
+from services.knowledge_verticals import resolve_knowledge_vertical_id
 
 
 def normalize_entity_key(text: str) -> str:
@@ -45,17 +54,17 @@ def resolve_user_brand_display_name(
 
 
 def build_brand_canonical_maps(db: Session, vertical_id: int) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
-    canon = _canonical_brand_map(db, vertical_id)
-    alias = _brand_alias_map(db, vertical_id)
-    norm = _normalized_brand_map(canon, alias)
-    return canon, alias, norm
+    with knowledge_session() as knowledge_db:
+        knowledge_id = _knowledge_vertical_id(knowledge_db, db, vertical_id)
+        canon, alias = _brand_maps(knowledge_db, knowledge_id, db, vertical_id)
+        return canon, alias, _normalized_brand_map(canon, alias)
 
 
 def build_product_canonical_maps(db: Session, vertical_id: int) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
-    canon = _canonical_product_map(db, vertical_id)
-    alias = _product_alias_map(db, vertical_id)
-    norm = _normalized_brand_map(canon, alias)
-    return canon, alias, norm
+    with knowledge_session() as knowledge_db:
+        knowledge_id = _knowledge_vertical_id(knowledge_db, db, vertical_id)
+        canon, alias = _product_maps(knowledge_db, knowledge_id, db, vertical_id)
+        return canon, alias, _normalized_brand_map(canon, alias)
 
 
 def resolve_brand_key(
@@ -133,22 +142,87 @@ def _brand_variants(brand: Brand) -> Iterable[str]:
         yield v
 
 
-def _canonical_brand_map(db: Session, vertical_id: int) -> Dict[str, str]:
+def _knowledge_vertical_id(knowledge_db: Session, db: Session, vertical_id: int) -> int | None:
+    vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+    if not vertical:
+        return None
+    return resolve_knowledge_vertical_id(knowledge_db, vertical.name)
+
+
+def _brand_maps(
+    knowledge_db: Session,
+    vertical_id: int | None,
+    db: Session,
+    legacy_vertical_id: int,
+) -> Tuple[Dict[str, str], Dict[str, str]]:
+    if not vertical_id:
+        return _legacy_brand_maps(db, legacy_vertical_id)
+    return _canonical_brand_map(knowledge_db, vertical_id), _brand_alias_map(knowledge_db, vertical_id)
+
+
+def _product_maps(
+    knowledge_db: Session,
+    vertical_id: int | None,
+    db: Session,
+    legacy_vertical_id: int,
+) -> Tuple[Dict[str, str], Dict[str, str]]:
+    if not vertical_id:
+        return _legacy_product_maps(db, legacy_vertical_id)
+    return _canonical_product_map(knowledge_db, vertical_id), _product_alias_map(knowledge_db, vertical_id)
+
+
+def _canonical_brand_map(knowledge_db: Session, vertical_id: int) -> Dict[str, str]:
+    rows = knowledge_db.query(KnowledgeBrand).filter(
+        KnowledgeBrand.vertical_id == vertical_id
+    ).all()
+    return {r.canonical_name.casefold(): r.canonical_name for r in rows if r.canonical_name}
+
+
+def _brand_alias_map(knowledge_db: Session, vertical_id: int) -> Dict[str, str]:
+    rows = knowledge_db.query(KnowledgeBrandAlias).join(KnowledgeBrand).filter(
+        KnowledgeBrand.vertical_id == vertical_id
+    ).all()
+    return {r.alias.casefold(): r.brand.canonical_name for r in rows if r.alias and r.brand}
+
+
+def _canonical_product_map(knowledge_db: Session, vertical_id: int) -> Dict[str, str]:
+    rows = knowledge_db.query(KnowledgeProduct).filter(
+        KnowledgeProduct.vertical_id == vertical_id
+    ).all()
+    return {r.canonical_name.casefold(): r.canonical_name for r in rows if r.canonical_name}
+
+
+def _product_alias_map(knowledge_db: Session, vertical_id: int) -> Dict[str, str]:
+    rows = knowledge_db.query(KnowledgeProductAlias).join(KnowledgeProduct).filter(
+        KnowledgeProduct.vertical_id == vertical_id
+    ).all()
+    return {r.alias.casefold(): r.product.canonical_name for r in rows if r.alias and r.product}
+
+
+def _legacy_brand_maps(db: Session, vertical_id: int) -> Tuple[Dict[str, str], Dict[str, str]]:
+    return _legacy_canonical_brand_map(db, vertical_id), _legacy_brand_alias_map(db, vertical_id)
+
+
+def _legacy_product_maps(db: Session, vertical_id: int) -> Tuple[Dict[str, str], Dict[str, str]]:
+    return _legacy_canonical_product_map(db, vertical_id), _legacy_product_alias_map(db, vertical_id)
+
+
+def _legacy_canonical_brand_map(db: Session, vertical_id: int) -> Dict[str, str]:
     rows = db.query(CanonicalBrand).filter(CanonicalBrand.vertical_id == vertical_id).all()
     return {r.canonical_name.casefold(): r.canonical_name for r in rows if r.canonical_name}
 
 
-def _brand_alias_map(db: Session, vertical_id: int) -> Dict[str, str]:
+def _legacy_brand_alias_map(db: Session, vertical_id: int) -> Dict[str, str]:
     rows = db.query(BrandAlias).join(CanonicalBrand).filter(CanonicalBrand.vertical_id == vertical_id).all()
     return {r.alias.casefold(): r.canonical_brand.canonical_name for r in rows if r.alias and r.canonical_brand}
 
 
-def _canonical_product_map(db: Session, vertical_id: int) -> Dict[str, str]:
+def _legacy_canonical_product_map(db: Session, vertical_id: int) -> Dict[str, str]:
     rows = db.query(CanonicalProduct).filter(CanonicalProduct.vertical_id == vertical_id).all()
     return {r.canonical_name.casefold(): r.canonical_name for r in rows if r.canonical_name}
 
 
-def _product_alias_map(db: Session, vertical_id: int) -> Dict[str, str]:
+def _legacy_product_alias_map(db: Session, vertical_id: int) -> Dict[str, str]:
     rows = db.query(ProductAlias).join(CanonicalProduct).filter(CanonicalProduct.vertical_id == vertical_id).all()
     return {r.alias.casefold(): r.canonical_product.canonical_name for r in rows if r.alias and r.canonical_product}
 

@@ -15,6 +15,7 @@ from models.domain import (
     ValidationCandidate,
     ValidationStatus,
 )
+from models.knowledge_domain import KnowledgeBrand, KnowledgeBrandAlias, KnowledgeVertical
 from services.entity_consolidation import (
     ConsolidationResult,
     MergeCandidate,
@@ -34,6 +35,7 @@ from services.entity_consolidation import (
     validate_candidate,
 )
 from services.brand_recognition.consolidation_service import normalize_brands_batch
+from services.knowledge_session import knowledge_session
 
 
 class TestNormalizeForComparison:
@@ -209,6 +211,41 @@ class TestApplyBrandMerges:
         names = [c.canonical_name for c in canonicals]
         assert "Toyota" in names
         assert "Honda" in names
+
+    def test_merges_brands_into_knowledge_db(self, db_session: Session):
+        vertical = Vertical(name="Knowledge Cars")
+        db_session.add(vertical)
+        db_session.flush()
+
+        mentions = {"Volkswagen": 5, "VW": 3}
+        candidates = [
+            MergeCandidate(
+                source_name="VW",
+                target_name="Volkswagen",
+                similarity=0.9,
+                entity_type=EntityType.BRAND,
+            )
+        ]
+
+        apply_brand_merges(db_session, vertical.id, mentions, candidates)
+        db_session.commit()
+
+        with knowledge_session() as knowledge_db:
+            knowledge_vertical = knowledge_db.query(KnowledgeVertical).filter(
+                KnowledgeVertical.name == "Knowledge Cars"
+            ).first()
+            assert knowledge_vertical is not None
+            brand = knowledge_db.query(KnowledgeBrand).filter(
+                KnowledgeBrand.vertical_id == knowledge_vertical.id,
+                KnowledgeBrand.canonical_name == "Volkswagen",
+            ).first()
+            assert brand is not None
+            assert brand.mention_count == 8
+            alias = knowledge_db.query(KnowledgeBrandAlias).filter(
+                KnowledgeBrandAlias.brand_id == brand.id,
+                KnowledgeBrandAlias.alias == "VW",
+            ).first()
+            assert alias is not None
 
 
 class TestQwenCanonicalGroups:
