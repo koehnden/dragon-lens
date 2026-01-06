@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import List
 
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 
 import json
 
+from config import settings
 from models import (
     Brand,
     BrandMention,
@@ -20,7 +22,7 @@ from models import (
     Vertical,
 )
 from models.database import SessionLocal
-from models.domain import PromptLanguage, RunStatus, Sentiment
+from models.domain import LLMRoute, RunStatus, Sentiment
 from models.db_retry import commit_with_retry, flush_with_retry
 from services.answer_reuse import find_reusable_answer
 from services.brand_discovery import discover_brands_and_products
@@ -35,6 +37,7 @@ from services.metrics_service import calculate_and_save_metrics
 from services.pricing import calculate_cost
 from services.remote_llms import LLMRouter
 from workers.celery_app import celery_app
+from workers.llm_parallel import LLMRequest, LLMResult, fetch_llm_answers_parallel
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,59 @@ def _get_or_create_event_loop():
 def _run_async(coro):
     loop = _get_or_create_event_loop()
     return loop.run_until_complete(coro)
+
+
+@dataclass(frozen=True)
+class _PromptWorkItem:
+    prompt: Prompt
+    prompt_text_zh: str
+    prompt_text_en: str | None
+    existing_answer: LLMAnswer | None
+    reusable_answer: LLMAnswer | None
+
+
+def _llm_fetch_concurrency(route: LLMRoute) -> int:
+    if not settings.parallel_llm_enabled:
+        return 1
+    if route == LLMRoute.LOCAL:
+        return max(1, settings.local_llm_concurrency)
+    return max(1, settings.remote_llm_concurrency)
+
+
+def _prompt_text_zh(prompt: Prompt, translator: TranslaterService) -> str | None:
+    if prompt.text_zh:
+        return prompt.text_zh
+    if not prompt.text_en:
+        return None
+    logger.info(f"Translating English prompt to Chinese: {prompt.text_en[:50]}...")
+    return translator.translate_text_sync(prompt.text_en, "English", "Chinese")
+
+
+def _prompt_work_items(
+    db: Session,
+    run: Run,
+    prompts: list[Prompt],
+    translator: TranslaterService,
+) -> tuple[list[_PromptWorkItem], list[LLMRequest]]:
+    items: list[_PromptWorkItem] = []
+    requests: list[LLMRequest] = []
+    for prompt in prompts:
+        prompt_text_zh = _prompt_text_zh(prompt, translator)
+        if not prompt_text_zh:
+            logger.warning(f"Prompt {prompt.id} has no text, skipping")
+            continue
+        existing = db.query(LLMAnswer).filter(LLMAnswer.run_id == run.id, LLMAnswer.prompt_id == prompt.id).first()
+        reusable = None if existing else find_reusable_answer(db, run, prompt_text_zh=prompt_text_zh, prompt_text_en=prompt.text_en)
+        items.append(_PromptWorkItem(prompt, prompt_text_zh, prompt.text_en, existing, reusable))
+        if not existing and not reusable:
+            requests.append(LLMRequest(prompt.id, prompt_text_zh))
+    return items, requests
+
+
+def _raise_on_llm_errors(results: list[LLMResult]) -> None:
+    errors = [r.prompt_id for r in results if r.error]
+    if errors:
+        raise RuntimeError(f"LLM query failed for prompt_ids={errors}")
 
 
 class DatabaseTask(Task):
@@ -100,79 +156,72 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
         from services.ollama import OllamaService
         ollama_service = OllamaService()
 
-        for prompt in prompts:
+        work_items, llm_requests = _prompt_work_items(self.db, run, prompts, translator)
+        concurrency = _llm_fetch_concurrency(resolution.route)
+        logger.info(f"LLM parallel fetch: enabled={settings.parallel_llm_enabled}, concurrency={concurrency}, prompts={len(llm_requests)}")
+
+        async def _query_fn(prompt_zh: str):
+            return await llm_router.query_with_resolution(resolution, prompt_zh)
+
+        llm_results_by_prompt_id: dict[int, LLMResult] = {}
+        if llm_requests:
+            if concurrency > 1 and len(llm_requests) > 1:
+                llm_results = _run_async(fetch_llm_answers_parallel(llm_requests, _query_fn, concurrency))
+                _raise_on_llm_errors(llm_results)
+                llm_results_by_prompt_id = {r.prompt_id: r for r in llm_results}
+            else:
+                for req in llm_requests:
+                    answer_zh, tokens_in, tokens_out, latency = _run_async(_query_fn(req.prompt_text_zh))
+                    llm_results_by_prompt_id[req.prompt_id] = LLMResult(
+                        prompt_id=req.prompt_id,
+                        answer_zh=answer_zh,
+                        tokens_in=tokens_in,
+                        tokens_out=tokens_out,
+                        latency=latency,
+                    )
+
+        for item in work_items:
+            prompt = item.prompt
             logger.info(f"Processing prompt {prompt.id}")
 
-            prompt_text_zh = prompt.text_zh
-            prompt_text_en = prompt.text_en
+            llm_answer = None
+            answer_zh = ""
+            answer_en = None
+            tokens_in = 0
+            tokens_out = 0
+            latency = 0.0
+            cost_estimate = 0.0
 
-            if not prompt_text_zh and prompt_text_en:
-                logger.info(f"Translating English prompt to Chinese: {prompt_text_en[:50]}...")
-                prompt_text_zh = translator.translate_text_sync(prompt_text_en, "English", "Chinese")
-                logger.info(f"Translated to Chinese: {prompt_text_zh[:50]}...")
-
-            if not prompt_text_zh:
-                logger.warning(f"Prompt {prompt.id} has no text, skipping")
-                continue
-
-            existing_answer = (
-                self.db.query(LLMAnswer)
-                .filter(LLMAnswer.run_id == run_id, LLMAnswer.prompt_id == prompt.id)
-                .first()
-            )
-
-            if existing_answer:
-                logger.info(f"Found existing answer for prompt {prompt.id}, reusing for extraction")
-                llm_answer = existing_answer
-                answer_zh = existing_answer.raw_answer_zh
-
-                self.db.query(BrandMention).filter(
-                    BrandMention.llm_answer_id == existing_answer.id
-                ).delete()
-                self.db.query(ProductMention).filter(
-                    ProductMention.llm_answer_id == existing_answer.id
-                ).delete()
+            if item.existing_answer:
+                llm_answer = item.existing_answer
+                answer_zh = llm_answer.raw_answer_zh
+                self.db.query(BrandMention).filter(BrandMention.llm_answer_id == llm_answer.id).delete()
+                self.db.query(ProductMention).filter(ProductMention.llm_answer_id == llm_answer.id).delete()
                 flush_with_retry(self.db)
-
+            elif item.reusable_answer:
+                reusable = item.reusable_answer
+                answer_zh = reusable.raw_answer_zh
+                answer_en = reusable.raw_answer_en
+                tokens_in = reusable.tokens_in or 0
+                tokens_out = reusable.tokens_out or 0
+                latency = reusable.latency or 0.0
+                cost_estimate = reusable.cost_estimate or 0.0
             else:
-                reusable = find_reusable_answer(
-                    self.db, run,
-                    prompt_text_zh=prompt_text_zh,
-                    prompt_text_en=prompt_text_en,
-                )
-                if reusable:
-                    logger.info(f"Reusing answer from previous run for prompt {prompt.id}")
-                    answer_zh = reusable.raw_answer_zh
-                    answer_en = reusable.raw_answer_en
-                    tokens_in = reusable.tokens_in
-                    tokens_out = reusable.tokens_out
-                    latency = reusable.latency
-                    cost_estimate = reusable.cost_estimate
-                else:
-                    logger.info(f"Querying {provider}/{model_name} with prompt: {prompt_text_zh[:100]}...")
-                    answer_zh, tokens_in, tokens_out, latency = _run_async(
-                        llm_router.query_with_resolution(resolution, prompt_text_zh)
-                    )
-                    logger.info(f"Received answer: {answer_zh[:100]}...")
+                result = llm_results_by_prompt_id.get(prompt.id)
+                if not result:
+                    raise RuntimeError(f"Missing LLM result for prompt {prompt.id}")
+                answer_zh = result.answer_zh
+                tokens_in = result.tokens_in
+                tokens_out = result.tokens_out
+                latency = result.latency
+                cost_estimate = calculate_cost(provider, model_name, tokens_in, tokens_out, route=resolution.route)
 
-                    answer_en = None
-                    if answer_zh:
-                        logger.info("Translating answer to English...")
-                        answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English")
-                        logger.info(f"Translated answer: {answer_en[:100]}...")
-
-                    cost_estimate = calculate_cost(
-                        provider,
-                        model_name,
-                        tokens_in,
-                        tokens_out,
-                        route=resolution.route,
-                    )
-
+            if not llm_answer:
                 answer_route = resolution.route
-                if reusable and reusable.route:
-                    answer_route = reusable.route
-
+                if item.reusable_answer and item.reusable_answer.route:
+                    answer_route = item.reusable_answer.route
+                if answer_zh and not answer_en and not item.reusable_answer:
+                    answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English")
                 llm_answer = LLMAnswer(
                     run_id=run_id,
                     prompt_id=prompt.id,
