@@ -52,5 +52,9 @@ class Settings(BaseSettings):
 
     encryption_secret_key: str = "ENCRYPTION_SECRET_KEY_NOT_SET_PLEASE_SET_IN_ENV"
 
+    parallel_llm_enabled: bool = True
+    remote_llm_concurrency: int = 3
+    local_llm_concurrency: int = 1
+
 
 settings = Settings()
