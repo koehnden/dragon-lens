@@ -243,7 +243,10 @@ async def _translate_entity_batch(
     user_id = "translation/entity_name_en_batch_retry_user_prompt" if retry else "translation/entity_name_en_batch_user_prompt"
     prompt = load_prompt(user_id, vertical_name=vertical_name, vertical_description=vertical_description or "", items_json=items_json)
     system_prompt = load_prompt(sys_id)
-    response = await service._call_ollama(model=service.translation_model, prompt=prompt, system_prompt=system_prompt, temperature=0.1)
+    try:
+        response = await service._call_ollama(model=service.translation_model, prompt=prompt, system_prompt=system_prompt, temperature=0.1)
+    except Exception:
+        return {}
     parsed = _json_array_from_text(response)
     if not parsed:
         return {}
