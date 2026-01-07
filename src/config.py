@@ -60,5 +60,8 @@ class Settings(BaseSettings):
     fail_if_failed_prompts_gt: int = 5
     fail_if_failed_rate_gt: float = 0.2
 
+    batch_translation_enabled: bool = True
+    batch_translation_max_size: int = 20
+
 
 settings = Settings()

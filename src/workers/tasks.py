@@ -348,24 +348,28 @@ def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reex
             self.db.add(debug_record)
 
         discovered_products = discover_and_store_products(self.db, run.vertical_id, answer_zh, all_brands)
-        _create_product_mentions(
-            self.db,
-            answer,
-            discovered_products,
-            answer_zh,
-            translator,
-            all_brands,
-            ollama_service,
-        )
 
         brand_names = [b.display_name for b in all_brands]
         brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
-        mentions = _run_async(ollama_service.extract_brands(answer_zh, brand_names, brand_aliases))
+        brand_mentions = _run_async(ollama_service.extract_brands(answer_zh, brand_names, brand_aliases))
 
-        for mention_data in mentions:
+        product_names, product_aliases = _products_to_variants(discovered_products)
+        brand_names_for_products, brand_aliases_for_products = _brands_to_variants(all_brands)
+        product_mentions = _run_async(
+            ollama_service.extract_products(
+                answer_zh, product_names, product_aliases, brand_names_for_products, brand_aliases_for_products
+            )
+        )
+
+        all_snippets, snippet_map = _collect_all_snippets(brand_mentions, product_mentions)
+        if settings.batch_translation_enabled and all_snippets:
+            translated = translator.translate_batch_sync(all_snippets, "Chinese", "English")
+        else:
+            translated = [translator.translate_text_sync(s, "Chinese", "English") for s in all_snippets]
+
+        for mention_data in brand_mentions:
             if not mention_data["mentioned"]:
                 continue
-
             brand = all_brands[mention_data["brand_index"]]
             sentiment_str = "neutral"
             if mention_data["snippets"]:
@@ -373,7 +377,7 @@ def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reex
             sentiment = Sentiment.POSITIVE if sentiment_str == "positive" else (
                 Sentiment.NEGATIVE if sentiment_str == "negative" else Sentiment.NEUTRAL
             )
-            en_snippets = [translator.translate_text_sync(s, "Chinese", "English") for s in mention_data["snippets"]]
+            en_snippets = _get_translated_snippets("brand", mention_data["brand_index"], mention_data["snippets"], snippet_map, translated)
             self.db.add(BrandMention(
                 llm_answer_id=llm_answer_id,
                 brand_id=brand.id,
@@ -382,6 +386,25 @@ def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reex
                 sentiment=sentiment,
                 evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
             ))
+
+        for mention_data in product_mentions:
+            if not mention_data["mentioned"] or mention_data["rank"] is None:
+                continue
+            product = discovered_products[mention_data["product_index"]]
+            sentiment_str = "neutral"
+            if mention_data["snippets"]:
+                sentiment_str = _run_async(ollama_service.classify_sentiment(mention_data["snippets"][0]))
+            sentiment = _map_sentiment(sentiment_str)
+            en_snippets = _get_translated_snippets("product", mention_data["product_index"], mention_data["snippets"], snippet_map, translated)
+            self.db.add(ProductMention(
+                llm_answer_id=llm_answer_id,
+                product_id=product.id,
+                mentioned=True,
+                rank=mention_data["rank"],
+                sentiment=sentiment,
+                evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
+            ))
+        flush_with_retry(self.db)
 
         commit_with_retry(self.db)
         return _extraction_payload(payload, True, "extraction", None)
@@ -671,45 +694,42 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             )
             logger.info(f"Found {len(discovered_products)} products")
 
-            _create_product_mentions(
-                self.db,
-                llm_answer,
-                discovered_products,
-                answer_zh,
-                translator,
-                all_brands,
-                ollama_service,
-            )
-
             brand_names = [b.display_name for b in all_brands]
             brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
 
             logger.info(f"Extracting brand mentions for {len(all_brands)} brands...")
-            mentions = _run_async(
+            brand_mentions_data = _run_async(
                 ollama_service.extract_brands(answer_zh, brand_names, brand_aliases)
             )
 
-            for mention_data in mentions:
+            product_names, product_aliases = _products_to_variants(discovered_products)
+            brand_names_for_products, brand_aliases_for_products = _brands_to_variants(all_brands)
+            product_mentions_data = _run_async(
+                ollama_service.extract_products(
+                    answer_zh, product_names, product_aliases, brand_names_for_products, brand_aliases_for_products
+                )
+            )
+
+            all_snippets, snippet_map = _collect_all_snippets(brand_mentions_data, product_mentions_data)
+            if settings.batch_translation_enabled and all_snippets:
+                logger.info(f"Batch translating {len(all_snippets)} snippets...")
+                translated = translator.translate_batch_sync(all_snippets, "Chinese", "English")
+            else:
+                translated = [translator.translate_text_sync(s, "Chinese", "English") for s in all_snippets]
+
+            for mention_data in brand_mentions_data:
                 if not mention_data["mentioned"]:
                     continue
-
                 brand = all_brands[mention_data["brand_index"]]
-
                 sentiment_str = "neutral"
                 if mention_data["snippets"]:
                     snippet = mention_data["snippets"][0]
                     sentiment_str = _run_async(ollama_service.classify_sentiment(snippet))
                     logger.info(f"Brand {brand.display_name} sentiment: {sentiment_str}")
-
                 sentiment = Sentiment.POSITIVE if sentiment_str == "positive" else (
                     Sentiment.NEGATIVE if sentiment_str == "negative" else Sentiment.NEUTRAL
                 )
-
-                en_snippets = []
-                for snippet in mention_data["snippets"]:
-                    en_snippet = translator.translate_text_sync(snippet, "Chinese", "English")
-                    en_snippets.append(en_snippet)
-
+                en_snippets = _get_translated_snippets("brand", mention_data["brand_index"], mention_data["snippets"], snippet_map, translated)
                 mention = BrandMention(
                     llm_answer_id=llm_answer.id,
                     brand_id=brand.id,
@@ -719,6 +739,25 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                     evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
                 )
                 self.db.add(mention)
+
+            for mention_data in product_mentions_data:
+                if not mention_data["mentioned"] or mention_data["rank"] is None:
+                    continue
+                product = discovered_products[mention_data["product_index"]]
+                sentiment_str = "neutral"
+                if mention_data["snippets"]:
+                    sentiment_str = _run_async(ollama_service.classify_sentiment(mention_data["snippets"][0]))
+                sentiment = _map_sentiment(sentiment_str)
+                en_snippets = _get_translated_snippets("product", mention_data["product_index"], mention_data["snippets"], snippet_map, translated)
+                self.db.add(ProductMention(
+                    llm_answer_id=llm_answer.id,
+                    product_id=product.id,
+                    mentioned=True,
+                    rank=mention_data["rank"],
+                    sentiment=sentiment,
+                    evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
+                ))
+            flush_with_retry(self.db)
 
             commit_with_retry(self.db)
 
@@ -928,4 +967,44 @@ def _translate_snippets(snippets: List[str], translator) -> List[str]:
     for snippet in snippets:
         en_snippet = translator.translate_text_sync(snippet, "Chinese", "English")
         en_snippets.append(en_snippet)
+    return en_snippets
+
+
+def _collect_all_snippets(
+    brand_mentions: list[dict],
+    product_mentions: list[dict],
+) -> tuple[list[str], dict[tuple[str, int, int], int]]:
+    all_snippets: list[str] = []
+    snippet_map: dict[tuple[str, int, int], int] = {}
+    for mention_data in brand_mentions:
+        if not mention_data.get("mentioned"):
+            continue
+        brand_idx = mention_data["brand_index"]
+        for j, snippet in enumerate(mention_data.get("snippets", [])):
+            snippet_map[("brand", brand_idx, j)] = len(all_snippets)
+            all_snippets.append(snippet)
+    for mention_data in product_mentions:
+        if not mention_data.get("mentioned") or mention_data.get("rank") is None:
+            continue
+        product_idx = mention_data["product_index"]
+        for j, snippet in enumerate(mention_data.get("snippets", [])):
+            snippet_map[("product", product_idx, j)] = len(all_snippets)
+            all_snippets.append(snippet)
+    return all_snippets, snippet_map
+
+
+def _get_translated_snippets(
+    entity_type: str,
+    entity_idx: int,
+    zh_snippets: list[str],
+    snippet_map: dict[tuple[str, int, int], int],
+    translated: list[str],
+) -> list[str]:
+    en_snippets = []
+    for j in range(len(zh_snippets)):
+        pos = snippet_map.get((entity_type, entity_idx, j))
+        if pos is not None and pos < len(translated):
+            en_snippets.append(translated[pos])
+        else:
+            en_snippets.append(zh_snippets[j])
     return en_snippets
