@@ -18,6 +18,13 @@ class DummyOllama:
         return self._first
 
 
+class FailingOllama:
+    translation_model = "qwen"
+
+    async def _call_ollama(self, model: str, prompt: str, system_prompt: str, temperature: float = 0.1) -> str:
+        raise RuntimeError("ollama down")
+
+
 @pytest.mark.asyncio
 async def test_translate_entities_to_english_batch_success_no_retry():
     first = '[{"type":"brand","name":"比亚迪","english":"BYD"},{"type":"product","name":"宋PLUS DM-i","english":"Song Plus DM-i"}]'
@@ -46,3 +53,12 @@ async def test_translate_entities_to_english_batch_retries_missing_or_invalid():
     assert mapping[("brand", "大众")] == "Volkswagen"
     assert len(ollama.calls) == 2
 
+
+@pytest.mark.asyncio
+async def test_translate_entities_to_english_batch_ignores_ollama_errors():
+    translator = TranslaterService(FailingOllama())
+    items = [{"type": "brand", "name": "比亚迪"}]
+
+    mapping = await translator.translate_entities_to_english_batch(items, "cars", "car brands and models")
+
+    assert mapping == {}
