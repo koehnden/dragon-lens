@@ -178,6 +178,11 @@ def _migrate_product_brand_mapping_table(connection, inspector):
 
 
 def init_db() -> None:
+    if not is_sqlite_url(settings.database_url):
+        from models.migrations import upgrade_db
+
+        upgrade_db()
+        return
     with engine.begin() as connection:
         inspector = inspect(connection)
         

@@ -1,4 +1,22 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dragonlens-postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dragonlens}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dragonlens}
+      POSTGRES_DB: ${POSTGRES_DB:-dragonlens}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dragonlens} -d ${POSTGRES_DB:-dragonlens}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     container_name: dragonlens-redis
@@ -15,5 +33,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres_data:
+    driver: local
   redis_data:
     driver: local

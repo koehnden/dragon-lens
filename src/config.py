@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     app_name: str = "DragonLens"
     debug: bool = False
 
-    database_url: str = "sqlite:///./dragonlens.db"
+    database_url: str = "postgresql+psycopg://dragonlens:dragonlens@localhost:5432/dragonlens"
     knowledge_database_url: str = "sqlite:///./data/knowledge.db"
 
     redis_url: str = "redis://localhost:6379/0"
