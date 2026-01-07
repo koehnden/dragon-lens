@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 from typing import TYPE_CHECKING
 
@@ -9,6 +10,7 @@ if TYPE_CHECKING:
 
 
 MAX_ENTITY_TRANSLATION_LENGTH = 50
+MAX_ENTITY_ENGLISH_NAME_LENGTH = 30
 
 
 def has_latin_letters(text: str) -> bool:
@@ -118,6 +120,19 @@ class TranslaterService:
             ollama_service = OllamaService()
         self.ollama = ollama_service
 
+    async def translate_entities_to_english_batch(
+        self,
+        items: list[dict],
+        vertical_name: str,
+        vertical_description: str | None,
+    ) -> dict[tuple[str, str], str]:
+        results = await _translate_entity_batch(self.ollama, items, vertical_name, vertical_description, retry=False)
+        missing = [i for i in items if (i["type"], i["name"]) not in results]
+        if not missing:
+            return results
+        retry_results = await _translate_entity_batch(self.ollama, missing, vertical_name, vertical_description, retry=True)
+        return {**results, **retry_results}
+
     async def translate_entity(self, name: str) -> str:
         if has_latin_letters(name):
             return name
@@ -184,3 +199,60 @@ async def _translate_with_guardrails(
     if is_entity:
         cleaned = _clean_entity_translation(cleaned, fallback)
     return cleaned or fallback
+
+
+def _is_valid_english_entity_name(name: str | None) -> bool:
+    if not name:
+        return False
+    cleaned = name.strip()
+    if not cleaned or len(cleaned) > MAX_ENTITY_ENGLISH_NAME_LENGTH:
+        return False
+    if has_chinese_characters(cleaned):
+        return False
+    if any(c in cleaned for c in ["(", ")", "\n", "\r", ":", "："]):
+        return False
+    return True
+
+
+def _json_array_from_text(text: str) -> list[dict] | None:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    start = raw.find("[")
+    end = raw.rfind("]")
+    if start < 0 or end < 0 or end <= start:
+        return None
+    try:
+        data = json.loads(raw[start : end + 1])
+    except Exception:
+        return None
+    if isinstance(data, list):
+        return [d for d in data if isinstance(d, dict)]
+    return None
+
+
+async def _translate_entity_batch(
+    service: "OllamaService",
+    items: list[dict],
+    vertical_name: str,
+    vertical_description: str | None,
+    retry: bool,
+) -> dict[tuple[str, str], str]:
+    items_json = json.dumps(items, ensure_ascii=False)
+    sys_id = "translation/entity_name_en_batch_retry_system_prompt" if retry else "translation/entity_name_en_batch_system_prompt"
+    user_id = "translation/entity_name_en_batch_retry_user_prompt" if retry else "translation/entity_name_en_batch_user_prompt"
+    prompt = load_prompt(user_id, vertical_name=vertical_name, vertical_description=vertical_description or "", items_json=items_json)
+    system_prompt = load_prompt(sys_id)
+    response = await service._call_ollama(model=service.translation_model, prompt=prompt, system_prompt=system_prompt, temperature=0.1)
+    parsed = _json_array_from_text(response)
+    if not parsed:
+        return {}
+    out: dict[tuple[str, str], str] = {}
+    for item in parsed:
+        t = (item.get("type") or "").strip()
+        name = (item.get("name") or "").strip()
+        english = item.get("english")
+        if not t or not name or not _is_valid_english_entity_name(english):
+            continue
+        out[(t, name)] = str(english).strip()
+    return out
