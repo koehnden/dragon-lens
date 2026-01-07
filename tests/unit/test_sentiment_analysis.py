@@ -56,7 +56,9 @@ def test_erlangshen_sentiment_service_initialization(mock_transformers):
         "text-classification",
         model=mock_model_on_cpu,
         tokenizer=mock_tokenizer_instance,
-        device=torch.device("cpu")
+        device=torch.device("cpu"),
+        truncation=True,
+        max_length=512,
     )
 
 def test_classify_sentiment_positive(mock_transformers):
@@ -490,4 +492,51 @@ def test_non_list_snippet_max_50_chars():
 
     honda_mention = mentions[0]
     snippet = honda_mention["snippets"][0]
+    assert len(snippet) <= 52
+
+
+def test_truncate_list_item_short_item():
+    from services.brand_recognition import _truncate_list_item
+
+    item = "奔驰GLE非常好"
+    result = _truncate_list_item(item, "奔驰", max_length=50)
+    assert result == item
+
+
+def test_truncate_list_item_long_item():
+    from services.brand_recognition import _truncate_list_item
+
+    item = "这是一个很长的列表项，包含奔驰品牌，还有很多其他描述性文字用于测试截断功能"
+    result = _truncate_list_item(item, "奔驰", max_length=30)
+    assert len(result) <= 30
+    assert "奔驰" in result
+
+
+def test_truncate_list_item_brand_not_found():
+    from services.brand_recognition import _truncate_list_item
+
+    item = "这是一个很长的列表项，包含很多描述性文字用于测试截断功能但没有品牌"
+    result = _truncate_list_item(item, "奔驰", max_length=20)
+    assert len(result) <= 20
+    assert result == item[:20].strip()
+
+
+def test_list_snippet_truncated_for_long_table_rows():
+    from services.ollama import OllamaService
+    from unittest.mock import AsyncMock
+
+    ollama_service = OllamaService()
+    ollama_service._call_ollama = AsyncMock(return_value="")
+
+    long_table_row = "1. 奔驰GLE | 指导价50-80万 | " + "x" * 200
+    brand_names = ["奔驰"]
+    brand_aliases = [[]]
+
+    mentions = asyncio.run(
+        ollama_service.extract_brands(long_table_row, brand_names, brand_aliases)
+    )
+
+    benz_mention = mentions[0]
+    assert benz_mention["mentioned"] is True
+    snippet = benz_mention["snippets"][0]
     assert len(snippet) <= 52

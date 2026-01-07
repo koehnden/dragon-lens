@@ -32,7 +32,9 @@ class ErlangshenSentimentService:
                 "text-classification",
                 model=self.model,
                 tokenizer=self.tokenizer,
-                device=torch.device("cpu")
+                device=torch.device("cpu"),
+                truncation=True,
+                max_length=512,
             )
             logger.info("Erlangshen sentiment model loaded successfully")
         except Exception as e:
