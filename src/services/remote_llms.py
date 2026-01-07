@@ -10,6 +10,14 @@ from services.base_llm import BaseLLMService, OpenAICompatibleService
 
 logger = logging.getLogger(__name__)
 
+_OPENROUTER_MODEL_ALIASES = {
+    "MiniMaxAI/MiniMax-M2.1": "minimax/minimax-m2.1",
+}
+
+
+def _normalize_openrouter_model(model_name: str) -> str:
+    return _OPENROUTER_MODEL_ALIASES.get(model_name, model_name)
+
 
 class DeepSeekService(OpenAICompatibleService):
     provider = LLMProvider.DEEPSEEK
@@ -135,7 +143,7 @@ class LLMRouter:
         service = self._get_service(LLMProvider.OPENROUTER)
         if not service.has_api_key():
             raise ValueError("No active openrouter API key found")
-        return LLMResolution(service, model_name, LLMRoute.OPENROUTER)
+        return LLMResolution(service, _normalize_openrouter_model(model_name), LLMRoute.OPENROUTER)
 
     async def _query_local(self, prompt_zh: str, model_name: str) -> tuple[str, int, int, float]:
         from services.ollama import OllamaService

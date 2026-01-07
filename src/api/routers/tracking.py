@@ -156,11 +156,11 @@ async def create_tracking_job(
             message="Tracking job queued for inline processing."
         )
 
-    from workers.tasks import run_vertical_analysis
+    from workers.tasks import start_run
 
     enqueue_message = "Tracking job created successfully. Processing will start shortly."
     try:
-        run_vertical_analysis.delay(vertical.id, job.provider, job.model_name, run.id)
+        start_run.delay(run.id, False)
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.warning(
             "Failed to enqueue vertical analysis for run %s: %s", run.id, exc
@@ -377,10 +377,10 @@ async def reprocess_run(
         asyncio.create_task(_process_run_inline(run.id, vertical.id, engine))
         return {"message": f"Run {run_id} queued for inline reprocessing", "run_id": run_id}
 
-    from workers.tasks import run_vertical_analysis
+    from workers.tasks import start_run
 
     try:
-        run_vertical_analysis.delay(vertical.id, run.provider, run.model_name, run.id)
+        start_run.delay(run.id, True)
         return {"message": f"Run {run_id} queued for reprocessing", "run_id": run_id}
     except Exception as exc:
         logger.warning("Failed to enqueue reprocessing for run %s: %s", run_id, exc)
@@ -523,7 +523,7 @@ def _brand_counts(db: Session, run_id: int) -> dict[int, int]:
     rows = (
         db.query(BrandMention.brand_id, func.count(BrandMention.id))
         .join(LLMAnswer, LLMAnswer.id == BrandMention.llm_answer_id)
-        .filter(LLMAnswer.run_id == run_id, BrandMention.mentioned == True)
+        .filter(LLMAnswer.run_id == run_id, BrandMention.mentioned)
         .group_by(BrandMention.brand_id)
         .all()
     )
@@ -534,7 +534,7 @@ def _product_counts(db: Session, run_id: int) -> dict[int, int]:
     rows = (
         db.query(ProductMention.product_id, func.count(ProductMention.id))
         .join(LLMAnswer, LLMAnswer.id == ProductMention.llm_answer_id)
-        .filter(LLMAnswer.run_id == run_id, ProductMention.mentioned == True)
+        .filter(LLMAnswer.run_id == run_id, ProductMention.mentioned)
         .group_by(ProductMention.product_id)
         .all()
     )

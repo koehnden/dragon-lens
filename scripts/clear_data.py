@@ -5,7 +5,7 @@ import logging
 import sys
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -16,64 +16,109 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _dialect(engine) -> str:
+    return engine.dialect.name
+
+
+def _is_postgres(engine) -> bool:
+    return _dialect(engine) == "postgresql"
+
+
+def _quote_table(name: str) -> str:
+    return f'"{name}"'
+
+
+def _table_names(engine) -> list[str]:
+    return list(inspect(engine).get_table_names())
+
+
+def _tables_in_order(names: list[str], candidates: list[str]) -> list[str]:
+    existing = set(names)
+    return [t for t in candidates if t in existing]
+
+
+def _clear_all_tables_sqlite(session, engine) -> None:
+    tables = _tables_in_order(
+        _table_names(engine),
+        [
+            "daily_metrics",
+            "run_metrics",
+            "brand_mentions",
+            "product_mentions",
+            "extraction_debug",
+            "consolidation_debug",
+            "product_brand_mappings",
+            "llm_answers",
+            "runs",
+            "products",
+            "brands",
+            "prompts",
+            "verticals",
+            "api_keys",
+        ],
+    )
+    for table in tables:
+        logger.info(f"  Deleting from {table}...")
+        session.execute(text(f"DELETE FROM {table}"))
+        count = session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+        logger.info(f"    {table}: {count} rows remaining")
+
+
+def _clear_all_tables_postgres(session, engine) -> None:
+    tables = [t for t in _table_names(engine) if t != "alembic_version"]
+    if not tables:
+        return
+    quoted = ", ".join(_quote_table(t) for t in tables)
+    session.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
+
+
+def _clear_extracted_tables(session, engine) -> None:
+    tables = _tables_in_order(
+        _table_names(engine),
+        [
+            "daily_metrics",
+            "run_metrics",
+            "brand_mentions",
+            "product_mentions",
+            "extraction_debug",
+            "consolidation_debug",
+        ],
+    )
+    for table in tables:
+        logger.info(f"  Deleting from {table}...")
+        session.execute(text(f"DELETE FROM {table}"))
+        count = session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+        logger.info(f"    {table}: {count} rows remaining")
+
+
 def clear_data(clear_prompts_results: bool = False) -> None:
     engine = create_engine(settings.database_url)
     Session = sessionmaker(bind=engine)
     session = Session()
     
     try:
-        session.execute(text("BEGIN"))
         status_mode = _detect_run_status_storage(session)
         
         if clear_prompts_results:
             logger.info("Clearing ALL data including prompt results...")
-            
-            tables = [
-                "daily_metrics",
-                "run_metrics", 
-                "brand_mentions",
-                "product_mentions",
-                "llm_answers",
-                "runs",
-                "products",
-                "brands", 
-                "prompts",
-                "verticals",
-                "api_keys"
-            ]
-            
-            for table in tables:
-                logger.info(f"  Deleting from {table}...")
-                session.execute(text(f"DELETE FROM {table}"))
-                count = session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
-                logger.info(f"    {table}: {count} rows remaining")
+            if _is_postgres(engine):
+                _clear_all_tables_postgres(session, engine)
+            else:
+                _clear_all_tables_sqlite(session, engine)
                 
         else:
             logger.info("Clearing extracted data but keeping prompt results...")
-            
-            tables_to_clear = [
-                "daily_metrics",
-                "run_metrics",
-                "brand_mentions", 
-                "product_mentions"
-            ]
-            
-            for table in tables_to_clear:
-                logger.info(f"  Deleting from {table}...")
-                session.execute(text(f"DELETE FROM {table}"))
-                count = session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
-                logger.info(f"    {table}: {count} rows remaining")
+            _clear_extracted_tables(session, engine)
             
             logger.info("  Resetting run statuses to PENDING...")
-            session.execute(text(_reset_runs_sql(status_mode)))
-            updated = session.execute(text("SELECT changes()")).scalar()
-            logger.info(f"    Updated {updated} runs")
-        
-        session.execute(text("COMMIT"))
+            result = session.execute(text(_reset_runs_sql(status_mode)))
+            logger.info(f"    Updated {result.rowcount or 0} runs")
+
+        session.commit()
         logger.info("✓ Data cleared successfully")
         
     except Exception as e:
-        session.execute(text("ROLLBACK"))
+        session.rollback()
         logger.error(f"✗ Error clearing data: {e}")
         raise
     finally:

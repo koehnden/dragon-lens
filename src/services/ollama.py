@@ -5,16 +5,13 @@ from typing import Optional
 
 import httpx
 
-from src.config import settings
-from src.services.sentiment_analysis import get_sentiment_service
-from src.services.brand_recognition import (
-    is_list_format,
-    split_into_list_items,
-    extract_snippet_with_list_awareness,
-)
-from src.services.mention_ranking import rank_entities
+from config import settings
+from services.brand_recognition import extract_snippet_with_list_awareness
+from services.mention_ranking import rank_entities
+from services.sentiment_analysis import get_sentiment_service
 
 logger = logging.getLogger(__name__)
+
 
 class OllamaService:
     def __init__(self):
@@ -24,7 +21,12 @@ class OllamaService:
         self.ner_model = settings.ollama_model_ner
         self.main_model = settings.ollama_model_main
 
-        self.sentiment_service = get_sentiment_service()
+        self._sentiment_service = None
+
+    def _get_sentiment_service(self):
+        if self._sentiment_service is None:
+            self._sentiment_service = get_sentiment_service()
+        return self._sentiment_service
 
     async def _call_ollama(
         self,
@@ -67,7 +69,7 @@ class OllamaService:
     async def classify_sentiment(self, text_zh: str) -> str:
         if settings.use_erlangshen_sentiment:
             try:
-                sentiment = self.sentiment_service.classify_sentiment(text_zh)
+                sentiment = self._get_sentiment_service().classify_sentiment(text_zh)
                 logger.debug(f"Erlangshen sentiment analysis: {text_zh[:50]}... -> {sentiment}")
                 return sentiment
             except Exception as e:
