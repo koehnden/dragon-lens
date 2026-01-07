@@ -145,18 +145,20 @@ def show():
         2. Sign up or log in
         3. Navigate to API Keys section
         4. Create a new API key
-        
+
         **Pricing (per 1K tokens):**
         - `moonshot-v1-8k`: $0.012 (input & output)
         - `moonshot-v1-32k`: $0.024 (input & output)
         - `moonshot-v1-128k`: $0.06 (input & output)
-        
-        **Models:**
+
+        **Models (direct Moonshot API):**
+        - `kimi-k2-turbo-preview`: Kimi K2 Turbo (recommended for complex prompts)
         - `moonshot-v1-8k`: Standard model with 8K context
         - `moonshot-v1-32k`: Extended context model (32K)
         - `moonshot-v1-128k`: Long context model (128K)
-        
-        **Note:** Kimi integration is now available in V1!
+
+        **Note:** Use `kimi-k2-turbo-preview` for best results with K2.
+        Also available via OpenRouter as `moonshotai/kimi-k2-0905`.
         """)
 
     with st.expander("OpenRouter API"):
@@ -168,8 +170,12 @@ def show():
         4. Create a new API key
 
         **Models:**
+        - `moonshotai/kimi-k2-0905` (Kimi K2 - only available via OpenRouter)
         - `baidu/ernie-4.5-300b-a47b`
+        - `bytedance-seed/seed-1.6`
         - `bytedance-seed/seed-1.6-flash`
+        - `qwen/qwen-2.5-72b-instruct`
+        - `minimax/minimax-m2.1`
         - Any other OpenRouter model ID
 
         **Pricing:** Not available yet for OpenRouter runs in DragonLens.

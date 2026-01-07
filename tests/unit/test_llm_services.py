@@ -153,6 +153,13 @@ class TestLLMRouter:
         assert resolution.model_name == model_name
         assert resolution.route == LLMRoute.OPENROUTER
 
+    def test_resolve_openrouter_normalizes_minimax_model(self, monkeypatch):
+        monkeypatch.setattr(settings, "openrouter_api_key", "test-openrouter")
+        router = LLMRouter()
+        resolution = router.resolve("openrouter", "MiniMaxAI/MiniMax-M2.1")
+        assert resolution.model_name == "minimax/minimax-m2.1"
+        assert resolution.route == LLMRoute.OPENROUTER
+
 
 class TestBaseLLMService:
     def test_is_abstract(self):

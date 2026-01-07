@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from models import Brand, Product, Vertical
+from models import Brand, Vertical
 from services.brand_recognition import extract_entities, ExtractionResult
 
 
@@ -219,18 +219,75 @@ def _get_or_create_discovered_brand(
         display_name = canonical_name
         aliases = {"zh": [], "en": []}
 
-    brand = Brand(
+    return _insert_or_get_brand(
+        db=db,
         vertical_id=vertical_id,
         display_name=display_name,
         original_name=normalized_name,
         translated_name=canonical_name if canonical_name != normalized_name else None,
         aliases=aliases,
-        is_user_input=False,
     )
+
+
+def _insert_or_get_brand(
+    db: Session,
+    vertical_id: int,
+    display_name: str,
+    original_name: str,
+    translated_name: str | None,
+    aliases: dict,
+) -> Brand:
+    existing = db.query(Brand).filter(
+        Brand.vertical_id == vertical_id,
+        func.lower(Brand.display_name) == display_name.lower(),
+    ).first()
+    if existing:
+        return existing
+    _upsert_brand(db, vertical_id, display_name, original_name, translated_name, aliases)
+    existing = db.query(Brand).filter(
+        Brand.vertical_id == vertical_id,
+        func.lower(Brand.display_name) == display_name.lower(),
+    ).first()
+    if existing:
+        return existing
+    brand = Brand(vertical_id=vertical_id, display_name=display_name, original_name=original_name, translated_name=translated_name, aliases=aliases, is_user_input=False)
     db.add(brand)
     db.flush()
-
     return brand
+
+
+def _upsert_brand(
+    db: Session,
+    vertical_id: int,
+    display_name: str,
+    original_name: str,
+    translated_name: str | None,
+    aliases: dict,
+) -> None:
+    if db.get_bind().dialect.name != "postgresql":
+        db.add(Brand(
+            vertical_id=vertical_id,
+            display_name=display_name,
+            original_name=original_name,
+            translated_name=translated_name,
+            aliases=aliases,
+            is_user_input=False,
+        ))
+        db.flush()
+        return
+    from sqlalchemy.dialects.postgresql import insert
+
+    stmt = insert(Brand).values(
+        vertical_id=vertical_id,
+        display_name=display_name,
+        original_name=original_name,
+        translated_name=translated_name,
+        aliases=aliases,
+        is_user_input=False,
+    )
+    stmt = stmt.on_conflict_do_nothing(index_elements=["vertical_id", "display_name"])
+    db.execute(stmt)
+    db.flush()
 
 
 def _canonicalize_brand_name(name: str, vertical: str = "") -> str:

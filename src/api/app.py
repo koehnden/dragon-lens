@@ -7,8 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import api_keys, consolidation, feedback, knowledge, metrics, tracking, verticals
 from config import settings
-from models import init_db
 from models.knowledge_database import init_knowledge_db
+from models.migrations import upgrade_db
 from services.brand_recognition import OLLAMA_EMBEDDING_MODEL, ENABLE_EMBEDDING_CLUSTERING
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
-    init_db()
+    upgrade_db()
     init_knowledge_db()
     if ENABLE_EMBEDDING_CLUSTERING:
         logger.info(f"Using Ollama embedding model: {OLLAMA_EMBEDDING_MODEL}")

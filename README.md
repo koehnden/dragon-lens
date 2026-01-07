@@ -53,11 +53,7 @@ cp .env.example .env
 
 ### Database Migration (Existing DB)
 
-If you already have `dragonlens.db`, add the new `route` columns with:
-
-```bash
-poetry run python scripts/add_route_columns.py
-```
+DragonLens uses PostgreSQL for `DATABASE_URL` by default and applies schema changes via Alembic on API startup.
 
 ### Running All Services
 
@@ -67,6 +63,7 @@ make run
 ```
 
 This will start:
+- **PostgreSQL**: Docker container on port 5432
 - **Redis**: Docker container on port 6379
 - **Ollama**: Local LLM service
 - **FastAPI**: REST API on http://localhost:8000

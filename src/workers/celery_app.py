@@ -1,4 +1,5 @@
 from celery import Celery
+from kombu import Queue
 
 from config import settings
 from models.sqlite_config import is_sqlite_url
@@ -27,6 +28,19 @@ celery_config = {
     "task_soft_time_limit": 3000,
     "worker_prefetch_multiplier": 1,
     "worker_max_tasks_per_child": 100,
+    "task_default_queue": "default",
+    "task_default_exchange": "default",
+    "task_default_routing_key": "default",
+    "task_queues": (
+        Queue("default"),
+        Queue("remote_llm"),
+        Queue("local_llm"),
+        Queue("ollama_extract"),
+    ),
+    "task_routes": {
+        "workers.tasks.start_run": {"queue": "default"},
+        "workers.tasks.finalize_run": {"queue": "default"},
+    },
 }
 
 sqlite_concurrency = _celery_sqlite_concurrency(settings.database_url)

@@ -14,13 +14,14 @@ class Settings(BaseSettings):
     app_name: str = "DragonLens"
     debug: bool = False
 
-    database_url: str = "sqlite:///./dragonlens.db"
+    database_url: str = "postgresql+psycopg://dragonlens:dragonlens@localhost:5432/dragonlens"
     knowledge_database_url: str = "sqlite:///./data/knowledge.db"
 
     redis_url: str = "redis://localhost:6379/0"
 
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
+    celery_queue_name: str = "dragon-lens"
 
     deepseek_api_key: Optional[str] = None
     deepseek_api_base: str = "https://api.deepseek.com/v1"
@@ -41,7 +42,8 @@ class Settings(BaseSettings):
 
     # Erlangshen-Roberta-110M-Sentiment configuration
     erlangshen_sentiment_model: str = "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment"
-    use_erlangshen_sentiment: bool = True  # Set to False to disable Erlangshen and use Qwen only
+    use_erlangshen_sentiment: bool = True
+    sentiment_service_url: Optional[str] = "http://127.0.0.1:8100"
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
@@ -50,6 +52,13 @@ class Settings(BaseSettings):
     streamlit_port: int = 8501
 
     encryption_secret_key: str = "ENCRYPTION_SECRET_KEY_NOT_SET_PLEASE_SET_IN_ENV"
+
+    parallel_llm_enabled: bool = True
+    remote_llm_concurrency: int = 3
+    local_llm_concurrency: int = 1
+
+    fail_if_failed_prompts_gt: int = 5
+    fail_if_failed_rate_gt: float = 0.2
 
 
 settings = Settings()
