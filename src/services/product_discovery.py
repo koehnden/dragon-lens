@@ -1,11 +1,11 @@
 from typing import Dict, List, Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from models import Brand, Product
 from services.brand_recognition import (
     KNOWN_PRODUCTS,
-    GENERIC_TERMS,
     extract_primary_entities_from_list_item,
     is_list_format,
     split_into_list_items,
@@ -193,16 +193,67 @@ def get_or_create_product(
             db.flush()
         return existing
 
-    product = Product(
+    product = _upsert_product(db, vertical_id, display_name, product_name, brand_id)
+    if product:
+        return product
+    try:
+        created = Product(
+            vertical_id=vertical_id,
+            brand_id=brand_id,
+            display_name=display_name,
+            original_name=product_name,
+            is_user_input=False,
+        )
+        db.add(created)
+        db.flush()
+        return created
+    except IntegrityError:
+        db.rollback()
+        existing = (
+            db.query(Product)
+            .filter(Product.vertical_id == vertical_id, Product.display_name == display_name)
+            .first()
+        )
+        if not existing:
+            raise
+        if brand_id and not existing.brand_id:
+            existing.brand_id = brand_id
+            db.flush()
+        return existing
+
+
+def _upsert_product(
+    db: Session,
+    vertical_id: int,
+    display_name: str,
+    original_name: str,
+    brand_id: Optional[int],
+) -> Product | None:
+    if db.get_bind().dialect.name != "postgresql":
+        return None
+    from sqlalchemy.dialects.postgresql import insert
+
+    stmt = insert(Product).values(
         vertical_id=vertical_id,
-        brand_id=brand_id,
         display_name=display_name,
-        original_name=product_name,
+        original_name=original_name,
+        brand_id=brand_id,
         is_user_input=False,
     )
-    db.add(product)
+    stmt = stmt.on_conflict_do_nothing(index_elements=["vertical_id", "display_name"])
+    db.execute(stmt)
     db.flush()
-    return product
+    existing = (
+        db.query(Product)
+        .filter(Product.vertical_id == vertical_id, Product.display_name == display_name)
+        .first()
+    )
+    if not existing:
+        return None
+    if brand_id and not existing.brand_id:
+        existing.brand_id = brand_id
+        db.flush()
+    return existing
 
 
 def link_product_to_brand(db: Session, product_id: int, brand_id: int) -> None:

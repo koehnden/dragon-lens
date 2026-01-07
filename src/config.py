@@ -42,7 +42,8 @@ class Settings(BaseSettings):
 
     # Erlangshen-Roberta-110M-Sentiment configuration
     erlangshen_sentiment_model: str = "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment"
-    use_erlangshen_sentiment: bool = True  # Set to False to disable Erlangshen and use Qwen only
+    use_erlangshen_sentiment: bool = True
+    sentiment_service_url: Optional[str] = "http://127.0.0.1:8100"
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
@@ -55,6 +56,9 @@ class Settings(BaseSettings):
     parallel_llm_enabled: bool = True
     remote_llm_concurrency: int = 3
     local_llm_concurrency: int = 1
+
+    fail_if_failed_prompts_gt: int = 5
+    fail_if_failed_rate_gt: float = 0.2
 
 
 settings = Settings()

@@ -175,7 +175,7 @@ def show():
         - `bytedance-seed/seed-1.6`
         - `bytedance-seed/seed-1.6-flash`
         - `qwen/qwen-2.5-72b-instruct`
-        - `MiniMaxAI/MiniMax-M2.1`
+        - `minimax/minimax-m2.1`
         - Any other OpenRouter model ID
 
         **Pricing:** Not available yet for OpenRouter runs in DragonLens.

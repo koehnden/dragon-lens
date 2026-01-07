@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List
 
-from celery import Task
+from celery import Task, chord, group
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 import json
@@ -123,6 +124,298 @@ class DatabaseTask(Task):
         if self._db is not None:
             self._db.close()
             self._db = None
+
+
+def _prompt_id_list(db: Session, run_id: int) -> list[int]:
+    return [prompt_id for (prompt_id,) in db.query(Prompt.id).filter(Prompt.run_id == run_id).order_by(Prompt.id).all()]
+
+
+def _existing_answer(db: Session, run_id: int, prompt_id: int) -> LLMAnswer | None:
+    return db.query(LLMAnswer).filter(LLMAnswer.run_id == run_id, LLMAnswer.prompt_id == prompt_id).first()
+
+
+def _ensure_prompt_text_zh(prompt: Prompt, translator: TranslaterService) -> str | None:
+    if prompt.text_zh:
+        return prompt.text_zh
+    if not prompt.text_en:
+        return None
+    return translator.translate_text_sync(prompt.text_en, "English", "Chinese")
+
+
+def _answer_payload(
+    run_id: int,
+    prompt_id: int,
+    llm_answer_id: int | None,
+    ok: bool,
+    reused: bool,
+    error: str | None = None,
+) -> dict:
+    return {
+        "run_id": run_id,
+        "prompt_id": prompt_id,
+        "llm_answer_id": llm_answer_id,
+        "ok": ok,
+        "reused": reused,
+        "stage": "answer",
+        "error": error,
+    }
+
+
+def _extraction_payload(payload: dict, ok: bool, stage: str, error: str | None = None) -> dict:
+    return {**payload, "ok": ok, "stage": stage, "error": error}
+
+
+def _failed_prompt_ids(results: list[dict]) -> list[int]:
+    return [int(r.get("prompt_id")) for r in results if not r.get("ok")]
+
+
+def _should_fail_run(results: list[dict]) -> bool:
+    total = max(1, len(results))
+    failed = len(_failed_prompt_ids(results))
+    if failed == 0:
+        return False
+    if failed > settings.fail_if_failed_prompts_gt:
+        return True
+    return failed / total > settings.fail_if_failed_rate_gt
+
+
+def _llm_queue(route: LLMRoute) -> str:
+    return "local_llm" if route == LLMRoute.LOCAL else "remote_llm"
+
+
+@celery_app.task(base=DatabaseTask, bind=True)
+def start_run(self: DatabaseTask, run_id: int, force_reextract: bool = False) -> dict:
+    run = self.db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise ValueError(f"Run {run_id} not found")
+
+    llm_router = LLMRouter(self.db)
+    resolution = llm_router.resolve(run.provider, run.model_name)
+    run.route = resolution.route
+    run.status = RunStatus.IN_PROGRESS
+    run.error_message = None
+    run.completed_at = None
+    commit_with_retry(self.db)
+
+    prompt_ids = _prompt_id_list(self.db, run_id)
+    if not prompt_ids:
+        run.status = RunStatus.FAILED
+        run.error_message = f"No prompts found for run {run_id}"
+        run.completed_at = datetime.utcnow()
+        commit_with_retry(self.db)
+        return {"run_id": run_id, "prompt_count": 0}
+
+    header = []
+    llm_queue = _llm_queue(resolution.route)
+    for prompt_id in prompt_ids:
+        header.append(
+            ensure_llm_answer.s(run_id, prompt_id).set(queue=llm_queue)
+            | ensure_extraction.s(run_id, force_reextract).set(queue="ollama_extract")
+        )
+
+    callback = finalize_run.s(run_id, force_reextract).set(queue="default")
+    chord(group(header))(callback)
+    return {"run_id": run_id, "prompt_count": len(prompt_ids)}
+
+
+@celery_app.task(base=DatabaseTask, bind=True)
+def ensure_llm_answer(self: DatabaseTask, run_id: int, prompt_id: int) -> dict:
+    try:
+        run = self.db.query(Run).filter(Run.id == run_id).first()
+        prompt = self.db.query(Prompt).filter(Prompt.id == prompt_id, Prompt.run_id == run_id).first()
+        if not run or not prompt:
+            return _answer_payload(run_id, prompt_id, None, False, False, "Run or prompt not found")
+
+        existing = _existing_answer(self.db, run_id, prompt_id)
+        if existing:
+            return _answer_payload(run_id, prompt_id, existing.id, True, True)
+
+        translator = TranslaterService()
+        prompt_text_zh = _ensure_prompt_text_zh(prompt, translator)
+        if not prompt_text_zh:
+            return _answer_payload(run_id, prompt_id, None, False, False, "Prompt has no text")
+
+        reusable = find_reusable_answer(self.db, run, prompt_text_zh=prompt_text_zh, prompt_text_en=prompt.text_en)
+        if reusable:
+            return _copy_reused_answer(self.db, run_id, prompt_id, run, reusable)
+
+        llm_router = LLMRouter(self.db)
+        resolution = llm_router.resolve(run.provider, run.model_name)
+        answer_zh, tokens_in, tokens_out, latency = _run_async(
+            llm_router.query_with_resolution(resolution, prompt_text_zh)
+        )
+        answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English") if answer_zh else None
+        cost_estimate = calculate_cost(run.provider, run.model_name, tokens_in, tokens_out, route=resolution.route)
+        llm_answer = LLMAnswer(
+            run_id=run_id,
+            prompt_id=prompt_id,
+            provider=run.provider,
+            model_name=run.model_name,
+            route=resolution.route,
+            raw_answer_zh=answer_zh or "",
+            raw_answer_en=answer_en,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            latency=latency,
+            cost_estimate=cost_estimate,
+        )
+        self.db.add(llm_answer)
+        flush_with_retry(self.db)
+        commit_with_retry(self.db)
+        return _answer_payload(run_id, prompt_id, llm_answer.id, True, False)
+    except IntegrityError:
+        self.db.rollback()
+        existing = _existing_answer(self.db, run_id, prompt_id)
+        if existing:
+            return _answer_payload(run_id, prompt_id, existing.id, True, True)
+        return _answer_payload(run_id, prompt_id, None, False, False, "IntegrityError on llm_answer insert")
+    except Exception as exc:
+        logger.error(f"ensure_llm_answer failed for run={run_id} prompt={prompt_id}: {exc}", exc_info=True)
+        return _answer_payload(run_id, prompt_id, None, False, False, str(exc))
+
+
+def _copy_reused_answer(db: Session, run_id: int, prompt_id: int, run: Run, reusable: LLMAnswer) -> dict:
+    try:
+        llm_answer = LLMAnswer(
+            run_id=run_id,
+            prompt_id=prompt_id,
+            provider=run.provider,
+            model_name=run.model_name,
+            route=reusable.route,
+            raw_answer_zh=reusable.raw_answer_zh,
+            raw_answer_en=reusable.raw_answer_en,
+            tokens_in=reusable.tokens_in,
+            tokens_out=reusable.tokens_out,
+            latency=reusable.latency,
+            cost_estimate=reusable.cost_estimate,
+        )
+        db.add(llm_answer)
+        flush_with_retry(db)
+        commit_with_retry(db)
+        return _answer_payload(run_id, prompt_id, llm_answer.id, True, True)
+    except IntegrityError:
+        db.rollback()
+        existing = _existing_answer(db, run_id, prompt_id)
+        if not existing:
+            return _answer_payload(run_id, prompt_id, None, False, False, "IntegrityError on reused insert")
+        return _answer_payload(run_id, prompt_id, existing.id, True, True)
+
+
+@celery_app.task(base=DatabaseTask, bind=True)
+def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reextract: bool = False) -> dict:
+    if not payload.get("ok") or not payload.get("llm_answer_id"):
+        return _extraction_payload(payload, False, "extraction_skipped", payload.get("error"))
+
+    prompt_id = int(payload["prompt_id"])
+    llm_answer_id = int(payload["llm_answer_id"])
+    try:
+        answer = self.db.query(LLMAnswer).filter(LLMAnswer.id == llm_answer_id).first()
+        run = self.db.query(Run).filter(Run.id == run_id).first()
+        if not answer or not run:
+            return _extraction_payload(payload, False, "extraction", "Run or answer not found")
+
+        if not force_reextract and _has_mentions(self.db, llm_answer_id):
+            return _extraction_payload(payload, True, "extraction_skipped", None)
+
+        self.db.query(BrandMention).filter(BrandMention.llm_answer_id == llm_answer_id).delete()
+        self.db.query(ProductMention).filter(ProductMention.llm_answer_id == llm_answer_id).delete()
+        flush_with_retry(self.db)
+
+        brands = self.db.query(Brand).filter(Brand.vertical_id == run.vertical_id).all()
+        translator = TranslaterService()
+        from services.ollama import OllamaService
+        ollama_service = OllamaService()
+
+        answer_zh = answer.raw_answer_zh or ""
+        all_brands, extraction_result = discover_brands_and_products(answer_zh, run.vertical_id, brands, self.db)
+
+        if extraction_result.debug_info:
+            debug_record = ExtractionDebug(
+                llm_answer_id=llm_answer_id,
+                raw_brands=json.dumps(extraction_result.debug_info.raw_brands, ensure_ascii=False),
+                raw_products=json.dumps(extraction_result.debug_info.raw_products, ensure_ascii=False),
+                rejected_at_light_filter=json.dumps(extraction_result.debug_info.rejected_at_light_filter, ensure_ascii=False),
+                final_brands=json.dumps(extraction_result.debug_info.final_brands, ensure_ascii=False),
+                final_products=json.dumps(extraction_result.debug_info.final_products, ensure_ascii=False),
+                extraction_method="qwen",
+            )
+            self.db.add(debug_record)
+
+        discovered_products = discover_and_store_products(self.db, run.vertical_id, answer_zh, all_brands)
+        _create_product_mentions(
+            self.db,
+            answer,
+            discovered_products,
+            answer_zh,
+            translator,
+            all_brands,
+            ollama_service,
+        )
+
+        brand_names = [b.display_name for b in all_brands]
+        brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
+        mentions = _run_async(ollama_service.extract_brands(answer_zh, brand_names, brand_aliases))
+
+        for mention_data in mentions:
+            if not mention_data["mentioned"]:
+                continue
+
+            brand = all_brands[mention_data["brand_index"]]
+            sentiment_str = "neutral"
+            if mention_data["snippets"]:
+                sentiment_str = _run_async(ollama_service.classify_sentiment(mention_data["snippets"][0]))
+            sentiment = Sentiment.POSITIVE if sentiment_str == "positive" else (
+                Sentiment.NEGATIVE if sentiment_str == "negative" else Sentiment.NEUTRAL
+            )
+            en_snippets = [translator.translate_text_sync(s, "Chinese", "English") for s in mention_data["snippets"]]
+            self.db.add(BrandMention(
+                llm_answer_id=llm_answer_id,
+                brand_id=brand.id,
+                mentioned=True,
+                rank=mention_data["rank"],
+                sentiment=sentiment,
+                evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
+            ))
+
+        commit_with_retry(self.db)
+        return _extraction_payload(payload, True, "extraction", None)
+    except Exception as exc:
+        logger.error(f"ensure_extraction failed for run={run_id} prompt={prompt_id}: {exc}", exc_info=True)
+        return _extraction_payload(payload, False, "extraction", str(exc))
+
+
+def _has_mentions(db: Session, llm_answer_id: int) -> bool:
+    if db.query(BrandMention.id).filter(BrandMention.llm_answer_id == llm_answer_id).first():
+        return True
+    return db.query(ProductMention.id).filter(ProductMention.llm_answer_id == llm_answer_id).first() is not None
+
+
+@celery_app.task(base=DatabaseTask, bind=True)
+def finalize_run(self: DatabaseTask, results: list[dict], run_id: int, force_reextract: bool = False) -> dict:
+    run = self.db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise ValueError(f"Run {run_id} not found")
+
+    failed_ids = _failed_prompt_ids(results)
+    if _should_fail_run(results):
+        run.status = RunStatus.FAILED
+        run.error_message = f"Run failed: failed_prompts={len(failed_ids)} prompt_ids={failed_ids}"
+        run.completed_at = datetime.utcnow()
+        commit_with_retry(self.db)
+        return {"run_id": run_id, "status": "failed", "failed_count": len(failed_ids), "failed_prompt_ids": failed_ids}
+
+    enhanced_result = _run_async(run_enhanced_consolidation(self.db, run_id))
+    _run_async(apply_vertical_gate_to_run(self.db, run_id))
+    consolidate_run(self.db, run_id, normalized_brands=enhanced_result.normalized_brands)
+    _run_async(map_products_to_brands_for_run(self.db, run_id))
+    calculate_and_save_metrics(self.db, run_id)
+
+    run.status = RunStatus.COMPLETED
+    run.completed_at = datetime.utcnow()
+    if failed_ids:
+        run.error_message = f"Completed with warnings: failed_prompts={len(failed_ids)} prompt_ids={failed_ids}"
+    commit_with_retry(self.db)
+    return {"run_id": run_id, "status": "completed", "failed_count": len(failed_ids), "failed_prompt_ids": failed_ids}
 
 
 @celery_app.task(base=DatabaseTask, bind=True)

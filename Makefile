@@ -1,4 +1,4 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-db start-redis start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-db start-redis start-sentiment start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search logs-sentiment
 
 # Default target
 .DEFAULT_GOAL := help
@@ -17,6 +17,8 @@ CELERY_QUEUE_NAME ?= dragon-lens
 CELERY_LOG ?= celery.log
 API_LOG ?= api.log
 STREAMLIT_LOG ?= streamlit.log
+SENTIMENT_LOG ?= sentiment.log
+SENTIMENT_PORT ?= 8100
 
 export API_PORT
 export STREAMLIT_PORT
@@ -226,6 +228,28 @@ start-ollama: ## Start Ollama service (macOS with Homebrew)
 		fi \
 	fi
 
+start-sentiment: ## Start Erlangshen sentiment microservice
+	@echo "$(YELLOW)Starting Sentiment service...$(NC)"
+	@if lsof -nP -tiTCP:$(SENTIMENT_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
+		PID=$$(lsof -nP -tiTCP:$(SENTIMENT_PORT) -sTCP:LISTEN | head -n 1); \
+		echo "$(YELLOW)Port $(SENTIMENT_PORT) is in use (PID $$PID), killing...$(NC)"; \
+		kill -9 $$PID 2>/dev/null || true; \
+		sleep 1; \
+	fi
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run uvicorn services.sentiment_server:app --host 127.0.0.1 --port $(SENTIMENT_PORT) > $(SENTIMENT_LOG) 2>&1 & echo $$! > .sentiment.pid
+	@set -e; \
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+		if curl -fsS http://127.0.0.1:$(SENTIMENT_PORT)/health >/dev/null 2>&1; then \
+			echo "$(GREEN)✓ Sentiment service started on http://127.0.0.1:$(SENTIMENT_PORT)$(NC)"; \
+			echo "  Logs: tail -f $(SENTIMENT_LOG)"; \
+			exit 0; \
+		fi; \
+		sleep 1; \
+	done; \
+	echo "$(RED)✗ Failed to start Sentiment service$(NC)"; \
+	cat $(SENTIMENT_LOG); \
+	exit 1
+
 start-api: check-deps start-db ## Start FastAPI server
 	@echo "$(YELLOW)Starting FastAPI server...$(NC)"
 	@if lsof -nP -tiTCP:$(API_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
@@ -250,7 +274,7 @@ start-api: check-deps start-db ## Start FastAPI server
 
 start-celery: check-deps start-db start-redis ## Start Celery worker
 	@echo "$(YELLOW)Starting Celery worker...$(NC)"
-	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run celery -A workers.celery_app worker --loglevel=info --pool=solo -Q "$${CELERY_QUEUE_NAME:-dragon-lens}" > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run celery -A workers.celery_app worker --loglevel=info --concurrency="$${CELERY_CONCURRENCY:-8}" -Q "default,remote_llm,local_llm,ollama_extract" > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
 	@sleep 2
 	@if [ -f .celery.pid ] && kill -0 $$(cat .celery.pid) 2>/dev/null; then \
 		echo "$(GREEN)✓ Celery worker started$(NC)"; \
@@ -280,12 +304,13 @@ start-streamlit: check-deps ## Start Streamlit UI
 		exit 1; \
 	fi
 
-run: check-deps ## Start all services (Redis, Ollama, API, Celery, Streamlit)
+run: check-deps ## Start all services (Redis, Ollama, Sentiment, API, Celery, Streamlit)
 	@echo "$(GREEN)Starting DragonLens services...$(NC)"
 	@echo ""
 	@$(MAKE) start-db
 	@$(MAKE) start-redis
 	@$(MAKE) start-ollama
+	@$(MAKE) start-sentiment
 	@$(MAKE) start-api
 	@$(MAKE) start-celery
 	@$(MAKE) start-streamlit
@@ -328,6 +353,11 @@ stop: ## Stop all services
 		rm .celery.pid; \
 		echo "$(GREEN)✓ Celery stopped$(NC)"; \
 	fi
+	@if [ -f .sentiment.pid ]; then \
+		kill $$(cat .sentiment.pid) 2>/dev/null || true; \
+		rm .sentiment.pid; \
+		echo "$(GREEN)✓ Sentiment service stopped$(NC)"; \
+	fi
 	@$(MAKE) stop-redis
 	@echo "$(GREEN)✓ All services stopped$(NC)"
 
@@ -356,8 +386,8 @@ test-coverage: check-deps ## Run tests with coverage report
 
 clean: ## Clean up temporary files and logs
 	@echo "$(YELLOW)Cleaning up...$(NC)"
-	@rm -f $(API_LOG) $(CELERY_LOG) $(STREAMLIT_LOG)
-	@rm -f .api.pid .celery.pid .streamlit.pid
+	@rm -f $(API_LOG) $(CELERY_LOG) $(STREAMLIT_LOG) $(SENTIMENT_LOG)
+	@rm -f .api.pid .celery.pid .streamlit.pid .sentiment.pid
 	@rm -rf .pytest_cache
 	@rm -rf htmlcov
 	@rm -rf .coverage
@@ -383,10 +413,11 @@ clear: ## Full reset: kill all workers, flush Redis, clear database data (keep p
 	fi
 	@echo "$(GREEN)✓ Celery processes killed$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Step 2: Killing API and Streamlit...$(NC)"
+	@echo "$(YELLOW)Step 2: Killing API, Streamlit, and Sentiment service...$(NC)"
 	@if [ -f .api.pid ]; then kill -9 $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid; fi
 	@if [ -f .streamlit.pid ]; then kill -9 $$(cat .streamlit.pid) 2>/dev/null || true; rm -f .streamlit.pid; fi
-	@echo "$(GREEN)✓ API and Streamlit stopped$(NC)"
+	@if [ -f .sentiment.pid ]; then kill -9 $$(cat .sentiment.pid) 2>/dev/null || true; rm -f .sentiment.pid; fi
+	@echo "$(GREEN)✓ API, Streamlit, and Sentiment stopped$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 3: Flushing Redis (clearing all queued tasks)...$(NC)"
 	@$(MAKE) --no-print-directory start-redis
@@ -438,10 +469,11 @@ clear-all: ## Clear ALL data including prompt results (LLM answers)
 	fi
 	@echo "$(GREEN)✓ Celery processes killed$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Step 2: Killing API and Streamlit...$(NC)"
+	@echo "$(YELLOW)Step 2: Killing API, Streamlit, and Sentiment service...$(NC)"
 	@if [ -f .api.pid ]; then kill -9 $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid; fi
 	@if [ -f .streamlit.pid ]; then kill -9 $$(cat .streamlit.pid) 2>/dev/null || true; rm -f .streamlit.pid; fi
-	@echo "$(GREEN)✓ API and Streamlit stopped$(NC)"
+	@if [ -f .sentiment.pid ]; then kill -9 $$(cat .sentiment.pid) 2>/dev/null || true; rm -f .sentiment.pid; fi
+	@echo "$(GREEN)✓ API, Streamlit, and Sentiment stopped$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 3: Flushing Redis (clearing all queued tasks)...$(NC)"
 	@$(MAKE) --no-print-directory start-redis
@@ -486,6 +518,12 @@ status: ## Show status of all services
 	else \
 		echo "$(RED)Stopped$(NC)"; \
 	fi
+	@echo -n "Sentiment: "
+	@if [ -f .sentiment.pid ] && kill -0 $$(cat .sentiment.pid) 2>/dev/null; then \
+		echo "$(GREEN)Running$(NC) (http://127.0.0.1:$(SENTIMENT_PORT))"; \
+	else \
+		echo "$(RED)Stopped$(NC)"; \
+	fi
 	@echo -n "FastAPI:   "
 	@if [ -f .api.pid ] && kill -0 $$(cat .api.pid) 2>/dev/null; then \
 		echo "$(GREEN)Running$(NC) (http://localhost:$(API_PORT))"; \
@@ -526,6 +564,10 @@ logs-api: ## Tail FastAPI logs only
 logs-celery: ## Tail Celery logs only
 	@echo "$(YELLOW)Tailing Celery logs (Ctrl+C to stop)...$(NC)"
 	@tail -f $(CELERY_LOG)
+
+logs-sentiment: ## Tail Sentiment service logs only
+	@echo "$(YELLOW)Tailing Sentiment service logs (Ctrl+C to stop)...$(NC)"
+	@tail -f $(SENTIMENT_LOG)
 
 logs-redis: ## Tail Redis logs only
 	@echo "$(YELLOW)Tailing Redis logs (Ctrl+C to stop)...$(NC)"

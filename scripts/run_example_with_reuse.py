@@ -220,7 +220,7 @@ def parse_provider_and_model(provider_arg: str) -> tuple[str, str]:
         "bytedance-seed": ("openrouter", "bytedance-seed/seed-1.6"),
         "baidu-ernie": ("openrouter", "baidu/ernie-4.5-300b-a47b"),
         "qwen-72b": ("openrouter", "qwen/qwen-2.5-72b-instruct"),
-        "minimax-m2": ("openrouter", "MiniMaxAI/MiniMax-M2.1"),
+        "minimax-m2": ("openrouter", "minimax/minimax-m2.1"),
     }
     return mapping.get(provider_arg, (provider_arg, provider_arg))
 
@@ -247,10 +247,10 @@ def prompt_for_api_key_if_needed(provider: str, api_key_arg: Optional[str]) -> O
     
     env_var_name = f"{provider.upper()}_API_KEY"
     print(f"⚠  No API key configured for {provider}")
-    print(f"   Remote models require an API key to run.")
-    print(f"   You can:")
+    print("   Remote models require an API key to run.")
+    print("   You can:")
     print(f"   1. Configure it via the UI: http://localhost:{settings.streamlit_port}")
-    print(f"   2. Pass it with --api-key YOUR_KEY")
+    print("   2. Pass it with --api-key YOUR_KEY")
     print(f"   3. Add it to your .env file: {env_var_name}=your_key")
     print()
     
@@ -262,8 +262,8 @@ def prompt_for_api_key_if_needed(provider: str, api_key_arg: Optional[str]) -> O
             print(f"⚠  No API key provided. {provider} jobs may fail.")
             return None
     except EOFError:
-        print(f"⚠  Cannot prompt for API key in non-interactive mode.")
-        print(f"   Please configure API key via UI or --api-key flag.")
+        print("⚠  Cannot prompt for API key in non-interactive mode.")
+        print("   Please configure API key via UI or --api-key flag.")
         return None
 
 
