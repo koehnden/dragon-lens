@@ -48,5 +48,50 @@ Do not code yet. Plan with me!
 1. Yes, I think even 30 should do!
 2. Let's retry these failed once one time again, otherwise use Chinese as a fallback
 
-1. 大众 Volkswagen -> Volkswagen so just use the English name and skip the translation.
-2. Only for those in the current run. 
+Maybe it make sense to add some translation examples to Qwen.
+Here are some brand examples:
+```
+比亚迪 -> BYD
+大众汽车 -> Volkswagen
+始祖鸟 -> Arc'teryx
+华为 -> Huawei
+小米 -> Xiaomi
+索尼 -> Sony
+松下电器 -> Panasonic
+海尔 -> Haier
+美的 -> Midea
+耐克 -> Nike
+阿迪达斯 -> adidas
+欧莱雅 -> L'Oréal
+资生堂 -> Shiseido
+可口可乐 -> Coca-Cola
+雀巢 -> Nestlé
+帮宝适 -> Pampers
+贝亲 -> Pigeon
+淘宝 -> Taobao
+``` 
+and here are some product examples:
+```
+宋PLUS DM-i → Song PLUS DM-i
+汉EV → Han EV
+海豚 → Dolphin
+海鸥 → Seagull
+海豹 → Seal
+秦PLUS DM-i → Qin PLUS DM-i
+妙控键盘 → Magic Keyboard
+妙控鼠标 → Magic Mouse
+妙控板 → Magic Trackpad
+微信 → WeChat
+支付宝 → Alipay
+抖音 → Douyin
+高德地图 → Amap
+钉钉 → DingTalk
+美团 → Meituan
+哔哩哔哩 → Bilibili
+知乎 → Zhihu
+微博 → Weibo
+爱奇艺 → iQIYI
+优酷 → Youku
+拼多多 → Pinduoduo
+```
+Do you think it make sense? If yes let's add it to the prompt!

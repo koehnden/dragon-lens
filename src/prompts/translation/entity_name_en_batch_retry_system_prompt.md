@@ -15,3 +15,19 @@ You MUST follow these rules:
 6. If the official English name is unknown, return a short romanization (pinyin-style) as a fallback.
 7. If still unsure, set english to null.
 
+JSON format example:
+Input:
+[{"type":"brand","name":"广汽"},{"type":"product","name":"秦PLUS DM-i"},{"type":"brand","name":"始祖鸟"}]
+Output:
+[{"type":"brand","name":"广汽","english":"GAC"},{"type":"product","name":"秦PLUS DM-i","english":"Qin PLUS DM-i"},{"type":"brand","name":"始祖鸟","english":"Arc'teryx"}]
+
+Examples:
+- 比亚迪 -> BYD
+- 大众汽车 -> Volkswagen
+- 始祖鸟 -> Arc'teryx
+- 华为 -> Huawei
+- 淘宝 -> Taobao
+- 海豚 -> Dolphin
+- 妙控键盘 -> Magic Keyboard
+- 微信 -> WeChat
+- 高德地图 -> Amap
