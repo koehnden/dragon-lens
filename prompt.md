@@ -26,3 +26,18 @@ Wdyt? Could this speed up a job from `POST /api/v1/tracking/jobs`. Is it doable?
 
 Yes I want “process prompt A while prompt B is still waiting”! If we move to Postgresql for the dragonlens.db.
 Would it be easier to speed up?
+
+Ok let's move to Postgresql for storing data in dragonlens.db. I'm not sure if we need to keep SqlLite for 
+`data/knowledge.db`. I would like to store `data/knowledge.db` in the git repo so the user can upload feedback on brand and product extraction.
+Maybe there is a cleaner solution for this, but it's definitely not postgresql or at least without hosting it on the cloud.
+Can you make a plan to migrate all the schema `dragonlens.db` to postgresql and how to replace SqlLite with postgresql in our prompt processing pipeline!
+Keep in mind the Plan is:
+Once on Postgres, the simplest way to get “process prompt A while prompt B is waiting” is usually Celery fan-out/fan-in:
+      - group(process_prompt.s(...)) for each prompt (each task does: reuse-check → LLM call → persist answer → extraction → persist mentions)
+      - then a chord(...)(consolidate_run.s(run_id)) callback to do steps 4–5 once all prompts finish
+      - This naturally overlaps waiting prompts with processing prompts and avoids “async inside Celery” complexities.
+  - You’ll still need rate limiting / semaphores (remote API limits, Ollama local resource limits), but those become straightforward (Celery queue routing, per-task
+    throttling, or Redis-based rate limits).
+Do not code yet! Plan the migration and all related things!
+
+

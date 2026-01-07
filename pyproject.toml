@@ -29,6 +29,7 @@ python-dotenv = "^1.2.1"
 transformers = "^4.41.0"
 cryptography = "^46.0.3"
 openai = "^2.14.0"
+psycopg = {extras = ["binary"], version = "^3.3.2"}
 
 
 [tool.poetry.group.dev.dependencies]

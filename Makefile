@@ -1,4 +1,4 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-db start-redis start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search
 
 # Default target
 .DEFAULT_GOAL := help
@@ -10,6 +10,7 @@
 OLLAMA_MODEL ?= qwen2.5:7b
 PYTHON_VERSION ?= 3.11
 REDIS_PORT ?= 6379
+POSTGRES_PORT ?= 5432
 API_PORT ?= 8000
 STREAMLIT_PORT ?= 8501
 CELERY_QUEUE_NAME ?= dragon-lens
@@ -20,6 +21,7 @@ STREAMLIT_LOG ?= streamlit.log
 export API_PORT
 export STREAMLIT_PORT
 export REDIS_PORT
+export POSTGRES_PORT
 export REDIS_URL
 export CELERY_BROKER_URL
 export CELERY_RESULT_BACKEND
@@ -163,6 +165,23 @@ wikidata-search: ## Search Wikidata for industries (usage: make wikidata-search 
 # Services
 # =============================================================================
 
+start-db: ## Start PostgreSQL using Docker Compose
+	@echo "$(YELLOW)Starting PostgreSQL...$(NC)"
+	@if [ ! -f docker-compose.yml ]; then \
+		echo "$(RED)Error: docker-compose.yml not found$(NC)"; \
+		exit 1; \
+	fi
+	@if [ -z "$$(docker ps -q -f name=dragonlens-postgres 2>/dev/null)" ]; then \
+		if lsof -nP -tiTCP:$(POSTGRES_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
+			PID=$$(lsof -nP -tiTCP:$(POSTGRES_PORT) -sTCP:LISTEN | head -n 1); \
+			echo "$(RED)✗ Port $(POSTGRES_PORT) is already in use (PID $$PID)$(NC)"; \
+			echo "$(YELLOW)  Stop the process using port $(POSTGRES_PORT) or set POSTGRES_PORT in .env$(NC)"; \
+			exit 1; \
+		fi; \
+	fi
+	@$(DOCKER_COMPOSE) up -d postgres
+	@echo "$(GREEN)✓ PostgreSQL started$(NC)"
+
 start-redis: ## Start Redis using Docker Compose
 	@echo "$(YELLOW)Starting Redis...$(NC)"
 	@if [ ! -f docker-compose.yml ]; then \
@@ -207,7 +226,7 @@ start-ollama: ## Start Ollama service (macOS with Homebrew)
 		fi \
 	fi
 
-start-api: check-deps ## Start FastAPI server
+start-api: check-deps start-db ## Start FastAPI server
 	@echo "$(YELLOW)Starting FastAPI server...$(NC)"
 	@if lsof -nP -tiTCP:$(API_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
 		PID=$$(lsof -nP -tiTCP:$(API_PORT) -sTCP:LISTEN | head -n 1); \
@@ -229,7 +248,7 @@ start-api: check-deps ## Start FastAPI server
 	cat $(API_LOG); \
 	exit 1
 
-start-celery: check-deps start-redis ## Start Celery worker
+start-celery: check-deps start-db start-redis ## Start Celery worker
 	@echo "$(YELLOW)Starting Celery worker...$(NC)"
 	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run celery -A workers.celery_app worker --loglevel=info --pool=solo -Q "$${CELERY_QUEUE_NAME:-dragon-lens}" > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
 	@sleep 2
@@ -264,6 +283,7 @@ start-streamlit: check-deps ## Start Streamlit UI
 run: check-deps ## Start all services (Redis, Ollama, API, Celery, Streamlit)
 	@echo "$(GREEN)Starting DragonLens services...$(NC)"
 	@echo ""
+	@$(MAKE) start-db
 	@$(MAKE) start-redis
 	@$(MAKE) start-ollama
 	@$(MAKE) start-api
@@ -448,6 +468,12 @@ clear-all: ## Clear ALL data including prompt results (LLM answers)
 status: ## Show status of all services
 	@echo "$(YELLOW)Service Status:$(NC)"
 	@echo ""
+	@echo -n "Postgres:  "
+	@if $(DOCKER_COMPOSE) ps 2>/dev/null | grep -q "postgres.*Up"; then \
+		echo "$(GREEN)Running$(NC)"; \
+	else \
+		echo "$(RED)Stopped$(NC)"; \
+	fi
 	@echo -n "Redis:     "
 	@if $(DOCKER_COMPOSE) ps 2>/dev/null | grep -q "redis.*Up"; then \
 		echo "$(GREEN)Running$(NC)"; \
@@ -485,8 +511,9 @@ logs: ## Tail all logs (Streamlit, API, Celery, Redis)
 	@echo "$(GREEN)API logs:$(NC) $(API_LOG)"
 	@echo "$(GREEN)Celery logs:$(NC) $(CELERY_LOG)"
 	@echo "$(GREEN)Redis logs:$(NC) docker compose logs redis"
+	@echo "$(GREEN)Postgres logs:$(NC) docker compose logs postgres"
 	@echo ""
-	@($(DOCKER_COMPOSE) logs -f redis 2>/dev/null & tail -f $(STREAMLIT_LOG) $(API_LOG) $(CELERY_LOG) 2>/dev/null) || tail -f $(STREAMLIT_LOG) $(API_LOG) $(CELERY_LOG) 2>/dev/null
+	@($(DOCKER_COMPOSE) logs -f redis postgres 2>/dev/null & tail -f $(STREAMLIT_LOG) $(API_LOG) $(CELERY_LOG) 2>/dev/null) || tail -f $(STREAMLIT_LOG) $(API_LOG) $(CELERY_LOG) 2>/dev/null
 
 logs-streamlit: ## Tail Streamlit logs only
 	@echo "$(YELLOW)Tailing Streamlit logs (Ctrl+C to stop)...$(NC)"

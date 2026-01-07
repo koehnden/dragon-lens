@@ -7,7 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 import sys
 from pathlib import Path
@@ -27,22 +27,33 @@ ensure_src_on_path()
 
 os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
+os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("ENABLE_QWEN_FILTERING", "false")
 os.environ.setdefault("ENABLE_EMBEDDING_CLUSTERING", "false")
 os.environ.setdefault("ENABLE_LLM_CLUSTERING", "false")
 os.environ.setdefault("RUN_TASKS_INLINE", "true")
 os.environ.setdefault("KNOWLEDGE_DATABASE_URL", "sqlite:///:memory:")
 
-try:
-    from api.routers import consolidation, feedback, knowledge, metrics, tracking, verticals
-except ImportError:
-    from src.api.routers import consolidation, feedback, knowledge, metrics, tracking, verticals
+def _routers():
+    try:
+        from api.routers import consolidation, feedback, knowledge, metrics, tracking, verticals
+    except ImportError:
+        from src.api.routers import consolidation, feedback, knowledge, metrics, tracking, verticals
+    return consolidation, feedback, knowledge, metrics, tracking, verticals
 
-from models import Base, get_db
-from models.knowledge_database import KnowledgeBase, get_knowledge_db, knowledge_engine
+
+def _models():
+    from models import Base, get_db
+    return Base, get_db
+
+
+def _knowledge_models():
+    from models.knowledge_database import KnowledgeBase, get_knowledge_db, knowledge_engine
+    return KnowledgeBase, get_knowledge_db, knowledge_engine
 
 @pytest.fixture(scope="function")
 def db_engine():
+    Base, _ = _models()
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -56,6 +67,7 @@ def db_engine():
 
 @pytest.fixture(scope="function")
 def knowledge_db_engine():
+    KnowledgeBase, _, _ = _knowledge_models()
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -95,6 +107,10 @@ def db_session(db_engine):
 
 @pytest.fixture(scope="function")
 def test_app():
+    Base, get_db = _models()
+    KnowledgeBase, get_knowledge_db, _ = _knowledge_models()
+    consolidation, feedback, knowledge, metrics, tracking, verticals = _routers()
+
     @asynccontextmanager
     async def test_lifespan(app: FastAPI) -> AsyncGenerator:
         yield
@@ -130,6 +146,9 @@ def test_app():
 
 @pytest.fixture(scope="function")
 def client(db_session: Session, knowledge_db_session: Session, test_app: FastAPI):
+    _, get_db = _models()
+    _, get_knowledge_db, _ = _knowledge_models()
+
     def override_get_db():
         try:
             yield db_session
@@ -151,6 +170,7 @@ def client(db_session: Session, knowledge_db_session: Session, test_app: FastAPI
 
 @pytest.fixture(autouse=True)
 def reset_global_knowledge_db():
+    KnowledgeBase, _, knowledge_engine = _knowledge_models()
     KnowledgeBase.metadata.create_all(bind=knowledge_engine)
     with knowledge_engine.begin() as connection:
         for table in reversed(KnowledgeBase.metadata.sorted_tables):
