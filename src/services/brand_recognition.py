@@ -79,18 +79,27 @@ def extract_snippet_with_list_awareness(
     brand_names_lower: List[str],
     max_length: int = 50,
 ) -> str:
-    """Extract a snippet with awareness of list formatting."""
     if is_list_format(text):
         list_items = split_into_list_items(text)
         list_items_lower = [item.lower() for item in list_items]
         for i, item_lower in enumerate(list_items_lower):
             for name in brand_names_lower:
                 if name in item_lower:
-                    return list_items[i]
+                    return _truncate_list_item(list_items[i], name, max_length)
 
     return extract_snippet_for_brand(
         text, brand_start, brand_end, all_brand_positions, max_length
     )
+
+
+def _truncate_list_item(item: str, brand_name: str, max_length: int) -> str:
+    if len(item) <= max_length:
+        return item
+    pos = item.lower().find(brand_name.lower())
+    if pos < 0:
+        return item[:max_length].strip()
+    start = max(0, pos)
+    return item[start:start + max_length].strip()
 
 
 # Re-export constants for backward compatibility

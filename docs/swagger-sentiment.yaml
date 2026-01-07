@@ -1,0 +1,198 @@
+openapi: 3.1.0
+info:
+  title: DragonLens Sentiment Service
+  description: |
+    Internal microservice for Chinese sentiment analysis using the Erlangshen-Roberta-110M-Sentiment model.
+
+    This service runs separately from the main API to isolate PyTorch from Celery workers,
+    preventing SIGSEGV errors caused by process forking conflicts.
+
+    **Internal use only** - called by Celery workers via localhost.
+  version: 1.0.0
+  contact:
+    name: DragonLens Team
+
+servers:
+  - url: http://127.0.0.1:8100
+    description: Local sentiment service
+
+paths:
+  /health:
+    get:
+      tags:
+        - health
+      summary: Health Check
+      description: Check if the sentiment service is running and the model is loaded.
+      operationId: health_check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: healthy
+                model: Erlangshen-Roberta-110M-Sentiment
+        '503':
+          description: Service unavailable (model not loaded)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sentiment:
+    post:
+      tags:
+        - sentiment
+      summary: Classify Sentiment
+      description: |
+        Analyze the sentiment of Chinese text.
+
+        Returns one of: `positive`, `negative`, or `neutral` with a confidence score.
+
+        **Note:** Long texts are automatically truncated to 512 tokens.
+      operationId: classify_sentiment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SentimentRequest'
+            examples:
+              positive:
+                summary: Positive sentiment
+                value:
+                  text: "这个产品非常好，我非常喜欢！"
+              negative:
+                summary: Negative sentiment
+                value:
+                  text: "这个服务太差了，非常失望。"
+              neutral:
+                summary: Neutral text
+                value:
+                  text: "今天天气不错。"
+      responses:
+        '200':
+          description: Sentiment classification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SentimentResponse'
+              examples:
+                positive:
+                  summary: Positive result
+                  value:
+                    sentiment: positive
+                    confidence: 0.94
+                negative:
+                  summary: Negative result
+                  value:
+                    sentiment: negative
+                    confidence: 0.99
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '500':
+          description: Internal error during sentiment analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Model not loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    SentimentRequest:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: Chinese text to analyze for sentiment
+          example: "这个产品非常好，我非常喜欢！"
+
+    SentimentResponse:
+      type: object
+      required:
+        - sentiment
+        - confidence
+      properties:
+        sentiment:
+          type: string
+          enum: [positive, negative, neutral]
+          description: The detected sentiment
+          example: positive
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Confidence score (0-1)
+          example: 0.94
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - model
+      properties:
+        status:
+          type: string
+          enum: [healthy]
+          example: healthy
+        model:
+          type: string
+          description: Name of the loaded sentiment model
+          example: Erlangshen-Roberta-110M-Sentiment
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+          example: Model not loaded
+
+    HTTPValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+
+    ValidationError:
+      type: object
+      required:
+        - loc
+        - msg
+        - type
+      properties:
+        loc:
+          type: array
+          items:
+            anyOf:
+              - type: string
+              - type: integer
+        msg:
+          type: string
+        type:
+          type: string
+
+tags:
+  - name: health
+    description: Service health check
+  - name: sentiment
+    description: Sentiment classification endpoints

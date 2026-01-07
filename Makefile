@@ -1,17 +1,34 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-redis start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-db start-redis start-sentiment start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search logs-sentiment
 
 # Default target
 .DEFAULT_GOAL := help
 
+# Optional local overrides
+-include .env
+
 # Variables
-OLLAMA_MODEL := qwen2.5:7b
-PYTHON_VERSION := 3.11
-REDIS_PORT := 6379
-API_PORT := 8000
-STREAMLIT_PORT := 8501
-CELERY_LOG := celery.log
-API_LOG := api.log
-STREAMLIT_LOG := streamlit.log
+OLLAMA_MODEL ?= qwen2.5:7b
+PYTHON_VERSION ?= 3.11
+REDIS_PORT ?= 6379
+POSTGRES_PORT ?= 5432
+API_PORT ?= 8000
+STREAMLIT_PORT ?= 8501
+CELERY_QUEUE_NAME ?= dragon-lens
+CELERY_LOG ?= celery.log
+API_LOG ?= api.log
+STREAMLIT_LOG ?= streamlit.log
+SENTIMENT_LOG ?= sentiment.log
+SENTIMENT_PORT ?= 8100
+
+export API_PORT
+export STREAMLIT_PORT
+export REDIS_PORT
+export POSTGRES_PORT
+export REDIS_URL
+export CELERY_BROKER_URL
+export CELERY_RESULT_BACKEND
+export CELERY_QUEUE_NAME
+export DATABASE_URL
 
 # Detect Docker Compose command (docker compose vs docker-compose)
 DOCKER_COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; elif command -v docker-compose >/dev/null 2>&1; then echo "docker-compose"; fi)
@@ -150,11 +167,36 @@ wikidata-search: ## Search Wikidata for industries (usage: make wikidata-search 
 # Services
 # =============================================================================
 
+start-db: ## Start PostgreSQL using Docker Compose
+	@echo "$(YELLOW)Starting PostgreSQL...$(NC)"
+	@if [ ! -f docker-compose.yml ]; then \
+		echo "$(RED)Error: docker-compose.yml not found$(NC)"; \
+		exit 1; \
+	fi
+	@if [ -z "$$(docker ps -q -f name=dragonlens-postgres 2>/dev/null)" ]; then \
+		if lsof -nP -tiTCP:$(POSTGRES_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
+			PID=$$(lsof -nP -tiTCP:$(POSTGRES_PORT) -sTCP:LISTEN | head -n 1); \
+			echo "$(RED)✗ Port $(POSTGRES_PORT) is already in use (PID $$PID)$(NC)"; \
+			echo "$(YELLOW)  Stop the process using port $(POSTGRES_PORT) or set POSTGRES_PORT in .env$(NC)"; \
+			exit 1; \
+		fi; \
+	fi
+	@$(DOCKER_COMPOSE) up -d postgres
+	@echo "$(GREEN)✓ PostgreSQL started$(NC)"
+
 start-redis: ## Start Redis using Docker Compose
 	@echo "$(YELLOW)Starting Redis...$(NC)"
 	@if [ ! -f docker-compose.yml ]; then \
 		echo "$(RED)Error: docker-compose.yml not found$(NC)"; \
 		exit 1; \
+	fi
+	@if [ -z "$$(docker ps -q -f name=dragonlens-redis 2>/dev/null)" ]; then \
+		if lsof -nP -tiTCP:$(REDIS_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
+			PID=$$(lsof -nP -tiTCP:$(REDIS_PORT) -sTCP:LISTEN | head -n 1); \
+			echo "$(RED)✗ Port $(REDIS_PORT) is already in use (PID $$PID)$(NC)"; \
+			echo "$(YELLOW)  Stop the process using port $(REDIS_PORT) or change REDIS_PORT/REDIS_URL/CELERY_BROKER_URL/CELERY_RESULT_BACKEND in .env$(NC)"; \
+			exit 1; \
+		fi; \
 	fi
 	@$(DOCKER_COMPOSE) up -d redis
 	@echo "$(GREEN)✓ Redis started$(NC)"
@@ -186,22 +228,53 @@ start-ollama: ## Start Ollama service (macOS with Homebrew)
 		fi \
 	fi
 
-start-api: check-deps ## Start FastAPI server
+start-sentiment: ## Start Erlangshen sentiment microservice
+	@echo "$(YELLOW)Starting Sentiment service...$(NC)"
+	@if lsof -nP -tiTCP:$(SENTIMENT_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
+		PID=$$(lsof -nP -tiTCP:$(SENTIMENT_PORT) -sTCP:LISTEN | head -n 1); \
+		echo "$(YELLOW)Port $(SENTIMENT_PORT) is in use (PID $$PID), killing...$(NC)"; \
+		kill -9 $$PID 2>/dev/null || true; \
+		sleep 1; \
+	fi
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run uvicorn services.sentiment_server:app --host 127.0.0.1 --port $(SENTIMENT_PORT) > $(SENTIMENT_LOG) 2>&1 & echo $$! > .sentiment.pid
+	@set -e; \
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+		if curl -fsS http://127.0.0.1:$(SENTIMENT_PORT)/health >/dev/null 2>&1; then \
+			echo "$(GREEN)✓ Sentiment service started on http://127.0.0.1:$(SENTIMENT_PORT)$(NC)"; \
+			echo "  Logs: tail -f $(SENTIMENT_LOG)"; \
+			exit 0; \
+		fi; \
+		sleep 1; \
+	done; \
+	echo "$(RED)✗ Failed to start Sentiment service$(NC)"; \
+	cat $(SENTIMENT_LOG); \
+	exit 1
+
+start-api: check-deps start-db ## Start FastAPI server
 	@echo "$(YELLOW)Starting FastAPI server...$(NC)"
-	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run uvicorn api.app:app --host 0.0.0.0 --port $(API_PORT) > $(API_LOG) 2>&1 & echo $$! > .api.pid
-	@sleep 2
-	@if [ -f .api.pid ] && kill -0 $$(cat .api.pid) 2>/dev/null; then \
-		echo "$(GREEN)✓ FastAPI server started on http://localhost:$(API_PORT)$(NC)"; \
-		echo "  Logs: tail -f $(API_LOG)"; \
-	else \
-		echo "$(RED)✗ Failed to start FastAPI server$(NC)"; \
-		cat $(API_LOG); \
+	@if lsof -nP -tiTCP:$(API_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
+		PID=$$(lsof -nP -tiTCP:$(API_PORT) -sTCP:LISTEN | head -n 1); \
+		echo "$(RED)✗ Port $(API_PORT) is already in use (PID $$PID)$(NC)"; \
+		echo "$(YELLOW)  Stop the process using port $(API_PORT) or change API_PORT in .env$(NC)"; \
 		exit 1; \
 	fi
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run uvicorn api.app:app --host 0.0.0.0 --port $(API_PORT) > $(API_LOG) 2>&1 & echo $$! > .api.pid
+	@set -e; \
+	for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if curl -fsS http://localhost:$(API_PORT)/health >/dev/null 2>&1; then \
+			echo "$(GREEN)✓ FastAPI server started on http://localhost:$(API_PORT)$(NC)"; \
+			echo "  Logs: tail -f $(API_LOG)"; \
+			exit 0; \
+		fi; \
+		sleep 1; \
+	done; \
+	echo "$(RED)✗ Failed to start FastAPI server$(NC)"; \
+	cat $(API_LOG); \
+	exit 1
 
-start-celery: check-deps start-redis ## Start Celery worker
+start-celery: check-deps start-db start-redis ## Start Celery worker
 	@echo "$(YELLOW)Starting Celery worker...$(NC)"
-	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run celery -A workers.celery_app worker --loglevel=info --pool=solo > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run celery -A workers.celery_app worker --loglevel=info --concurrency="$${CELERY_CONCURRENCY:-8}" -Q "default,remote_llm,local_llm,ollama_extract" > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
 	@sleep 2
 	@if [ -f .celery.pid ] && kill -0 $$(cat .celery.pid) 2>/dev/null; then \
 		echo "$(GREEN)✓ Celery worker started$(NC)"; \
@@ -215,9 +288,9 @@ start-celery: check-deps start-redis ## Start Celery worker
 start-streamlit: check-deps ## Start Streamlit UI
 	@echo "$(YELLOW)Starting Streamlit UI...$(NC)"
 	@echo "$(YELLOW)Checking port $(STREAMLIT_PORT)...$(NC)"
-	@if lsof -ti:$(STREAMLIT_PORT) > /dev/null 2>&1; then \
+	@if lsof -nP -tiTCP:$(STREAMLIT_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
 		echo "$(YELLOW)Port $(STREAMLIT_PORT) is in use, killing existing process...$(NC)"; \
-		kill -9 $$(lsof -ti:$(STREAMLIT_PORT)) 2>/dev/null || true; \
+		kill -9 $$(lsof -nP -tiTCP:$(STREAMLIT_PORT) -sTCP:LISTEN) 2>/dev/null || true; \
 		sleep 1; \
 	fi
 	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run streamlit run src/ui/app.py --server.port $(STREAMLIT_PORT) --server.headless true > $(STREAMLIT_LOG) 2>&1 & echo $$! > .streamlit.pid
@@ -231,11 +304,13 @@ start-streamlit: check-deps ## Start Streamlit UI
 		exit 1; \
 	fi
 
-run: check-deps ## Start all services (Redis, Ollama, API, Celery, Streamlit)
+run: check-deps ## Start all services (Redis, Ollama, Sentiment, API, Celery, Streamlit)
 	@echo "$(GREEN)Starting DragonLens services...$(NC)"
 	@echo ""
+	@$(MAKE) start-db
 	@$(MAKE) start-redis
 	@$(MAKE) start-ollama
+	@$(MAKE) start-sentiment
 	@$(MAKE) start-api
 	@$(MAKE) start-celery
 	@$(MAKE) start-streamlit
@@ -278,6 +353,11 @@ stop: ## Stop all services
 		rm .celery.pid; \
 		echo "$(GREEN)✓ Celery stopped$(NC)"; \
 	fi
+	@if [ -f .sentiment.pid ]; then \
+		kill $$(cat .sentiment.pid) 2>/dev/null || true; \
+		rm .sentiment.pid; \
+		echo "$(GREEN)✓ Sentiment service stopped$(NC)"; \
+	fi
 	@$(MAKE) stop-redis
 	@echo "$(GREEN)✓ All services stopped$(NC)"
 
@@ -306,8 +386,8 @@ test-coverage: check-deps ## Run tests with coverage report
 
 clean: ## Clean up temporary files and logs
 	@echo "$(YELLOW)Cleaning up...$(NC)"
-	@rm -f $(API_LOG) $(CELERY_LOG) $(STREAMLIT_LOG)
-	@rm -f .api.pid .celery.pid .streamlit.pid
+	@rm -f $(API_LOG) $(CELERY_LOG) $(STREAMLIT_LOG) $(SENTIMENT_LOG)
+	@rm -f .api.pid .celery.pid .streamlit.pid .sentiment.pid
 	@rm -rf .pytest_cache
 	@rm -rf htmlcov
 	@rm -rf .coverage
@@ -333,13 +413,15 @@ clear: ## Full reset: kill all workers, flush Redis, clear database data (keep p
 	fi
 	@echo "$(GREEN)✓ Celery processes killed$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Step 2: Killing API and Streamlit...$(NC)"
+	@echo "$(YELLOW)Step 2: Killing API, Streamlit, and Sentiment service...$(NC)"
 	@if [ -f .api.pid ]; then kill -9 $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid; fi
 	@if [ -f .streamlit.pid ]; then kill -9 $$(cat .streamlit.pid) 2>/dev/null || true; rm -f .streamlit.pid; fi
-	@echo "$(GREEN)✓ API and Streamlit stopped$(NC)"
+	@if [ -f .sentiment.pid ]; then kill -9 $$(cat .sentiment.pid) 2>/dev/null || true; rm -f .sentiment.pid; fi
+	@echo "$(GREEN)✓ API, Streamlit, and Sentiment stopped$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 3: Flushing Redis (clearing all queued tasks)...$(NC)"
-	@docker exec $$(docker ps -q -f name=redis) redis-cli FLUSHALL 2>/dev/null || redis-cli FLUSHALL 2>/dev/null || echo "$(YELLOW)  Redis not running or not accessible$(NC)"
+	@$(MAKE) --no-print-directory start-redis
+	@docker exec dragonlens-redis redis-cli FLUSHALL >/dev/null
 	@echo "$(GREEN)✓ Redis flushed$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 4: Clearing database data (keeping prompt results)...$(NC)"
@@ -387,13 +469,15 @@ clear-all: ## Clear ALL data including prompt results (LLM answers)
 	fi
 	@echo "$(GREEN)✓ Celery processes killed$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Step 2: Killing API and Streamlit...$(NC)"
+	@echo "$(YELLOW)Step 2: Killing API, Streamlit, and Sentiment service...$(NC)"
 	@if [ -f .api.pid ]; then kill -9 $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid; fi
 	@if [ -f .streamlit.pid ]; then kill -9 $$(cat .streamlit.pid) 2>/dev/null || true; rm -f .streamlit.pid; fi
-	@echo "$(GREEN)✓ API and Streamlit stopped$(NC)"
+	@if [ -f .sentiment.pid ]; then kill -9 $$(cat .sentiment.pid) 2>/dev/null || true; rm -f .sentiment.pid; fi
+	@echo "$(GREEN)✓ API, Streamlit, and Sentiment stopped$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 3: Flushing Redis (clearing all queued tasks)...$(NC)"
-	@docker exec $$(docker ps -q -f name=redis) redis-cli FLUSHALL 2>/dev/null || redis-cli FLUSHALL 2>/dev/null || echo "$(YELLOW)  Redis not running or not accessible$(NC)"
+	@$(MAKE) --no-print-directory start-redis
+	@docker exec dragonlens-redis redis-cli FLUSHALL >/dev/null
 	@echo "$(GREEN)✓ Redis flushed$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 4: Clearing ALL database data including prompt results...$(NC)"
@@ -416,6 +500,12 @@ clear-all: ## Clear ALL data including prompt results (LLM answers)
 status: ## Show status of all services
 	@echo "$(YELLOW)Service Status:$(NC)"
 	@echo ""
+	@echo -n "Postgres:  "
+	@if $(DOCKER_COMPOSE) ps 2>/dev/null | grep -q "postgres.*Up"; then \
+		echo "$(GREEN)Running$(NC)"; \
+	else \
+		echo "$(RED)Stopped$(NC)"; \
+	fi
 	@echo -n "Redis:     "
 	@if $(DOCKER_COMPOSE) ps 2>/dev/null | grep -q "redis.*Up"; then \
 		echo "$(GREEN)Running$(NC)"; \
@@ -425,6 +515,12 @@ status: ## Show status of all services
 	@echo -n "Ollama:    "
 	@if pgrep -x "ollama" > /dev/null; then \
 		echo "$(GREEN)Running$(NC)"; \
+	else \
+		echo "$(RED)Stopped$(NC)"; \
+	fi
+	@echo -n "Sentiment: "
+	@if [ -f .sentiment.pid ] && kill -0 $$(cat .sentiment.pid) 2>/dev/null; then \
+		echo "$(GREEN)Running$(NC) (http://127.0.0.1:$(SENTIMENT_PORT))"; \
 	else \
 		echo "$(RED)Stopped$(NC)"; \
 	fi
@@ -453,8 +549,9 @@ logs: ## Tail all logs (Streamlit, API, Celery, Redis)
 	@echo "$(GREEN)API logs:$(NC) $(API_LOG)"
 	@echo "$(GREEN)Celery logs:$(NC) $(CELERY_LOG)"
 	@echo "$(GREEN)Redis logs:$(NC) docker compose logs redis"
+	@echo "$(GREEN)Postgres logs:$(NC) docker compose logs postgres"
 	@echo ""
-	@($(DOCKER_COMPOSE) logs -f redis 2>/dev/null & tail -f $(STREAMLIT_LOG) $(API_LOG) $(CELERY_LOG) 2>/dev/null) || tail -f $(STREAMLIT_LOG) $(API_LOG) $(CELERY_LOG) 2>/dev/null
+	@($(DOCKER_COMPOSE) logs -f redis postgres 2>/dev/null & tail -f $(STREAMLIT_LOG) $(API_LOG) $(CELERY_LOG) 2>/dev/null) || tail -f $(STREAMLIT_LOG) $(API_LOG) $(CELERY_LOG) 2>/dev/null
 
 logs-streamlit: ## Tail Streamlit logs only
 	@echo "$(YELLOW)Tailing Streamlit logs (Ctrl+C to stop)...$(NC)"
@@ -467,6 +564,10 @@ logs-api: ## Tail FastAPI logs only
 logs-celery: ## Tail Celery logs only
 	@echo "$(YELLOW)Tailing Celery logs (Ctrl+C to stop)...$(NC)"
 	@tail -f $(CELERY_LOG)
+
+logs-sentiment: ## Tail Sentiment service logs only
+	@echo "$(YELLOW)Tailing Sentiment service logs (Ctrl+C to stop)...$(NC)"
+	@tail -f $(SENTIMENT_LOG)
 
 logs-redis: ## Tail Redis logs only
 	@echo "$(YELLOW)Tailing Redis logs (Ctrl+C to stop)...$(NC)"
@@ -506,56 +607,83 @@ example: ## Run an example SUV tracking job with VW brand (reuses prompt results
 	@echo ""
 	@poetry run python scripts/run_example_with_reuse.py --provider=qwen
 
-example-suv: ## Run 4-model example for examples/suv_example.json
-	@echo "$(YELLOW)Running SUV example with 4 models...$(NC)"
+example-suv: ## Run 7-model example for examples/suv_example.json
+	@echo "$(YELLOW)Running SUV example with 7 models...$(NC)"
 	@echo ""
-	@echo "$(YELLOW)1/4 Running with Qwen...$(NC)"
+	@echo "$(YELLOW)1/7 Running with Qwen...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/suv_example.json
 	@echo ""
-	@echo "$(YELLOW)2/4 Running with DeepSeek Chat...$(NC)"
+	@echo "$(YELLOW)2/7 Running with DeepSeek Chat...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/suv_example.json
 	@echo ""
-	@echo "$(YELLOW)3/4 Running with DeepSeek Reasoner...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner --example-file=examples/suv_example.json
+	@echo "$(YELLOW)3/7 Running with Kimi K2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=examples/suv_example.json
 	@echo ""
-	@echo "$(YELLOW)4/4 Running with Kimi 8K...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/suv_example.json
+	@echo "$(YELLOW)4/7 Running with ByteDance Seed...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=bytedance-seed --example-file=examples/suv_example.json
 	@echo ""
-	@echo "$(GREEN)✓ SUV example submitted (4 models)!$(NC)"
+	@echo "$(YELLOW)5/7 Running with Baidu ERNIE...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=baidu-ernie --example-file=examples/suv_example.json
+	@echo ""
+	@echo "$(YELLOW)6/7 Running with Qwen 72B...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen-72b --example-file=examples/suv_example.json
+	@echo ""
+	@echo "$(YELLOW)7/7 Running with MiniMax M2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=minimax-m2 --example-file=examples/suv_example.json
+	@echo ""
+	@echo "$(GREEN)✓ SUV example submitted (7 models)!$(NC)"
 
-example-diaper: ## Run 4-model example for examples/diaper_example.json
-	@echo "$(YELLOW)Running diaper example with 4 models...$(NC)"
+example-diaper: ## Run 7-model example for examples/diaper_example.json
+	@echo "$(YELLOW)Running diaper example with 7 models...$(NC)"
 	@echo ""
-	@echo "$(YELLOW)1/4 Running with Qwen...$(NC)"
+	@echo "$(YELLOW)1/7 Running with Qwen...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/diaper_example.json
 	@echo ""
-	@echo "$(YELLOW)2/4 Running with DeepSeek Chat...$(NC)"
+	@echo "$(YELLOW)2/7 Running with DeepSeek Chat...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/diaper_example.json
 	@echo ""
-	@echo "$(YELLOW)3/4 Running with DeepSeek Reasoner...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner --example-file=examples/diaper_example.json
+	@echo "$(YELLOW)3/7 Running with Kimi K2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=examples/diaper_example.json
 	@echo ""
-	@echo "$(YELLOW)4/4 Running with Kimi 8K...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/diaper_example.json
+	@echo "$(YELLOW)4/7 Running with ByteDance Seed...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=bytedance-seed --example-file=examples/diaper_example.json
 	@echo ""
-	@echo "$(GREEN)✓ Diaper example submitted (4 models)!$(NC)"
+	@echo "$(YELLOW)5/7 Running with Baidu ERNIE...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=baidu-ernie --example-file=examples/diaper_example.json
+	@echo ""
+	@echo "$(YELLOW)6/7 Running with Qwen 72B...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen-72b --example-file=examples/diaper_example.json
+	@echo ""
+	@echo "$(YELLOW)7/7 Running with MiniMax M2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=minimax-m2 --example-file=examples/diaper_example.json
+	@echo ""
+	@echo "$(GREEN)✓ Diaper example submitted (7 models)!$(NC)"
 
-example-hiking-shoes: ## Run 4-model example for examples/hiking_shoes_example.json
-	@echo "$(YELLOW)Running hiking shoes example with 4 models...$(NC)"
+example-hiking-shoes: ## Run 7-model example for examples/hiking_shoes_example.json
+	@echo "$(YELLOW)Running hiking shoes example with 7 models...$(NC)"
 	@echo ""
-	@echo "$(YELLOW)1/4 Running with Qwen...$(NC)"
+	@echo "$(YELLOW)1/7 Running with Qwen...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/hiking_shoes_example.json
 	@echo ""
-	@echo "$(YELLOW)2/4 Running with DeepSeek Chat...$(NC)"
+	@echo "$(YELLOW)2/7 Running with DeepSeek Chat...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/hiking_shoes_example.json
 	@echo ""
-	@echo "$(YELLOW)3/4 Running with DeepSeek Reasoner...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner --example-file=examples/hiking_shoes_example.json
+	@echo "$(YELLOW)3/7 Running with Kimi K2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=examples/hiking_shoes_example.json
 	@echo ""
-	@echo "$(YELLOW)4/4 Running with Kimi 8K...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/hiking_shoes_example.json
+	@echo "$(YELLOW)4/7 Running with ByteDance Seed...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=bytedance-seed --example-file=examples/hiking_shoes_example.json
 	@echo ""
-	@echo "$(GREEN)✓ Hiking shoes example submitted (4 models)!$(NC)"
+	@echo "$(YELLOW)5/7 Running with Baidu ERNIE...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=baidu-ernie --example-file=examples/hiking_shoes_example.json
+	@echo ""
+	@echo "$(YELLOW)6/7 Running with Qwen 72B...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen-72b --example-file=examples/hiking_shoes_example.json
+	@echo ""
+	@echo "$(YELLOW)7/7 Running with MiniMax M2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=minimax-m2 --example-file=examples/hiking_shoes_example.json
+	@echo ""
+	@echo "$(GREEN)✓ Hiking shoes example submitted (7 models)!$(NC)"
 
 example-fresh: ## Run example from scratch (delete existing data, don't reuse prompt results)
 	@echo "$(YELLOW)Running example SUV tracking job from scratch...$(NC)"
@@ -589,7 +717,7 @@ example-kimi-128k: ## Run example with Kimi 128K model
 	@echo ""
 	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-128k
 
-example-all: ## Run all examples (examples/*.json) with 4 models (qwen, deepseek-chat, deepseek-reasoner, kimi-8k)
+example-all: ## Run all examples (examples/*.json) with 7 models (qwen, deepseek-chat, kimi-k2, bytedance-seed, baidu-ernie, qwen-72b, minimax-m2)
 	@echo "$(YELLOW)Running all examples with all models...$(NC)"
 	@echo ""
 	@set -e; \
@@ -598,43 +726,64 @@ example-all: ## Run all examples (examples/*.json) with 4 models (qwen, deepseek
 		echo "$(YELLOW)Example: $$example$(NC)"; \
 		echo "$(YELLOW)═══════════════════════════════════════════════════════$(NC)"; \
 		echo ""; \
-		echo "$(YELLOW)1/4 Running with Qwen...$(NC)"; \
+		echo "$(YELLOW)1/7 Running with Qwen...$(NC)"; \
 		poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=$$example; \
 		echo ""; \
-		echo "$(YELLOW)2/4 Running with DeepSeek Chat...$(NC)"; \
+		echo "$(YELLOW)2/7 Running with DeepSeek Chat...$(NC)"; \
 		poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=$$example; \
 		echo ""; \
-		echo "$(YELLOW)3/4 Running with DeepSeek Reasoner...$(NC)"; \
-		poetry run python scripts/run_example_with_reuse.py --provider=deepseek-reasoner --example-file=$$example; \
+		echo "$(YELLOW)3/7 Running with Kimi K2...$(NC)"; \
+		poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=$$example; \
 		echo ""; \
-		echo "$(YELLOW)4/4 Running with Kimi 8K...$(NC)"; \
-		poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=$$example; \
+		echo "$(YELLOW)4/7 Running with ByteDance Seed...$(NC)"; \
+		poetry run python scripts/run_example_with_reuse.py --provider=bytedance-seed --example-file=$$example; \
+		echo ""; \
+		echo "$(YELLOW)5/7 Running with Baidu ERNIE...$(NC)"; \
+		poetry run python scripts/run_example_with_reuse.py --provider=baidu-ernie --example-file=$$example; \
+		echo ""; \
+		echo "$(YELLOW)6/7 Running with Qwen 72B...$(NC)"; \
+		poetry run python scripts/run_example_with_reuse.py --provider=qwen-72b --example-file=$$example; \
+		echo ""; \
+		echo "$(YELLOW)7/7 Running with MiniMax M2...$(NC)"; \
+		poetry run python scripts/run_example_with_reuse.py --provider=minimax-m2 --example-file=$$example; \
 		echo ""; \
 		echo "$(GREEN)✓ Completed: $$example$(NC)"; \
 		echo ""; \
 	done; \
-	echo "$(GREEN)✓ All examples completed (4 models each)!$(NC)"; \
+	echo "$(GREEN)✓ All examples completed (7 models each)!$(NC)"; \
 	echo ""; \
 	echo "$(YELLOW)View results:$(NC)"; \
 	echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"; \
 	echo "  http://localhost:$(STREAMLIT_PORT)"
 
-example-all-mini: ## Smoke test: Run mini example (1 prompt) with 3 models (qwen, deepseek-chat, kimi-8k)
-	@echo "$(YELLOW)Running mini example smoke test (1 prompt, 3 models)...$(NC)"
+example-all-mini: ## Smoke test: Run mini example (1 prompt) with 7 models (qwen, deepseek-chat, kimi-k2, bytedance-seed, baidu-ernie, qwen-72b, minimax-m2)
+	@echo "$(YELLOW)Running mini example smoke test (1 prompt, 7 models)...$(NC)"
 	@echo ""
 	@echo "$(YELLOW)This is a quick smoke test to verify the pipeline works correctly.$(NC)"
 	@echo "$(YELLOW)Each model should process exactly 1 prompt.$(NC)"
 	@echo ""
-	@echo "$(YELLOW)1/3 Running with Qwen...$(NC)"
+	@echo "$(YELLOW)1/7 Running with Qwen...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/suv_example_mini.json
 	@echo ""
-	@echo "$(YELLOW)2/3 Running with DeepSeek Chat...$(NC)"
+	@echo "$(YELLOW)2/7 Running with DeepSeek Chat...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/suv_example_mini.json
 	@echo ""
-	@echo "$(YELLOW)3/3 Running with Kimi 8K...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/suv_example_mini.json
+	@echo "$(YELLOW)3/7 Running with Kimi K2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=examples/suv_example_mini.json
 	@echo ""
-	@echo "$(GREEN)✓ Mini smoke test completed (3 models, 1 prompt each)!$(NC)"
+	@echo "$(YELLOW)4/7 Running with ByteDance Seed...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=bytedance-seed --example-file=examples/suv_example_mini.json
+	@echo ""
+	@echo "$(YELLOW)5/7 Running with Baidu ERNIE...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=baidu-ernie --example-file=examples/suv_example_mini.json
+	@echo ""
+	@echo "$(YELLOW)6/7 Running with Qwen 72B...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen-72b --example-file=examples/suv_example_mini.json
+	@echo ""
+	@echo "$(YELLOW)7/7 Running with MiniMax M2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=minimax-m2 --example-file=examples/suv_example_mini.json
+	@echo ""
+	@echo "$(GREEN)✓ Mini smoke test completed (7 models, 1 prompt each)!$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Verify results:$(NC)"
 	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
@@ -661,12 +810,12 @@ example-all-mini-deepseek: ## Smoke test: Run mini example with DeepSeek Chat on
 	@echo "$(YELLOW)Verify results:$(NC)"
 	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
 
-example-all-mini-kimi: ## Smoke test: Run mini example with Kimi 8K only
-	@echo "$(YELLOW)Running mini example with Kimi 8K (1 prompt)...$(NC)"
+example-all-mini-kimi: ## Smoke test: Run mini example with Kimi K2 only
+	@echo "$(YELLOW)Running mini example with Kimi K2 (1 prompt)...$(NC)"
 	@echo ""
-	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-8k --example-file=examples/suv_example_mini.json
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=examples/suv_example_mini.json
 	@echo ""
-	@echo "$(GREEN)✓ Kimi 8K mini test completed!$(NC)"
+	@echo "$(GREEN)✓ Kimi K2 mini test completed!$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Verify results:$(NC)"
 	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"

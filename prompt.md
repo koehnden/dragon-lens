@@ -1,65 +1,43 @@
-We need to review the brand extraction as we still have some critical errors. 
-Recall seems to be ok, but precision is not good enough. 
-One common error category is 
-
-## Off-vertical entities (real brands, but not brands for this category)
-Symptom: The model mentions adjacent products/retailers/partners, and your extractor accepts them as “Brand”.
-
-Errors in Diapers Example:
-- Aptamil / 爱他美 is infant formula, not diapers.
-- Kleenex / 舒洁 is tissue/paper, not diapers. 
-- Laurier / 乐而雅 and Kotex / 高洁丝 are feminine hygiene brands, not diapers.
-- Mothercare is a baby-products retailer (not a diaper brand)
-
-Errors Hiking shoes Example:
-- Dick’s Sporting Goods = retailer.
-
-SUV: (less frequent in this file, but same pattern when it happens)
-
-Fix idea: reintroduce a vertical gate, but at the end of each job run in the consolidation step: 
-only accept an extracted “brand” if the evidence snippet contains a category keyword near the mention 
-(e.g., diapers: 纸尿裤/尿不湿/拉拉裤/训练裤; hiking: 徒步鞋/登山鞋/hiking shoes; SUV: SUV/中型SUV/紧凑型SUV).
+I do not see what ww achieved with this implementation. I still see the LLM call blocks any other processing:
+```
+[2026-01-06 21:49:01,397: INFO/MainProcess] Task workers.tasks.run_vertical_analysis[3b2da598-7063-4123-97d4-b9dd092cc10e] succeeded in 145.08906179195037s: None
+[2026-01-06 21:49:01,403: INFO/MainProcess] Task workers.tasks.run_vertical_analysis[d6913a27-c48d-4843-9e55-960b63a8a449] received
+[2026-01-06 21:49:01,403: INFO/MainProcess] Starting vertical analysis: vertical=1, provider=deepseek, model=deepseek-chat, run=2
+[2026-01-06 21:49:01,405: INFO/MainProcess] LLM parallel fetch: enabled=True, concurrency=3, prompts=1
+[2026-01-06 21:49:02,298: INFO/MainProcess] HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+[2026-01-06 21:49:26,815: INFO/MainProcess] Processing prompt 2
+```
+As you can sse in the logs, we are still just waiting for the deepseek api to give an response!
+Maybe we benefit more from running all remote LLM calls in the `POST /api/v1/tracking/jobs` first, e.g. all prompt for all models or all for a single model.
+Wdyt? 
 
 
-## Bad EN ↔ ZH translation
-Symptom: The English label and Chinese label don’t match the same brand.
-Diapers (big one):
-- Pampers’ Chinese name is 帮宝适.
-- Huggies’ Chinese name is 好奇 (Kimberly-Clark China uses 好奇®HUGGIES®).
-- The extraction currently has “Huggies (帮宝适)” and “Curiosity (好奇)” — that’s a mapping failure (and “Curiosity” is an odd translation choice; you want “Huggies / 好奇”).
-
-SUV:
-- “Modern (现代)” should be Hyundai (现代). 
-- “Beyke (别克)” should be Buick (别克).
-- “Qize (极氪)” should be ZEEKR (极氪).
-
-Fix idea: maintain a small canonical alias dictionary per vertical (or global) for the top 200 entities you expect, and run a post-pass:
-(en, zh) must match a known alias pair; otherwise mark needs_review.
-
-## Alias duplication / near-duplicates (inflates competitors and splits SoV)
-Symptom: Same brand appears multiple times under slight variants.
-Examples I saw:
-
-### Diapers:
-- Babycare vs Baby Care
-- Goon vs Goo.n
-- Unicharm (尤妮佳) vs Unicharm
-- Curiosity (好奇) vs Curiosity (好奇心) (plus the bigger issue that it should be Huggies/好奇)
-
-### SUV: 
-- multiple repeated 0% rows for the same strings (Cadillac, Ford Motor Company of Canada), plus standalone “VW” even though Volkswagen (大众) is already present.
-
-Fix ideas: canonicalize before scoring:
-- nomalize brand text for deduplication: strip punctuation + whitespace + parenthetical text, lower-case latin,
-- prefer using shorter name for merging (avoid things like "Ford Motor Company of Canada")
-- check of substrings in a longer brand string -> finding "Ford" in "Ford Motor Company of Canada"/
-- compute embeddings for brands and re-check merging brand with high cosine similarity -> "VW" and "Volkswagen" 
-
-Contraints:
-- The brand and product extraction need to work for any arbitrary brand. We are just using the car vertical as an example. DO NOT HARDCODE ANY RULES. THEY ARE USELESS!
-- Everything need to work locally using a MacBook Pro M1 16GB. So a much bigger model than Qwen 7b might not fit our requirements 
-- Every filtering brand fix should happen after a job has finished in the consolidation step. We want to maximize recall when running the extraction within runs and maximize the precision at the end of the job in the consolidation step
+How about changing the processing order. For all prompts given in `POST /api/v1/tracking/jobs` we do:
+1. Run all LLM call given is `POST /api/v1/tracking/jobs` for all models assync or using multi-threading or both and store results in memory (model, prompt, prompt_result)
+2. Loop over results in 1. and translate all prompts and them. Bulk insert them in SqlLite
+3. Process all prompt results, e.g. brand and product extraction
+4. Start Consolidation steps
+5. Bulk insert all extraction results in SqlLite
+We could also do 2. and 3. into one step without bulk insert the prompts results and their translation. Note
+sure which data structure could make sense to store result In-Memory. Maybe a simple Dictionary or we use Redis for store intermediate
+result if it does not slow down the process much. 
+Wdyt? Could this speed up a job from `POST /api/v1/tracking/jobs`. Is it doable? What are downsides of this approach?
 
 
-Can you have a look at the current code and brand extraction logic and evaluate a fix. Do not code anything yet. 
-Let's brainstorm a fix instead! 
+Yes I want “process prompt A while prompt B is still waiting”! If we move to Postgresql for the dragonlens.db.
+Would it be easier to speed up?
+
+Ok let's move to Postgresql for storing data in dragonlens.db. I'm not sure if we need to keep SqlLite for 
+`data/knowledge.db`. I would like to store `data/knowledge.db` in the git repo so the user can upload feedback on brand and product extraction.
+Maybe there is a cleaner solution for this, but it's definitely not postgresql or at least without hosting it on the cloud.
+Can you make a plan to migrate all the schema `dragonlens.db` to postgresql and how to replace SqlLite with postgresql in our prompt processing pipeline!
+Keep in mind the Plan is:
+Once on Postgres, the simplest way to get “process prompt A while prompt B is waiting” is usually Celery fan-out/fan-in:
+      - group(process_prompt.s(...)) for each prompt (each task does: reuse-check → LLM call → persist answer → extraction → persist mentions)
+      - then a chord(...)(consolidate_run.s(run_id)) callback to do steps 4–5 once all prompts finish
+      - This naturally overlaps waiting prompts with processing prompts and avoids “async inside Celery” complexities.
+  - You’ll still need rate limiting / semaphores (remote API limits, Ollama local resource limits), but those become straightforward (Celery queue routing, per-task
+    throttling, or Redis-based rate limits).
+Do not code yet! Plan the migration and all related things!
+
+

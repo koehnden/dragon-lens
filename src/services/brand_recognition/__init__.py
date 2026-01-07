@@ -60,6 +60,7 @@ from services.brand_recognition.text_utils import (
     normalize_text_for_ner,
     extract_snippet_for_brand,
     extract_snippet_with_list_awareness,
+    _truncate_list_item,
     _build_alias_lookup,
     _has_variant_signals,
     _match_substring_alias,
@@ -110,6 +111,7 @@ __all__ = [
     "normalize_text_for_ner",
     "extract_snippet_for_brand",
     "extract_snippet_with_list_awareness",
+    "_truncate_list_item",
     
     # List processing
     "is_list_format",
