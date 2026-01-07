@@ -33,7 +33,13 @@ from services.brand_recognition.consolidation_service import run_enhanced_consol
 from services.brand_recognition.product_brand_mapping import map_products_to_brands_for_run
 from services.brand_recognition.vertical_gate import apply_vertical_gate_to_run
 from services.product_discovery import discover_and_store_products
-from services.translater import TranslaterService
+from services.translater import (
+    TranslaterService,
+    extract_chinese_part,
+    extract_english_part,
+    has_chinese_characters,
+    has_latin_letters,
+)
 from services.metrics_service import calculate_and_save_metrics
 from services.pricing import calculate_cost
 from services.remote_llms import LLMRouter
@@ -404,6 +410,8 @@ def finalize_run(self: DatabaseTask, results: list[dict], run_id: int, force_ree
         commit_with_retry(self.db)
         return {"run_id": run_id, "status": "failed", "failed_count": len(failed_ids), "failed_prompt_ids": failed_ids}
 
+    _backfill_entity_english_names(self.db, run)
+
     enhanced_result = _run_async(run_enhanced_consolidation(self.db, run_id))
     _run_async(apply_vertical_gate_to_run(self.db, run_id))
     consolidate_run(self.db, run_id, normalized_brands=enhanced_result.normalized_brands)
@@ -416,6 +424,112 @@ def finalize_run(self: DatabaseTask, results: list[dict], run_id: int, force_ree
         run.error_message = f"Completed with warnings: failed_prompts={len(failed_ids)} prompt_ids={failed_ids}"
     commit_with_retry(self.db)
     return {"run_id": run_id, "status": "completed", "failed_count": len(failed_ids), "failed_prompt_ids": failed_ids}
+
+
+def _mentioned_brand_ids(db: Session, run_id: int) -> list[int]:
+    rows = (
+        db.query(BrandMention.brand_id)
+        .join(LLMAnswer, LLMAnswer.id == BrandMention.llm_answer_id)
+        .filter(LLMAnswer.run_id == run_id, BrandMention.mentioned)
+        .distinct()
+        .all()
+    )
+    return [int(r[0]) for r in rows]
+
+
+def _mentioned_product_ids(db: Session, run_id: int) -> list[int]:
+    rows = (
+        db.query(ProductMention.product_id)
+        .join(LLMAnswer, LLMAnswer.id == ProductMention.llm_answer_id)
+        .filter(LLMAnswer.run_id == run_id, ProductMention.mentioned)
+        .distinct()
+        .all()
+    )
+    return [int(r[0]) for r in rows]
+
+
+def _normalize_mixed_original_name(name: str) -> tuple[str, str]:
+    english = extract_english_part(name)
+    chinese = extract_chinese_part(name)
+    return english.strip(), chinese.strip()
+
+
+def _append_alias(aliases: dict, lang: str, value: str) -> dict:
+    aliases = aliases or {"zh": [], "en": []}
+    aliases.setdefault("zh", [])
+    aliases.setdefault("en", [])
+    if value and value not in aliases[lang]:
+        aliases[lang].append(value)
+    return aliases
+
+
+def _backfill_entity_english_names(db: Session, run: Run) -> None:
+    vertical = db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
+    if not vertical:
+        return
+    brands = db.query(Brand).filter(Brand.id.in_(_mentioned_brand_ids(db, run.id))).all()
+    products = db.query(Product).filter(Product.id.in_(_mentioned_product_ids(db, run.id))).all()
+    translator = TranslaterService()
+    _normalize_run_entities(brands, products)
+    items = _entities_missing_english(brands, products)
+    if items:
+        mapping = _run_async(translator.translate_entities_to_english_batch(items, vertical.name, vertical.description))
+        _apply_entity_english_mapping(brands, products, mapping)
+    commit_with_retry(db)
+
+
+def _normalize_run_entities(brands: list[Brand], products: list[Product]) -> None:
+    for brand in brands:
+        if has_latin_letters(brand.original_name) and has_chinese_characters(brand.original_name):
+            english, chinese = _normalize_mixed_original_name(brand.original_name)
+            if english:
+                brand.original_name = english
+                brand.translated_name = None
+            if chinese:
+                brand.aliases = _append_alias(brand.aliases, "zh", chinese)
+            if english:
+                brand.aliases = _append_alias(brand.aliases, "en", english)
+    for product in products:
+        if has_latin_letters(product.original_name) and has_chinese_characters(product.original_name):
+            english, _ = _normalize_mixed_original_name(product.original_name)
+            if english:
+                product.original_name = english
+                product.translated_name = None
+
+
+def _entities_missing_english(brands: list[Brand], products: list[Product]) -> list[dict]:
+    items: list[dict] = []
+    for brand in brands:
+        if brand.translated_name:
+            continue
+        if has_chinese_characters(brand.original_name) and not has_latin_letters(brand.original_name):
+            items.append({"type": "brand", "name": brand.original_name.strip()})
+    for product in products:
+        if product.translated_name:
+            continue
+        if has_chinese_characters(product.original_name) and not has_latin_letters(product.original_name):
+            items.append({"type": "product", "name": product.original_name.strip()})
+    return items
+
+
+def _apply_entity_english_mapping(
+    brands: list[Brand],
+    products: list[Product],
+    mapping: dict[tuple[str, str], str],
+) -> None:
+    for brand in brands:
+        key = ("brand", (brand.original_name or "").strip())
+        english = mapping.get(key)
+        if not english:
+            continue
+        brand.translated_name = english
+        brand.aliases = _append_alias(brand.aliases, "en", english)
+    for product in products:
+        key = ("product", (product.original_name or "").strip())
+        english = mapping.get(key)
+        if not english:
+            continue
+        product.translated_name = english
 
 
 @celery_app.task(base=DatabaseTask, bind=True)
