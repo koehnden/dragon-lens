@@ -153,6 +153,39 @@ class TranslaterService:
     def translate_text_sync(self, text: str, source_lang: str, target_lang: str) -> str:
         return asyncio.run(self.translate_text(text, source_lang, target_lang))
 
+    async def translate_batch(
+        self,
+        texts: list[str],
+        source_lang: str,
+        target_lang: str,
+        max_batch_size: int = 20,
+    ) -> list[str]:
+        if not texts:
+            return []
+        if len(texts) == 1:
+            result = await self.translate_text(texts[0], source_lang, target_lang)
+            return [result]
+        non_empty_indices = [i for i, t in enumerate(texts) if t and t.strip()]
+        if not non_empty_indices:
+            return [""] * len(texts)
+        non_empty_texts = [texts[i] for i in non_empty_indices]
+        translated = await _translate_batch_internal(
+            self.ollama, non_empty_texts, source_lang, target_lang, max_batch_size
+        )
+        results = [""] * len(texts)
+        for idx, trans in zip(non_empty_indices, translated):
+            results[idx] = trans
+        return results
+
+    def translate_batch_sync(
+        self,
+        texts: list[str],
+        source_lang: str,
+        target_lang: str,
+        max_batch_size: int = 20,
+    ) -> list[str]:
+        return asyncio.run(self.translate_batch(texts, source_lang, target_lang, max_batch_size))
+
 
 def _build_entity_prompt(name: str) -> str:
     return load_prompt("translation/entity_translation_user_prompt", name=name)
@@ -259,3 +292,75 @@ async def _translate_entity_batch(
             continue
         out[(t, name)] = str(english).strip()
     return out
+
+
+async def _translate_batch_internal(
+    service: "OllamaService",
+    texts: list[str],
+    source_lang: str,
+    target_lang: str,
+    max_batch_size: int,
+) -> list[str]:
+    if len(texts) <= max_batch_size:
+        return await _translate_single_batch(service, texts, source_lang, target_lang)
+    results: list[str] = []
+    for i in range(0, len(texts), max_batch_size):
+        batch = texts[i : i + max_batch_size]
+        batch_results = await _translate_single_batch(service, batch, source_lang, target_lang)
+        results.extend(batch_results)
+    return results
+
+
+async def _translate_single_batch(
+    service: "OllamaService",
+    texts: list[str],
+    source_lang: str,
+    target_lang: str,
+) -> list[str]:
+    texts_json = json.dumps(texts, ensure_ascii=False)
+    system_prompt = load_prompt(
+        "translation/batch_translation_system_prompt",
+        source_lang=source_lang,
+        target_lang=target_lang,
+    )
+    prompt = load_prompt("translation/batch_translation_user_prompt", texts_json=texts_json)
+    try:
+        response = await service._call_ollama(
+            model=service.translation_model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.2,
+        )
+    except Exception:
+        return list(texts)
+    return _parse_batch_translation_response(response, texts)
+
+
+def _parse_batch_translation_response(response: str, original_texts: list[str]) -> list[str]:
+    raw = (response or "").strip()
+    if raw.startswith("```json"):
+        raw = raw[7:]
+    if raw.startswith("```"):
+        raw = raw[3:]
+    if raw.endswith("```"):
+        raw = raw[:-3]
+    raw = raw.strip()
+    start = raw.find("[")
+    end = raw.rfind("]")
+    if start < 0 or end < 0 or end <= start:
+        return list(original_texts)
+    try:
+        parsed = json.loads(raw[start : end + 1])
+    except json.JSONDecodeError:
+        return list(original_texts)
+    if not isinstance(parsed, list):
+        return list(original_texts)
+    if len(parsed) != len(original_texts):
+        return list(original_texts)
+    results = []
+    for i, item in enumerate(parsed):
+        if isinstance(item, str) and item.strip():
+            results.append(item.strip())
+        else:
+            results.append(original_texts[i])
+    return results
