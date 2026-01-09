@@ -49,6 +49,15 @@ def submit_feedback(
     return _response(payload.run_id, canonical.id, applied)
 
 
+def validate_feedback_request(
+    db: Session,
+    payload: FeedbackSubmitRequest,
+) -> Vertical:
+    _validate_payload(payload)
+    _validate_run(db, payload.run_id, payload.vertical_id)
+    return _load_vertical(db, payload.vertical_id)
+
+
 def _validate_payload(payload: FeedbackSubmitRequest) -> None:
     _validate_canonical_vertical(payload.canonical_vertical)
     _validate_brand_items(payload.brand_feedback)

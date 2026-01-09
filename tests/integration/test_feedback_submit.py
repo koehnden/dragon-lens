@@ -1,8 +1,10 @@
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from config import settings
 from models import Run, RunStatus, Vertical
 from models.knowledge_domain import (
     KnowledgeBrand,
@@ -139,3 +141,33 @@ def test_feedback_submit_rejects_pending_run(
     response = client.post("/api/v1/feedback/submit", json=payload)
 
     assert response.status_code == 400
+
+
+def test_feedback_submit_does_not_run_sanity_checks_for_invalid_requests(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    original = settings.feedback_sanity_checks_enabled
+    settings.feedback_sanity_checks_enabled = True
+    try:
+        async def _fail(*args, **kwargs):
+            raise AssertionError("sanity check invoked")
+
+        monkeypatch.setattr("api.routers.feedback.check_brand_feedback", _fail)
+        monkeypatch.setattr("api.routers.feedback.check_product_feedback", _fail)
+        monkeypatch.setattr("api.routers.feedback.check_translation_feedback", _fail)
+
+        vertical = Vertical(name="Cars", description="Cars")
+        db_session.add(vertical)
+        db_session.commit()
+
+        payload = {
+            "run_id": 999999,
+            "vertical_id": vertical.id,
+            "canonical_vertical": {"is_new": True, "name": "Cars"},
+        }
+        response = client.post("/api/v1/feedback/submit", json=payload)
+        assert response.status_code == 404
+    finally:
+        settings.feedback_sanity_checks_enabled = original
