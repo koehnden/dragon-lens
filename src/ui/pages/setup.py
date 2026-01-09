@@ -82,6 +82,50 @@ def show():
     prompt_language_code = "zh" if prompt_language == "Chinese (中文)" else "en"
     prompts = parse_prompt_entries(prompts_text, prompt_language_code)
 
+    st.header("3b. Comparison Prompts (Optional)")
+    comparison_enabled = st.checkbox(
+        "Enable comparison prompts (sentiment-only, runs after the main job)",
+        value=False,
+    )
+
+    comparison_competitor_brands = []
+    comparison_prompts = []
+    comparison_target_count = 20
+    comparison_min_per_competitor = 2
+    comparison_autogenerate_missing = True
+
+    if comparison_enabled:
+        competitor_text = st.text_area(
+            "Competitor Brands (one per line, optional)",
+            key="comparison_competitors",
+            placeholder="Salomon\nMerrell",
+            height=120,
+        )
+        comparison_competitor_brands = [c.strip() for c in competitor_text.splitlines() if c.strip()]
+
+        comparison_prompt_language = st.radio(
+            "Comparison Prompt Language (for your examples)",
+            ["Chinese (中文)", "English"],
+            key="comparison_prompt_language",
+            horizontal=True,
+        )
+        comparison_prompts_text = st.text_area(
+            "Comparison Prompts (one per line, optional)",
+            key="comparison_prompts_text",
+            placeholder="Between Brand A and Brand B, which would you recommend and why?\n对比品牌A和品牌B的优缺点，并给出不推荐的场景。",
+            height=160,
+        )
+        comparison_prompt_language_code = "zh" if comparison_prompt_language == "Chinese (中文)" else "en"
+        comparison_prompts = parse_prompt_entries(comparison_prompts_text, comparison_prompt_language_code)
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            comparison_target_count = st.number_input("Target Comparison Prompts", min_value=1, max_value=500, value=20, step=1)
+        with col2:
+            comparison_min_per_competitor = st.number_input("Min Prompts per Competitor", min_value=0, max_value=50, value=2, step=1)
+        with col3:
+            comparison_autogenerate_missing = st.checkbox("Auto-generate missing prompts", value=True)
+
     st.header("4. LLM Configuration")
     
     col1, col2 = st.columns(2)
@@ -162,6 +206,12 @@ def show():
             "prompts": prompts,
             "provider": provider,
             "model_name": model_name,
+            "comparison_enabled": comparison_enabled,
+            "comparison_competitor_brands": comparison_competitor_brands,
+            "comparison_prompts": comparison_prompts,
+            "comparison_target_count": int(comparison_target_count),
+            "comparison_min_prompts_per_competitor": int(comparison_min_per_competitor),
+            "comparison_autogenerate_missing": comparison_autogenerate_missing,
         }
 
         try:
@@ -193,5 +243,11 @@ def show():
             "prompts": prompts,
             "provider": provider,
             "model_name": model_name,
+            "comparison_enabled": comparison_enabled,
+            "comparison_competitor_brands": comparison_competitor_brands,
+            "comparison_prompts": comparison_prompts,
+            "comparison_target_count": int(comparison_target_count),
+            "comparison_min_prompts_per_competitor": int(comparison_min_per_competitor),
+            "comparison_autogenerate_missing": comparison_autogenerate_missing,
         }
         st.json(payload)

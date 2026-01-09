@@ -460,3 +460,162 @@ class RejectedEntity(Base):
     )
 
     vertical: Mapped["Vertical"] = relationship(Vertical)
+
+
+class ComparisonRunStatus(str, enum.Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class ComparisonPromptType(str, enum.Enum):
+    BRAND_VS_BRAND = "brand_vs_brand"
+    PRODUCT_VS_PRODUCT = "product_vs_product"
+
+
+class ComparisonPromptSource(str, enum.Enum):
+    USER = "user"
+    GENERATED = "generated"
+
+
+class ComparisonEntityRole(str, enum.Enum):
+    PRIMARY = "primary"
+    COMPETITOR = "competitor"
+
+
+class RunComparisonConfig(Base):
+    __tablename__ = "run_comparison_configs"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False, unique=True)
+    vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    primary_brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    competitor_brands: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    target_count: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
+    min_prompts_per_competitor: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    autogenerate_missing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    status: Mapped[ComparisonRunStatus] = mapped_column(
+        Enum(ComparisonRunStatus), nullable=False, default=ComparisonRunStatus.PENDING
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    run: Mapped["Run"] = relationship(Run)
+    vertical: Mapped["Vertical"] = relationship(Vertical)
+    primary_brand: Mapped["Brand"] = relationship(Brand)
+
+
+class ComparisonPrompt(Base):
+    __tablename__ = "comparison_prompts"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
+    vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    prompt_type: Mapped[ComparisonPromptType] = mapped_column(Enum(ComparisonPromptType), nullable=False)
+    source: Mapped[ComparisonPromptSource] = mapped_column(Enum(ComparisonPromptSource), nullable=False)
+    text_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    text_zh: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    language_original: Mapped[PromptLanguage] = mapped_column(
+        Enum(PromptLanguage), nullable=False, default=PromptLanguage.ZH
+    )
+    primary_brand_id: Mapped[Optional[int]] = mapped_column(ForeignKey("brands.id"), nullable=True)
+    competitor_brand_id: Mapped[Optional[int]] = mapped_column(ForeignKey("brands.id"), nullable=True)
+    primary_product_id: Mapped[Optional[int]] = mapped_column(ForeignKey("products.id"), nullable=True)
+    competitor_product_id: Mapped[Optional[int]] = mapped_column(ForeignKey("products.id"), nullable=True)
+    aspects: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    run: Mapped["Run"] = relationship(Run)
+    vertical: Mapped["Vertical"] = relationship(Vertical)
+
+
+class ComparisonAnswer(Base):
+    __tablename__ = "comparison_answers"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
+    comparison_prompt_id: Mapped[int] = mapped_column(ForeignKey("comparison_prompts.id"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    route: Mapped[Optional[LLMRoute]] = mapped_column(Enum(LLMRoute), nullable=True)
+    raw_answer_zh: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_answer_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tokens_in: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tokens_out: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    latency: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    cost_estimate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    run: Mapped["Run"] = relationship(Run)
+    prompt: Mapped["ComparisonPrompt"] = relationship(ComparisonPrompt)
+
+
+class ComparisonSentimentObservation(Base):
+    __tablename__ = "comparison_sentiment_observations"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
+    comparison_answer_id: Mapped[int] = mapped_column(ForeignKey("comparison_answers.id"), nullable=False)
+    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType), nullable=False)
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    entity_role: Mapped[ComparisonEntityRole] = mapped_column(Enum(ComparisonEntityRole), nullable=False)
+    aspect: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    sentiment: Mapped[Sentiment] = mapped_column(Enum(Sentiment), nullable=False)
+    snippet_zh: Mapped[str] = mapped_column(Text, nullable=False)
+    snippet_en: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    run: Mapped["Run"] = relationship(Run)
+    answer: Mapped["ComparisonAnswer"] = relationship(ComparisonAnswer)
+
+
+class ComparisonRunEvent(Base):
+    __tablename__ = "comparison_run_events"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
+    level: Mapped[str] = mapped_column(String(20), nullable=False)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    run: Mapped["Run"] = relationship(Run)
+
+
+class RunProductMetrics(Base):
+    __tablename__ = "run_product_metrics"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    mention_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    share_of_voice: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    top_spot_share: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    sentiment_index: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    dragon_lens_visibility: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    product: Mapped["Product"] = relationship(Product)
