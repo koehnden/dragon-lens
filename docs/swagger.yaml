@@ -828,6 +828,10 @@ paths:
           description: Invalid feedback payload
         '404':
           description: Run or vertical not found
+        '503':
+          description: Feedback checks unavailable
+        '507':
+          description: Knowledge database size limit exceeded
         '422':
           description: Validation Error
           content:

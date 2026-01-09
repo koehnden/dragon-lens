@@ -656,6 +656,7 @@ def _store_consolidation_debug(
     debug_info: ConsolidationDebugInfo,
 ) -> None:
     """Store consolidation debug information."""
+    db.query(ConsolidationDebug).filter(ConsolidationDebug.run_id == run_id).delete()
     debug_record = ConsolidationDebug(
         run_id=run_id,
         input_brands=json.dumps(debug_info.input_brands, ensure_ascii=False),
