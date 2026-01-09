@@ -75,6 +75,30 @@ class TrackingJobCreate(BaseModel):
     model_name: str = Field(default="qwen2.5:7b-instruct-q4_0", description="Specific model name or OpenRouter model ID")
     reuse_answers: bool = Field(default=False, description="Whether to reuse answers from previous runs")
     web_search_enabled: bool = Field(default=False, description="Whether web search is enabled for this run")
+    comparison_enabled: bool = Field(
+        default=False, description="Whether to run comparison prompts after the main run completes"
+    )
+    comparison_competitor_brands: List[str] = Field(
+        default_factory=list, description="Optional competitor brand display names for comparisons"
+    )
+    comparison_prompts: List[PromptCreate] = Field(
+        default_factory=list, description="Optional user-provided comparison prompts (not used for extraction)"
+    )
+    comparison_target_count: int = Field(
+        default=20,
+        ge=1,
+        le=500,
+        description="Target number of comparison prompts (may be exceeded to satisfy per-competitor minimums)",
+    )
+    comparison_min_prompts_per_competitor: int = Field(
+        default=2,
+        ge=0,
+        le=50,
+        description="Minimum number of generated comparison prompts per user-provided competitor brand",
+    )
+    comparison_autogenerate_missing: bool = Field(
+        default=True, description="Whether to auto-generate missing prompts to reach the target count"
+    )
 
 
 class TrackingJobResponse(BaseModel):
@@ -246,6 +270,44 @@ class RunMetricsResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ComparisonEvidenceSnippet(BaseModel):
+    snippet_zh: str
+    snippet_en: str
+    sentiment: str
+    aspect: Optional[str] = None
+
+
+class ComparisonEntitySentimentSummary(BaseModel):
+    entity_type: str
+    entity_id: int
+    entity_name: str
+    entity_role: str
+    positive_count: int
+    neutral_count: int
+    negative_count: int
+    sentiment_index: float
+    snippets: List[ComparisonEvidenceSnippet] = Field(default_factory=list)
+
+
+class RunComparisonMessage(BaseModel):
+    level: str
+    code: str
+    message: str
+
+
+class RunComparisonMetricsResponse(BaseModel):
+    run_id: int
+    vertical_id: int
+    vertical_name: str
+    provider: str
+    model_name: str
+    primary_brand_id: int
+    primary_brand_name: str
+    brands: List[ComparisonEntitySentimentSummary]
+    products: List[ComparisonEntitySentimentSummary]
+    messages: List[RunComparisonMessage] = Field(default_factory=list)
+
+
 class AllRunMetricsResponse(BaseModel):
     run_id: int
     vertical_id: int
@@ -254,6 +316,18 @@ class AllRunMetricsResponse(BaseModel):
     model_name: str
     run_time: datetime
     metrics: List[RunMetricsResponse]
+
+    model_config = {"from_attributes": True}
+
+
+class AllRunProductMetricsResponse(BaseModel):
+    run_id: int
+    vertical_id: int
+    vertical_name: str
+    provider: str
+    model_name: str
+    run_time: datetime
+    products: List[ProductMetrics]
 
     model_config = {"from_attributes": True}
 

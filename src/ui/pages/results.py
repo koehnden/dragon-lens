@@ -174,6 +174,83 @@ def _fetch_metrics(vertical_id: int, model_name: str, view_mode: str) -> dict | 
         return None
 
 
+def _fetch_latest_completed_run(vertical_id: int, model_name: str) -> dict | None:
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/tracking/runs",
+            params={"vertical_id": vertical_id, "model_name": model_name, "limit": 50},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        runs = response.json()
+    except httpx.HTTPError:
+        return None
+    for run in runs:
+        if run.get("status") == "completed":
+            return run
+    return None
+
+
+def _fetch_run_brand_metrics(run_id: int) -> dict | None:
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}",
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return {"brands": data.get("metrics") or []}
+    except httpx.HTTPError:
+        return None
+
+
+def _fetch_run_product_metrics(run_id: int) -> dict | None:
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}/products",
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError:
+        return None
+
+
+def _fetch_run_comparison(run_id: int, include_snippets: bool) -> dict | None:
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}/comparison",
+            params={
+                "include_snippets": include_snippets,
+                "limit_entities": 50,
+                "limit_snippets": 3,
+            },
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError:
+        return None
+
+
+def _render_comparison_view(comparison: dict) -> None:
+    st.markdown("### Comparison Sentiment (Run)")
+    st.write(f"Primary brand: {comparison.get('primary_brand_name', '')}")
+    messages = comparison.get("messages") or []
+    if messages:
+        with st.expander("Messages"):
+            for m in messages:
+                st.write(f"{m.get('level')}: {m.get('message')}")
+    brands = comparison.get("brands") or []
+    products = comparison.get("products") or []
+    if brands:
+        st.markdown("#### Brand Comparison")
+        st.dataframe(brands, use_container_width=True, hide_index=True)
+    if products:
+        st.markdown("#### Product Comparison")
+        st.dataframe(products, use_container_width=True, hide_index=True)
+
+
 def show():
     st.title("Brand Visibility Results")
 
@@ -215,21 +292,43 @@ def show():
 
     model_param = "all" if selected_model == "All" else selected_model
 
-    with st.spinner("Loading metrics..."):
-        metrics = _fetch_metrics(selected_vertical_id, model_param, view_mode)
-
-    if not metrics:
-        st.warning("No data found for this vertical and model combination.")
-        st.info("Make sure a tracking job has been run and completed.")
-        return
-
-    st.subheader(f"Latest Metrics: {metrics['vertical_name']} ({metrics['model_name']})")
-    st.caption(f"Data from: {metrics['date']}")
-
-    if view_mode == "Brand":
-        _render_brand_view(metrics)
+    run_id = None
+    if model_param == "all":
+        with st.spinner("Loading metrics..."):
+            metrics = _fetch_metrics(selected_vertical_id, model_param, view_mode)
+        if not metrics:
+            st.warning("No data found for this vertical and model combination.")
+            st.info("Make sure a tracking job has been run and completed.")
+            return
+        st.subheader(f"Latest Metrics: {metrics['vertical_name']} ({metrics['model_name']})")
+        st.caption(f"Data from: {metrics['date']}")
+        if view_mode == "Brand":
+            _render_brand_view(metrics)
+        else:
+            _render_product_view(metrics)
+        st.info("Comparison results are available for a specific model/run.")
     else:
-        _render_product_view(metrics)
+        latest_run = _fetch_latest_completed_run(selected_vertical_id, model_param)
+        if not latest_run:
+            st.info("No completed runs found for this vertical/model yet.")
+            return
+        run_id = latest_run["id"]
+        st.subheader(f"Latest Run Metrics: {selected_vertical_name} ({model_param})")
+        st.caption(f"Run ID: {run_id} | Run time: {latest_run.get('run_time')}")
+        with st.spinner("Loading run metrics..."):
+            metrics = _fetch_run_brand_metrics(run_id) if view_mode == "Brand" else _fetch_run_product_metrics(run_id)
+        if not metrics:
+            st.error("Failed to load run metrics.")
+            return
+        if view_mode == "Brand":
+            _render_brand_view(metrics)
+        else:
+            _render_product_view(metrics)
+        include_snippets = st.checkbox("Include comparison snippets", value=False)
+        with st.spinner("Loading comparison sentiment..."):
+            comparison = _fetch_run_comparison(run_id, include_snippets)
+        if comparison:
+            _render_comparison_view(comparison)
 
     st.markdown("---")
     st.markdown("## Last Run Inspector")
