@@ -293,3 +293,55 @@ def test_get_vertical_models_excludes_pending(client, db_session):
 def test_get_vertical_models_not_found(client, db_session):
     response = client.get("/api/v1/verticals/9999/models")
     assert response.status_code == 404
+
+
+def test_get_vertical_brands_empty(client, db_session):
+    from models import Vertical
+
+    vertical = Vertical(name="Empty Vertical", description="No brands")
+    db_session.add(vertical)
+    db_session.commit()
+
+    response = client.get(f"/api/v1/verticals/{vertical.id}/brands")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_get_vertical_brands_user_input_only(client, db_session):
+    from models import Brand, Vertical
+
+    vertical = Vertical(name="Test Vertical", description="With brands")
+    db_session.add(vertical)
+    db_session.flush()
+
+    db_session.add(
+        Brand(
+            vertical_id=vertical.id,
+            display_name="Tesla",
+            original_name="Tesla",
+            translated_name=None,
+            aliases={"zh": ["特斯拉"], "en": ["Tesla"]},
+            is_user_input=True,
+        )
+    )
+    db_session.add(
+        Brand(
+            vertical_id=vertical.id,
+            display_name="BYD",
+            original_name="BYD",
+            translated_name=None,
+            aliases={"zh": ["比亚迪"], "en": ["BYD"]},
+            is_user_input=False,
+        )
+    )
+    db_session.commit()
+
+    response = client.get(f"/api/v1/verticals/{vertical.id}/brands?user_input_only=true")
+    assert response.status_code == 200
+    names = [b["display_name"] for b in response.json()]
+    assert names == ["Tesla"]
+
+
+def test_get_vertical_brands_not_found(client, db_session):
+    response = client.get("/api/v1/verticals/9999/brands")
+    assert response.status_code == 404
