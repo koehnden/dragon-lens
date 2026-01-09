@@ -5,8 +5,8 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from models import DailyMetrics, Run, RunMetrics, RunStatus, Vertical, get_db
-from models.schemas import DeleteVerticalResponse, VerticalCreate, VerticalResponse
+from models import Brand, DailyMetrics, Run, RunMetrics, RunStatus, Vertical, get_db
+from models.schemas import BrandResponse, DeleteVerticalResponse, VerticalCreate, VerticalResponse
 
 router = APIRouter()
 
@@ -107,6 +107,36 @@ async def get_vertical_models(
     )
 
     return sorted([m[0] for m in models])
+
+
+@router.get("/{vertical_id}/brands", response_model=List[BrandResponse])
+async def list_vertical_brands(
+    vertical_id: int,
+    user_input_only: bool = False,
+    db: Session = Depends(get_db),
+) -> List[Brand]:
+    """
+    List brands for a specific vertical.
+
+    Args:
+        vertical_id: Vertical ID
+        user_input_only: Whether to return only user-input brands
+        db: Database session
+
+    Returns:
+        List of brands
+
+    Raises:
+        HTTPException: If vertical not found
+    """
+    vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+    if not vertical:
+        raise HTTPException(status_code=404, detail=f"Vertical {vertical_id} not found")
+
+    query = db.query(Brand).filter(Brand.vertical_id == vertical_id)
+    if user_input_only:
+        query = query.filter(Brand.is_user_input.is_(True))
+    return query.order_by(Brand.id.asc()).all()
 
 
 @router.delete("/{vertical_id}", response_model=DeleteVerticalResponse)
