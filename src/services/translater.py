@@ -285,7 +285,7 @@ async def _translate_entity_batch(
         return {}
     out: dict[tuple[str, str], str] = {}
     for item in parsed:
-        t = (item.get("type") or "").strip()
+        t = (item.get("type") or "").strip().lower()
         name = (item.get("name") or "").strip()
         english = item.get("english")
         if not t or not name or not _is_valid_english_entity_name(english):
