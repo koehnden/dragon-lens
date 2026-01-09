@@ -198,6 +198,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/verticals/{vertical_id}/brands:
+    get:
+      tags:
+      - verticals
+      summary: List Brands for Vertical
+      description: "List brands configured for this vertical, optionally filtering to user-input brands."
+      operationId: list_vertical_brands_api_v1_verticals__vertical_id__brands_get
+      parameters:
+      - name: vertical_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Vertical Id
+      - name: user_input_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: User Input Only
+      responses:
+        '200':
+          description: List of brands for the vertical
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BrandResponse'
+        '404':
+          description: Vertical not found
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/tracking/jobs:
     post:
       tags:
@@ -935,6 +973,45 @@ components:
       required:
       - display_name
       title: BrandCreate
+    BrandResponse:
+      properties:
+        id:
+          type: integer
+          title: Id
+        vertical_id:
+          type: integer
+          title: Vertical Id
+        display_name:
+          type: string
+          title: Display Name
+        original_name:
+          type: string
+          title: Original Name
+        translated_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Translated Name
+        aliases:
+          type: object
+          title: Aliases
+        is_user_input:
+          type: boolean
+          title: Is User Input
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - vertical_id
+      - display_name
+      - original_name
+      - aliases
+      - is_user_input
+      - created_at
+      title: BrandResponse
     FeedbackAppliedSummary:
       properties:
         brands:
