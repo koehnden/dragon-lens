@@ -354,6 +354,17 @@ def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reex
             self.db.add(debug_record)
 
         discovered_products = discover_and_store_products(self.db, run.vertical_id, answer_zh, all_brands)
+        vertical = self.db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
+        vertical_name = vertical.name if vertical else ""
+        vertical_description = vertical.description if vertical else None
+        from services.translation_feedback import apply_translation_feedback
+        apply_translation_feedback(
+            self.db,
+            vertical_name=vertical_name,
+            vertical_description=vertical_description,
+            brands=all_brands,
+            products=discovered_products,
+        )
 
         brand_names = [b.display_name for b in all_brands]
         brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]

@@ -17,16 +17,16 @@ from models.knowledge_domain import (
     KnowledgeBrandAlias,
     KnowledgeProduct,
     KnowledgeProductAlias,
-    KnowledgeRejectedEntity,
 )
 from services.canonicalization_metrics import build_user_brand_variant_set
+from services.knowledge_examples import rejected_examples
 from services.knowledge_session import knowledge_session
 from services.knowledge_verticals import resolve_knowledge_vertical_id
 
 logger = logging.getLogger(__name__)
 
 POSITIVE_EXAMPLES_LIMIT = 20
-NEGATIVE_EXAMPLES_LIMIT = 100
+NEGATIVE_EXAMPLES_LIMIT = 30
 
 
 def get_validated_brands_for_prompt(
@@ -183,10 +183,8 @@ def _rejected_entities_for_prompt(
 ) -> List[Dict]:
     with knowledge_session() as knowledge_db:
         knowledge_id = _knowledge_vertical_id(knowledge_db, db, vertical_id)
-        if not knowledge_id:
-            return []
-        rejected = _rejected_entities(knowledge_db, knowledge_id, entity_type, limit)
-        return [_rejected_payload(entity) for entity in rejected]
+        examples = rejected_examples(knowledge_db, knowledge_id, entity_type, limit=limit)
+        return [_rejected_prompt_item(example) for example in examples]
 
 
 def _validated_entity_names(db: Session, vertical_id: int) -> Tuple[Set[str], Set[str]]:
@@ -246,20 +244,14 @@ def _product_prompt_entry(knowledge_db: Session, product: KnowledgeProduct) -> D
     }
 
 
-def _rejected_entities(
-    knowledge_db: Session,
-    vertical_id: int,
-    entity_type: EntityType,
-    limit: int,
-) -> List[KnowledgeRejectedEntity]:
-    return knowledge_db.query(KnowledgeRejectedEntity).filter(
-        KnowledgeRejectedEntity.vertical_id == vertical_id,
-        KnowledgeRejectedEntity.entity_type == entity_type,
-    ).order_by(KnowledgeRejectedEntity.created_at.desc()).limit(limit).all()
-
-
-def _rejected_payload(entity: KnowledgeRejectedEntity) -> Dict:
-    return {"name": entity.name, "reason": _simplify_rejection_reason(entity.reason)}
+def _rejected_prompt_item(example: dict) -> Dict:
+    reason = _simplify_rejection_reason(example.get("reason") or "")
+    return {
+        "name": example.get("name") or "",
+        "reason": reason,
+        "vertical_name": example.get("vertical_name") or "",
+        "same_vertical": bool(example.get("same_vertical")),
+    }
 
 
 def _name_sets(

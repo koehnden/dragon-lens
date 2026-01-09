@@ -125,13 +125,45 @@ class TranslaterService:
         items: list[dict],
         vertical_name: str,
         vertical_description: str | None,
+        override_examples: list[dict] | None = None,
     ) -> dict[tuple[str, str], str]:
-        results = await _translate_entity_batch(self.ollama, items, vertical_name, vertical_description, retry=False)
+        examples_json = _examples_json(override_examples)
+        results = await _translate_entity_batch(
+            self.ollama,
+            items,
+            vertical_name,
+            vertical_description,
+            examples_json=examples_json,
+            retry=False,
+        )
         missing = [i for i in items if (i["type"], i["name"]) not in results]
         if not missing:
             return results
-        retry_results = await _translate_entity_batch(self.ollama, missing, vertical_name, vertical_description, retry=True)
+        retry_results = await _translate_entity_batch(
+            self.ollama,
+            missing,
+            vertical_name,
+            vertical_description,
+            examples_json=examples_json,
+            retry=True,
+        )
         return {**results, **retry_results}
+
+    def translate_entities_to_english_batch_sync(
+        self,
+        items: list[dict],
+        vertical_name: str,
+        vertical_description: str | None,
+        override_examples: list[dict] | None = None,
+    ) -> dict[tuple[str, str], str]:
+        return asyncio.run(
+            self.translate_entities_to_english_batch(
+                items,
+                vertical_name,
+                vertical_description,
+                override_examples=override_examples,
+            )
+        )
 
     async def translate_entity(self, name: str) -> str:
         if has_latin_letters(name):
@@ -269,12 +301,19 @@ async def _translate_entity_batch(
     items: list[dict],
     vertical_name: str,
     vertical_description: str | None,
+    examples_json: str,
     retry: bool,
 ) -> dict[tuple[str, str], str]:
     items_json = json.dumps(items, ensure_ascii=False)
     sys_id = "translation/entity_name_en_batch_retry_system_prompt" if retry else "translation/entity_name_en_batch_system_prompt"
     user_id = "translation/entity_name_en_batch_retry_user_prompt" if retry else "translation/entity_name_en_batch_user_prompt"
-    prompt = load_prompt(user_id, vertical_name=vertical_name, vertical_description=vertical_description or "", items_json=items_json)
+    prompt = load_prompt(
+        user_id,
+        vertical_name=vertical_name,
+        vertical_description=vertical_description or "",
+        items_json=items_json,
+        override_examples_json=examples_json,
+    )
     system_prompt = load_prompt(sys_id)
     try:
         response = await service._call_ollama(model=service.translation_model, prompt=prompt, system_prompt=system_prompt, temperature=0.1)
@@ -292,6 +331,12 @@ async def _translate_entity_batch(
             continue
         out[(t, name)] = str(english).strip()
     return out
+
+
+def _examples_json(examples: list[dict] | None) -> str:
+    if not examples:
+        return ""
+    return json.dumps(examples, ensure_ascii=False)
 
 
 async def _translate_batch_internal(

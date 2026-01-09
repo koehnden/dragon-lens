@@ -9,7 +9,7 @@ ACTION_OPTIONS = ["", "valid", "wrong"]
 MAPPING_ACTIONS = ["", "wrong"]
 MISSING_MAPPING_ACTIONS = ["", "add"]
 ENTITY_OPTIONS = ["brand", "product"]
-LANG_OPTIONS = ["en", "zh"]
+LANG_OPTIONS = ["en"]
 
 STATE_RUN_ID = "feedback_run_id"
 STATE_BRANDS = "feedback_brands"
