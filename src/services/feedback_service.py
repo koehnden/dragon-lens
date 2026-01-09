@@ -21,6 +21,7 @@ from models.schemas import (
     FeedbackAction,
     FeedbackAppliedSummary,
     FeedbackCanonicalVertical,
+    FeedbackLanguage,
     FeedbackMappingAction,
     FeedbackMappingFeedbackItem,
     FeedbackProductFeedbackItem,
@@ -123,6 +124,7 @@ def _validate_translation_items(items: Iterable[FeedbackTranslationOverrideItem]
 def _validate_translation_item(item: FeedbackTranslationOverrideItem) -> None:
     _require(item.canonical_name, "Canonical name is required for translation")
     _require(item.override_text, "Override text is required for translation")
+    _require(item.language == FeedbackLanguage.EN, "Only EN translation overrides are supported")
 
 
 def _validate_replace_item(wrong_name: str | None, correct_name: str | None, label: str) -> None:
