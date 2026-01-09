@@ -607,83 +607,74 @@ example: ## Run an example SUV tracking job with VW brand (reuses prompt results
 	@echo ""
 	@poetry run python scripts/run_example_with_reuse.py --provider=qwen
 
-example-suv: ## Run 7-model example for examples/suv_example.json
-	@echo "$(YELLOW)Running SUV example with 7 models...$(NC)"
+example-suv: ## Run 6-model example for examples/suv_example.json
+	@echo "$(YELLOW)Running SUV example with 6 models...$(NC)"
 	@echo ""
-	@echo "$(YELLOW)1/7 Running with Qwen...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/suv_example.json
-	@echo ""
-	@echo "$(YELLOW)2/7 Running with DeepSeek Chat...$(NC)"
+	@echo "$(YELLOW)1/6 Running with DeepSeek Chat...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/suv_example.json
 	@echo ""
-	@echo "$(YELLOW)3/7 Running with Kimi K2...$(NC)"
+	@echo "$(YELLOW)2/6 Running with Kimi K2...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=examples/suv_example.json
 	@echo ""
-	@echo "$(YELLOW)4/7 Running with ByteDance Seed...$(NC)"
+	@echo "$(YELLOW)3/6 Running with ByteDance Seed...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=bytedance-seed --example-file=examples/suv_example.json
 	@echo ""
-	@echo "$(YELLOW)5/7 Running with Baidu ERNIE...$(NC)"
+	@echo "$(YELLOW)4/6 Running with Baidu ERNIE...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=baidu-ernie --example-file=examples/suv_example.json
 	@echo ""
-	@echo "$(YELLOW)6/7 Running with Qwen 72B...$(NC)"
+	@echo "$(YELLOW)5/6 Running with Qwen 72B...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=qwen-72b --example-file=examples/suv_example.json
 	@echo ""
-	@echo "$(YELLOW)7/7 Running with MiniMax M2...$(NC)"
+	@echo "$(YELLOW)6/6 Running with MiniMax M2...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=minimax-m2 --example-file=examples/suv_example.json
 	@echo ""
-	@echo "$(GREEN)✓ SUV example submitted (7 models)!$(NC)"
+	@echo "$(GREEN)✓ SUV example submitted (6 models)!$(NC)"
 
-example-diaper: ## Run 7-model example for examples/diaper_example.json
-	@echo "$(YELLOW)Running diaper example with 7 models...$(NC)"
+example-diaper: ## Run 6-model example for examples/diaper_example.json
+	@echo "$(YELLOW)Running diaper example with 6 models...$(NC)"
 	@echo ""
-	@echo "$(YELLOW)1/7 Running with Qwen...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/diaper_example.json
-	@echo ""
-	@echo "$(YELLOW)2/7 Running with DeepSeek Chat...$(NC)"
+	@echo "$(YELLOW)1/6 Running with DeepSeek Chat...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/diaper_example.json
 	@echo ""
-	@echo "$(YELLOW)3/7 Running with Kimi K2...$(NC)"
+	@echo "$(YELLOW)2/6 Running with Kimi K2...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=examples/diaper_example.json
 	@echo ""
-	@echo "$(YELLOW)4/7 Running with ByteDance Seed...$(NC)"
+	@echo "$(YELLOW)3/6 Running with ByteDance Seed...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=bytedance-seed --example-file=examples/diaper_example.json
 	@echo ""
-	@echo "$(YELLOW)5/7 Running with Baidu ERNIE...$(NC)"
+	@echo "$(YELLOW)4/6 Running with Baidu ERNIE...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=baidu-ernie --example-file=examples/diaper_example.json
 	@echo ""
-	@echo "$(YELLOW)6/7 Running with Qwen 72B...$(NC)"
+	@echo "$(YELLOW)5/6 Running with Qwen 72B...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=qwen-72b --example-file=examples/diaper_example.json
 	@echo ""
-	@echo "$(YELLOW)7/7 Running with MiniMax M2...$(NC)"
+	@echo "$(YELLOW)6/6 Running with MiniMax M2...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=minimax-m2 --example-file=examples/diaper_example.json
 	@echo ""
-	@echo "$(GREEN)✓ Diaper example submitted (7 models)!$(NC)"
+	@echo "$(GREEN)✓ Diaper example submitted (6 models)!$(NC)"
 
-example-hiking-shoes: ## Run 7-model example for examples/hiking_shoes_example.json
-	@echo "$(YELLOW)Running hiking shoes example with 7 models...$(NC)"
+example-hiking-shoes: ## Run 6-model example for examples/hiking_shoes_example.json
+	@echo "$(YELLOW)Running hiking shoes example with 6 models...$(NC)"
 	@echo ""
-	@echo "$(YELLOW)1/7 Running with Qwen...$(NC)"
-	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/hiking_shoes_example.json
-	@echo ""
-	@echo "$(YELLOW)2/7 Running with DeepSeek Chat...$(NC)"
+	@echo "$(YELLOW)1/6 Running with DeepSeek Chat...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/hiking_shoes_example.json
 	@echo ""
-	@echo "$(YELLOW)3/7 Running with Kimi K2...$(NC)"
+	@echo "$(YELLOW)2/6 Running with Kimi K2...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=examples/hiking_shoes_example.json
 	@echo ""
-	@echo "$(YELLOW)4/7 Running with ByteDance Seed...$(NC)"
+	@echo "$(YELLOW)3/6 Running with ByteDance Seed...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=bytedance-seed --example-file=examples/hiking_shoes_example.json
 	@echo ""
-	@echo "$(YELLOW)5/7 Running with Baidu ERNIE...$(NC)"
+	@echo "$(YELLOW)4/6 Running with Baidu ERNIE...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=baidu-ernie --example-file=examples/hiking_shoes_example.json
 	@echo ""
-	@echo "$(YELLOW)6/7 Running with Qwen 72B...$(NC)"
+	@echo "$(YELLOW)5/6 Running with Qwen 72B...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=qwen-72b --example-file=examples/hiking_shoes_example.json
 	@echo ""
-	@echo "$(YELLOW)7/7 Running with MiniMax M2...$(NC)"
+	@echo "$(YELLOW)6/6 Running with MiniMax M2...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=minimax-m2 --example-file=examples/hiking_shoes_example.json
 	@echo ""
-	@echo "$(GREEN)✓ Hiking shoes example submitted (7 models)!$(NC)"
+	@echo "$(GREEN)✓ Hiking shoes example submitted (6 models)!$(NC)"
 
 example-fresh: ## Run example from scratch (delete existing data, don't reuse prompt results)
 	@echo "$(YELLOW)Running example SUV tracking job from scratch...$(NC)"
@@ -717,7 +708,7 @@ example-kimi-128k: ## Run example with Kimi 128K model
 	@echo ""
 	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-128k
 
-example-all: ## Run all examples (examples/*.json) with 7 models (qwen, deepseek-chat, kimi-k2, bytedance-seed, baidu-ernie, qwen-72b, minimax-m2)
+example-all: ## Run all examples (examples/*.json) with 6 models (deepseek-chat, kimi-k2, bytedance-seed, baidu-ernie, qwen-72b, minimax-m2)
 	@echo "$(YELLOW)Running all examples with all models...$(NC)"
 	@echo ""
 	@set -e; \
@@ -726,31 +717,28 @@ example-all: ## Run all examples (examples/*.json) with 7 models (qwen, deepseek
 		echo "$(YELLOW)Example: $$example$(NC)"; \
 		echo "$(YELLOW)═══════════════════════════════════════════════════════$(NC)"; \
 		echo ""; \
-		echo "$(YELLOW)1/7 Running with Qwen...$(NC)"; \
-		poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=$$example; \
-		echo ""; \
-		echo "$(YELLOW)2/7 Running with DeepSeek Chat...$(NC)"; \
+		echo "$(YELLOW)1/6 Running with DeepSeek Chat...$(NC)"; \
 		poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=$$example; \
 		echo ""; \
-		echo "$(YELLOW)3/7 Running with Kimi K2...$(NC)"; \
+		echo "$(YELLOW)2/6 Running with Kimi K2...$(NC)"; \
 		poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=$$example; \
 		echo ""; \
-		echo "$(YELLOW)4/7 Running with ByteDance Seed...$(NC)"; \
+		echo "$(YELLOW)3/6 Running with ByteDance Seed...$(NC)"; \
 		poetry run python scripts/run_example_with_reuse.py --provider=bytedance-seed --example-file=$$example; \
 		echo ""; \
-		echo "$(YELLOW)5/7 Running with Baidu ERNIE...$(NC)"; \
+		echo "$(YELLOW)4/6 Running with Baidu ERNIE...$(NC)"; \
 		poetry run python scripts/run_example_with_reuse.py --provider=baidu-ernie --example-file=$$example; \
 		echo ""; \
-		echo "$(YELLOW)6/7 Running with Qwen 72B...$(NC)"; \
+		echo "$(YELLOW)5/6 Running with Qwen 72B...$(NC)"; \
 		poetry run python scripts/run_example_with_reuse.py --provider=qwen-72b --example-file=$$example; \
 		echo ""; \
-		echo "$(YELLOW)7/7 Running with MiniMax M2...$(NC)"; \
+		echo "$(YELLOW)6/6 Running with MiniMax M2...$(NC)"; \
 		poetry run python scripts/run_example_with_reuse.py --provider=minimax-m2 --example-file=$$example; \
 		echo ""; \
 		echo "$(GREEN)✓ Completed: $$example$(NC)"; \
 		echo ""; \
 	done; \
-	echo "$(GREEN)✓ All examples completed (7 models each)!$(NC)"; \
+	echo "$(GREEN)✓ All examples completed (6 models each)!$(NC)"; \
 	echo ""; \
 	echo "$(YELLOW)View results:$(NC)"; \
 	echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"; \
