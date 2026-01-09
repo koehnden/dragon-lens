@@ -1,43 +1,97 @@
-I do not see what ww achieved with this implementation. I still see the LLM call blocks any other processing:
+In the UI I see that all brands name in the "Brands Overview" table are in Chinese.
+
+<expected behaviour>
+<English name> (<Chinese name if applicable>) e.g. BYD (比亚迪).
+<expected behaviour>
+
+<actual behaviour>
+Current brand table look like this:
 ```
-[2026-01-06 21:49:01,397: INFO/MainProcess] Task workers.tasks.run_vertical_analysis[3b2da598-7063-4123-97d4-b9dd092cc10e] succeeded in 145.08906179195037s: None
-[2026-01-06 21:49:01,403: INFO/MainProcess] Task workers.tasks.run_vertical_analysis[d6913a27-c48d-4843-9e55-960b63a8a449] received
-[2026-01-06 21:49:01,403: INFO/MainProcess] Starting vertical analysis: vertical=1, provider=deepseek, model=deepseek-chat, run=2
-[2026-01-06 21:49:01,405: INFO/MainProcess] LLM parallel fetch: enabled=True, concurrency=3, prompts=1
-[2026-01-06 21:49:02,298: INFO/MainProcess] HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
-[2026-01-06 21:49:26,815: INFO/MainProcess] Processing prompt 2
+Brand,Mention Rate,Share of Voice,Top Spot Share,Sentiment Index,DVS
+比亚迪,71.4%,18.6%,35.7%,0.6,0.303
+吉利,64.3%,10.6%,14.3%,1,0.292
+哈弗,57.1%,9.8%,14.3%,1,0.287
+本田,50.0%,5.8%,0.0%,1,0.235
+奇瑞,14.3%,3.2%,7.1%,1,0.234
+广汽,7.1%,2.5%,7.1%,1,0.229
+广汽传祺,7.1%,1.1%,0.0%,1,0.206
+别克,7.1%,1.1%,0.0%,1,0.206
+广汽丰田,7.1%,1.0%,0.0%,1,0.206
+马自达,7.1%,1.0%,0.0%,1,0.206
+荣威,7.1%,0.9%,0.0%,1,0.205
+日产,7.1%,0.7%,0.0%,1,0.204
+大众,50.0%,7.3%,7.1%,0.714,0.201
+丰田,64.3%,10.1%,14.3%,0.556,0.2
+长安,35.7%,6.2%,7.1%,0.6,0.172
+理想,57.1%,7.8%,7.1%,0.5,0.161
+特斯拉,42.9%,6.2%,7.1%,0.5,0.151
+奥迪,21.4%,2.1%,0.0%,0.333,0.079
+问界,35.7%,4.1%,0.0%,0.2,0.065
+VW,0.0%,0.0%,0.0%,0,0
+``` 
+As you can see, except the primary brand set by the user "VW", all brands are in Chinese.
+Can you check why this is the case and how brands are passed to the streamlit UI right now. 
+Do not code yet! Make yourself familiar with the process now!
+
+I do not think the wikidata helps us. It's too limited and does not have good Chinese data for most verticals.
+Let's try to add or fix the translation of brands using Qwen. If only a Chinese name is present the brand/product should
+be translated into English and we display <English name> (<Chinese name if applicable>) e.g. BYD (比亚迪). We need Qwen to 
+be sure about the translated name and give it context about the vertical and the it should not do a literal translation!
+If only an English name is extracted for the brand/product. We can stick to it and no translation to Chinese is needed.
+We only show the English name in this case. 
+Can you make a plan how to implement this and how to enhence the Qwen translation prompt for brand (if it exists) with suitable guardrails so it does not do any weird stuff.
+Do not code yet. Plan with me!
+
+1. Let's do brands and product together. I assume it could give qwen more context.
+2. settings.ollama_model_translation, but I think they are both Qwen 7b if I'm not mistaken!
+
+1. Yes, I think even 30 should do!
+2. Let's retry these failed once one time again, otherwise use Chinese as a fallback
+
+Maybe it make sense to add some translation examples to Qwen.
+Here are some brand examples:
 ```
-As you can sse in the logs, we are still just waiting for the deepseek api to give an response!
-Maybe we benefit more from running all remote LLM calls in the `POST /api/v1/tracking/jobs` first, e.g. all prompt for all models or all for a single model.
-Wdyt? 
-
-
-How about changing the processing order. For all prompts given in `POST /api/v1/tracking/jobs` we do:
-1. Run all LLM call given is `POST /api/v1/tracking/jobs` for all models assync or using multi-threading or both and store results in memory (model, prompt, prompt_result)
-2. Loop over results in 1. and translate all prompts and them. Bulk insert them in SqlLite
-3. Process all prompt results, e.g. brand and product extraction
-4. Start Consolidation steps
-5. Bulk insert all extraction results in SqlLite
-We could also do 2. and 3. into one step without bulk insert the prompts results and their translation. Note
-sure which data structure could make sense to store result In-Memory. Maybe a simple Dictionary or we use Redis for store intermediate
-result if it does not slow down the process much. 
-Wdyt? Could this speed up a job from `POST /api/v1/tracking/jobs`. Is it doable? What are downsides of this approach?
-
-
-Yes I want “process prompt A while prompt B is still waiting”! If we move to Postgresql for the dragonlens.db.
-Would it be easier to speed up?
-
-Ok let's move to Postgresql for storing data in dragonlens.db. I'm not sure if we need to keep SqlLite for 
-`data/knowledge.db`. I would like to store `data/knowledge.db` in the git repo so the user can upload feedback on brand and product extraction.
-Maybe there is a cleaner solution for this, but it's definitely not postgresql or at least without hosting it on the cloud.
-Can you make a plan to migrate all the schema `dragonlens.db` to postgresql and how to replace SqlLite with postgresql in our prompt processing pipeline!
-Keep in mind the Plan is:
-Once on Postgres, the simplest way to get “process prompt A while prompt B is waiting” is usually Celery fan-out/fan-in:
-      - group(process_prompt.s(...)) for each prompt (each task does: reuse-check → LLM call → persist answer → extraction → persist mentions)
-      - then a chord(...)(consolidate_run.s(run_id)) callback to do steps 4–5 once all prompts finish
-      - This naturally overlaps waiting prompts with processing prompts and avoids “async inside Celery” complexities.
-  - You’ll still need rate limiting / semaphores (remote API limits, Ollama local resource limits), but those become straightforward (Celery queue routing, per-task
-    throttling, or Redis-based rate limits).
-Do not code yet! Plan the migration and all related things!
-
-
+比亚迪 -> BYD
+大众汽车 -> Volkswagen
+始祖鸟 -> Arc'teryx
+华为 -> Huawei
+小米 -> Xiaomi
+索尼 -> Sony
+松下电器 -> Panasonic
+海尔 -> Haier
+美的 -> Midea
+耐克 -> Nike
+阿迪达斯 -> adidas
+欧莱雅 -> L'Oréal
+资生堂 -> Shiseido
+可口可乐 -> Coca-Cola
+雀巢 -> Nestlé
+帮宝适 -> Pampers
+贝亲 -> Pigeon
+淘宝 -> Taobao
+``` 
+and here are some product examples:
+```
+宋PLUS DM-i → Song PLUS DM-i
+汉EV → Han EV
+海豚 → Dolphin
+海鸥 → Seagull
+海豹 → Seal
+秦PLUS DM-i → Qin PLUS DM-i
+妙控键盘 → Magic Keyboard
+妙控鼠标 → Magic Mouse
+妙控板 → Magic Trackpad
+微信 → WeChat
+支付宝 → Alipay
+抖音 → Douyin
+高德地图 → Amap
+钉钉 → DingTalk
+美团 → Meituan
+哔哩哔哩 → Bilibili
+知乎 → Zhihu
+微博 → Weibo
+爱奇艺 → iQIYI
+优酷 → Youku
+拼多多 → Pinduoduo
+```
+Do you think it make sense? If yes let's add it to the prompt!
