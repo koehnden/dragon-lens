@@ -183,6 +183,8 @@ def _rejected_entities_for_prompt(
 ) -> List[Dict]:
     with knowledge_session() as knowledge_db:
         knowledge_id = _knowledge_vertical_id(knowledge_db, db, vertical_id)
+        if not knowledge_id:
+            return []
         examples = rejected_examples(knowledge_db, knowledge_id, entity_type, limit=limit)
         return [_rejected_prompt_item(example) for example in examples]
 
