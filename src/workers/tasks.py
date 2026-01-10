@@ -191,7 +191,12 @@ def _llm_queue(route: LLMRoute) -> str:
 
 
 @celery_app.task(base=DatabaseTask, bind=True)
-def start_run(self: DatabaseTask, run_id: int, force_reextract: bool = False) -> dict:
+def start_run(
+    self: DatabaseTask,
+    run_id: int,
+    force_reextract: bool = False,
+    skip_entity_consolidation: bool = False,
+) -> dict:
     run = self.db.query(Run).filter(Run.id == run_id).first()
     if not run:
         raise ValueError(f"Run {run_id} not found")
@@ -220,7 +225,7 @@ def start_run(self: DatabaseTask, run_id: int, force_reextract: bool = False) ->
             | ensure_extraction.s(run_id, force_reextract).set(queue="ollama_extract")
         )
 
-    callback = finalize_run.s(run_id, force_reextract).set(queue="default")
+    callback = finalize_run.s(run_id, force_reextract, skip_entity_consolidation).set(queue="default")
     chord(group(header))(callback)
     return {"run_id": run_id, "prompt_count": len(prompt_ids)}
 
@@ -337,6 +342,7 @@ def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reex
         all_brands, extraction_result = discover_brands_and_products(answer_zh, run.vertical_id, brands, self.db)
 
         if extraction_result.debug_info:
+            self.db.query(ExtractionDebug).filter(ExtractionDebug.llm_answer_id == llm_answer_id).delete()
             debug_record = ExtractionDebug(
                 llm_answer_id=llm_answer_id,
                 raw_brands=json.dumps(extraction_result.debug_info.raw_brands, ensure_ascii=False),
@@ -349,6 +355,17 @@ def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reex
             self.db.add(debug_record)
 
         discovered_products = discover_and_store_products(self.db, run.vertical_id, answer_zh, all_brands)
+        vertical = self.db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
+        vertical_name = vertical.name if vertical else ""
+        vertical_description = vertical.description if vertical else None
+        from services.translation_feedback import apply_translation_feedback
+        apply_translation_feedback(
+            self.db,
+            vertical_name=vertical_name,
+            vertical_description=vertical_description,
+            brands=all_brands,
+            products=discovered_products,
+        )
 
         brand_names = [b.display_name for b in all_brands]
         brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
@@ -421,7 +438,13 @@ def _has_mentions(db: Session, llm_answer_id: int) -> bool:
 
 
 @celery_app.task(base=DatabaseTask, bind=True)
-def finalize_run(self: DatabaseTask, results: list[dict], run_id: int, force_reextract: bool = False) -> dict:
+def finalize_run(
+    self: DatabaseTask,
+    results: list[dict],
+    run_id: int,
+    force_reextract: bool = False,
+    skip_entity_consolidation: bool = False,
+) -> dict:
     run = self.db.query(Run).filter(Run.id == run_id).first()
     if not run:
         raise ValueError(f"Run {run_id} not found")
@@ -438,7 +461,8 @@ def finalize_run(self: DatabaseTask, results: list[dict], run_id: int, force_ree
 
     enhanced_result = _run_async(run_enhanced_consolidation(self.db, run_id))
     _run_async(apply_vertical_gate_to_run(self.db, run_id))
-    consolidate_run(self.db, run_id, normalized_brands=enhanced_result.normalized_brands)
+    if not skip_entity_consolidation:
+        consolidate_run(self.db, run_id, normalized_brands=enhanced_result.normalized_brands)
     _run_async(map_products_to_brands_for_run(self.db, run_id))
     calculate_and_save_metrics(self.db, run_id)
     calculate_and_save_run_product_metrics(self.db, run_id)
@@ -699,6 +723,7 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             )
 
             if extraction_result.debug_info:
+                self.db.query(ExtractionDebug).filter(ExtractionDebug.llm_answer_id == llm_answer.id).delete()
                 debug_record = ExtractionDebug(
                     llm_answer_id=llm_answer.id,
                     raw_brands=json.dumps(extraction_result.debug_info.raw_brands, ensure_ascii=False),

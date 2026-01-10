@@ -79,14 +79,14 @@ KNOWN VALID PRODUCTS FOR THIS INDUSTRY (extract these if you see them):
 {% if rejected_brands %}
 DO NOT EXTRACT THESE AS BRANDS (common mistakes from previous runs):
 {% for entity in rejected_brands %}
-- {{ entity.name }}{% if entity.reason %} ({{ entity.reason }}){% endif %}
+- {{ entity.name }}{% if entity.reason %} ({{ entity.reason }}){% endif %}{% if entity.same_vertical is defined and not entity.same_vertical %} (different vertical: {{ entity.vertical_name }}){% endif %}
 {% endfor %}
 {% endif %}
 
 {% if rejected_products %}
 DO NOT EXTRACT THESE AS PRODUCTS (common mistakes from previous runs):
 {% for entity in rejected_products %}
-- {{ entity.name }}{% if entity.reason %} ({{ entity.reason }}){% endif %}
+- {{ entity.name }}{% if entity.reason %} ({{ entity.reason }}){% endif %}{% if entity.same_vertical is defined and not entity.same_vertical %} (different vertical: {{ entity.vertical_name }}){% endif %}
 {% endfor %}
 {% endif %}
 

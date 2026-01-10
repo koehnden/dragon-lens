@@ -1,5 +1,5 @@
 def is_sqlite_url(url: str) -> bool:
-    return url.startswith("sqlite")
+    return url.startswith("sqlite://")
 
 
 def sqlite_connect_args(url: str) -> dict:

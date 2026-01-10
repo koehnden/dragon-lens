@@ -37,12 +37,12 @@ def test_build_mapping_feedback():
 
 
 def test_build_translation_overrides():
-    rows = [{"entity_type": "brand", "canonical_name": "Toyota", "language": "zh", "override_text": "丰田"}]
+    rows = [{"entity_type": "brand", "canonical_name": "丰田", "language": "en", "override_text": "Toyota"}]
     assert build_translation_overrides(rows) == [{
         "entity_type": "brand",
-        "canonical_name": "Toyota",
-        "language": "zh",
-        "override_text": "丰田",
+        "canonical_name": "丰田",
+        "language": "en",
+        "override_text": "Toyota",
         "reason": None,
     }]
 

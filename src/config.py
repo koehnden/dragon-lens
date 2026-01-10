@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://dragonlens:dragonlens@localhost:5432/dragonlens"
     knowledge_database_url: str = "sqlite:///./data/knowledge.db"
 
+    turso_database_url: Optional[str] = None
+    turso_auth_token: Optional[str] = None
+    turso_read_only_auth_token: Optional[str] = None
+
+    knowledge_db_max_bytes: int = 104857600
+    knowledge_allow_non_feedback_writes: bool = False
+    feedback_sanity_checks_enabled: bool = True
+    feedback_trigger_rerun_enabled: bool = True
+
     redis_url: str = "redis://localhost:6379/0"
 
     celery_broker_url: str = "redis://localhost:6379/0"

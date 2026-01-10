@@ -1,7 +1,12 @@
 from sqlalchemy.orm import Session
 
 from models import Brand, Vertical
-from services.brand_recognition.extraction_augmentation import get_validated_entity_names
+from models.domain import EntityType
+from models.knowledge_domain import KnowledgeRejectedEntity, KnowledgeVertical
+from services.brand_recognition.extraction_augmentation import (
+    get_rejected_brands_for_prompt,
+    get_validated_entity_names,
+)
 
 
 def test_validated_brand_names_include_user_aliases(db_session: Session):
@@ -25,3 +30,29 @@ def test_validated_brand_names_include_user_aliases(db_session: Session):
     assert "VW" in brand_names
     assert "大众" in brand_names
     assert "Volkswagen" in brand_names
+
+
+def test_rejected_examples_empty_when_no_knowledge_vertical_match(
+    db_session: Session,
+    knowledge_db_session: Session,
+):
+    vertical = Vertical(name="New Vertical")
+    db_session.add(vertical)
+    db_session.flush()
+
+    other = KnowledgeVertical(name="Other")
+    knowledge_db_session.add(other)
+    knowledge_db_session.flush()
+
+    knowledge_db_session.add(
+        KnowledgeRejectedEntity(
+            vertical_id=other.id,
+            entity_type=EntityType.BRAND,
+            name="四驱",
+            reason="too_generic",
+        )
+    )
+    knowledge_db_session.flush()
+
+    rejected = get_rejected_brands_for_prompt(db_session, vertical.id)
+    assert rejected == []

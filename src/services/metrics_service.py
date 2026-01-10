@@ -9,11 +9,16 @@ from models.domain import BrandAlias, CanonicalBrand
 
 logger = logging.getLogger(__name__)
 
+def _clear_run_metrics(db: Session, run_id: int) -> None:
+    db.query(RunMetrics).filter(RunMetrics.run_id == run_id).delete()
+
 
 def calculate_and_save_metrics(db: Session, run_id: int) -> None:
     run = db.query(Run).filter(Run.id == run_id).first()
     if not run:
         raise ValueError(f"Run {run_id} not found")
+
+    _clear_run_metrics(db, run_id)
 
     vertical_id = run.vertical_id
 
