@@ -41,6 +41,7 @@ from services.translater import (
     has_latin_letters,
 )
 from services.metrics_service import calculate_and_save_metrics
+from services.product_metrics_service import calculate_and_save_run_product_metrics
 from services.pricing import calculate_cost
 from services.remote_llms import LLMRouter
 from workers.celery_app import celery_app
@@ -440,6 +441,8 @@ def finalize_run(self: DatabaseTask, results: list[dict], run_id: int, force_ree
     consolidate_run(self.db, run_id, normalized_brands=enhanced_result.normalized_brands)
     _run_async(map_products_to_brands_for_run(self.db, run_id))
     calculate_and_save_metrics(self.db, run_id)
+    calculate_and_save_run_product_metrics(self.db, run_id)
+    _run_comparison_if_enabled(self.db, run_id)
 
     run.status = RunStatus.COMPLETED
     run.completed_at = datetime.utcnow()
@@ -447,6 +450,25 @@ def finalize_run(self: DatabaseTask, results: list[dict], run_id: int, force_ree
         run.error_message = f"Completed with warnings: failed_prompts={len(failed_ids)} prompt_ids={failed_ids}"
     commit_with_retry(self.db)
     return {"run_id": run_id, "status": "completed", "failed_count": len(failed_ids), "failed_prompt_ids": failed_ids}
+
+
+def _run_comparison_if_enabled(db: Session, run_id: int) -> None:
+    from models import ComparisonRunStatus, RunComparisonConfig
+    from services.comparison_prompts.metrics_update import update_run_metrics_with_comparison_sentiment
+    from services.comparison_prompts.run_pipeline import run_comparison_pipeline
+
+    config = db.query(RunComparisonConfig).filter(RunComparisonConfig.run_id == run_id).first()
+    if not config or not config.enabled:
+        return
+    try:
+        _run_async(run_comparison_pipeline(db, run_id))
+        update_run_metrics_with_comparison_sentiment(db, run_id)
+    except Exception as exc:
+        logger.error(f"Comparison pipeline failed for run {run_id}: {exc}", exc_info=True)
+        config.status = ComparisonRunStatus.FAILED
+        config.error_message = str(exc)
+        config.completed_at = datetime.utcnow()
+        commit_with_retry(db)
 
 
 def _mentioned_brand_ids(db: Session, run_id: int) -> list[int]:

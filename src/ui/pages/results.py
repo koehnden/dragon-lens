@@ -43,6 +43,65 @@ def _fetch_metrics(vertical_id: int, model_name: str, view_mode: str) -> dict | 
         return None
 
 
+def _fetch_latest_completed_run(vertical_id: int, model_name: str) -> dict | None:
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/tracking/runs",
+            params={"vertical_id": vertical_id, "model_name": model_name, "limit": 50},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        runs = response.json()
+    except httpx.HTTPError:
+        return None
+    for run in runs:
+        if run.get("status") == "completed":
+            return run
+    return None
+
+
+def _fetch_run_brand_metrics(run_id: int) -> dict | None:
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}",
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return {"brands": data.get("metrics") or []}
+    except httpx.HTTPError:
+        return None
+
+
+def _fetch_run_product_metrics(run_id: int) -> dict | None:
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}/products",
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError:
+        return None
+
+
+def _fetch_run_comparison(run_id: int, include_snippets: bool) -> dict | None:
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}/comparison",
+            params={
+                "include_snippets": include_snippets,
+                "limit_entities": 50,
+                "limit_snippets": 3,
+            },
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError:
+        return None
+
+
 def _fetch_user_brands(vertical_id: int) -> list[str]:
     try:
         response = httpx.get(
@@ -63,6 +122,31 @@ def _get_sentiment_label(sentiment_index: float) -> str:
     elif sentiment_index < -0.3:
         return "Negative"
     return "Neutral"
+
+
+def _render_comparison_tab(comparison: dict) -> None:
+    st.markdown("### Brand & Product Comparison Sentiment")
+    st.write(f"Primary brand: **{comparison.get('primary_brand_name', '')}**")
+
+    messages = comparison.get("messages") or []
+    if messages:
+        with st.expander("Processing Messages"):
+            for m in messages:
+                st.write(f"{m.get('level')}: {m.get('message')}")
+
+    brands = comparison.get("brands") or []
+    products = comparison.get("products") or []
+
+    if brands:
+        st.markdown("#### Brand Comparison")
+        st.dataframe(brands, use_container_width=True, hide_index=True)
+
+    if products:
+        st.markdown("#### Product Comparison")
+        st.dataframe(products, use_container_width=True, hide_index=True)
+
+    if not brands and not products:
+        st.info("No comparison data available for this run.")
 
 
 def _render_executive_scorecard(df: pd.DataFrame, name_col: str, user_brand: str = None) -> None:
@@ -208,7 +292,7 @@ def _render_data_tab(df: pd.DataFrame, name_col: str) -> None:
     )
 
 
-def _render_brand_view(metrics: dict, user_brands: list[str]) -> None:
+def _render_brand_view(metrics: dict, user_brands: list[str], comparison: dict = None) -> None:
     if not metrics["brands"]:
         st.info("No brand metrics available yet. The tracking job may still be processing.")
         return
@@ -220,12 +304,24 @@ def _render_brand_view(metrics: dict, user_brands: list[str]) -> None:
 
     st.markdown("---")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "Competitive Landscape",
-        "Performance Analysis",
-        "Opportunities",
-        "Detailed Data",
-    ])
+    if comparison:
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "Competitive Landscape",
+            "Performance Analysis",
+            "Opportunities",
+            "Detailed Data",
+            "Comparison Sentiment",
+        ])
+
+        with tab5:
+            _render_comparison_tab(comparison)
+    else:
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "Competitive Landscape",
+            "Performance Analysis",
+            "Opportunities",
+            "Detailed Data",
+        ])
 
     with tab1:
         _render_competitive_landscape_tab(df, "brand_name", user_brand)
@@ -240,7 +336,7 @@ def _render_brand_view(metrics: dict, user_brands: list[str]) -> None:
         _render_data_tab(df, "brand_name")
 
 
-def _render_product_view(metrics: dict, user_brands: list[str]) -> None:
+def _render_product_view(metrics: dict, user_brands: list[str], comparison: dict = None) -> None:
     if not metrics["products"]:
         st.info("No product metrics available yet. The tracking job may still be processing.")
         return
@@ -254,12 +350,24 @@ def _render_product_view(metrics: dict, user_brands: list[str]) -> None:
 
     st.markdown("---")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "Competitive Landscape",
-        "Performance Analysis",
-        "Opportunities",
-        "Detailed Data",
-    ])
+    if comparison:
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "Competitive Landscape",
+            "Performance Analysis",
+            "Opportunities",
+            "Detailed Data",
+            "Comparison Sentiment",
+        ])
+
+        with tab5:
+            _render_comparison_tab(comparison)
+    else:
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "Competitive Landscape",
+            "Performance Analysis",
+            "Opportunities",
+            "Detailed Data",
+        ])
 
     with tab1:
         _render_competitive_landscape_tab(df, "product_name", user_product)
@@ -317,21 +425,47 @@ def show():
 
     user_brands = _fetch_user_brands(selected_vertical_id)
 
-    with st.spinner("Loading metrics..."):
-        metrics = _fetch_metrics(selected_vertical_id, model_param, view_mode)
+    if model_param == "all":
+        with st.spinner("Loading metrics..."):
+            metrics = _fetch_metrics(selected_vertical_id, model_param, view_mode)
 
-    if not metrics:
-        st.warning("No data found for this vertical and model combination.")
-        st.info("Make sure a tracking job has been run and completed.")
-        return
+        if not metrics:
+            st.warning("No data found for this vertical and model combination.")
+            st.info("Make sure a tracking job has been run and completed.")
+            return
 
-    st.subheader(f"{metrics['vertical_name']} ({metrics['model_name']})")
-    st.caption(f"Data from: {metrics['date']}")
+        st.subheader(f"{metrics['vertical_name']} ({metrics['model_name']})")
+        st.caption(f"Data from: {metrics['date']}")
+
+        comparison = None
+    else:
+        latest_run = _fetch_latest_completed_run(selected_vertical_id, model_param)
+        if not latest_run:
+            st.info("No completed runs found for this vertical/model yet.")
+            return
+
+        run_id = latest_run["id"]
+        st.subheader(f"Latest Run Metrics: {selected_vertical_name} ({model_param})")
+        st.caption(f"Run ID: {run_id} | Run time: {latest_run.get('run_time')}")
+
+        with st.spinner("Loading run metrics..."):
+            if view_mode == "Brand":
+                metrics = _fetch_run_brand_metrics(run_id)
+            else:
+                metrics = _fetch_run_product_metrics(run_id)
+
+        if not metrics:
+            st.error("Failed to load run metrics.")
+            return
+
+        include_snippets = st.checkbox("Include comparison snippets", value=False)
+        with st.spinner("Loading comparison data..."):
+            comparison = _fetch_run_comparison(run_id, include_snippets)
 
     if view_mode == "Brand":
-        _render_brand_view(metrics, user_brands)
+        _render_brand_view(metrics, user_brands, comparison)
     else:
-        _render_product_view(metrics, user_brands)
+        _render_product_view(metrics, user_brands, comparison)
 
     st.markdown("---")
     st.caption("For detailed prompt/answer analysis, visit the **Run Inspector** page.")

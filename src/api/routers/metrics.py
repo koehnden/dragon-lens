@@ -9,23 +9,35 @@ from sqlalchemy.orm import Session
 from models import (
     Brand,
     BrandMention,
+    ComparisonRunEvent,
+    ComparisonRunStatus,
+    ComparisonSentimentObservation,
     DailyMetrics,
+    EntityType,
     LLMAnswer,
     Product,
     ProductMention,
     Prompt,
     Run,
+    RunComparisonConfig,
     RunMetrics,
+    RunProductMetrics,
+    Sentiment,
     Vertical,
     get_db,
 )
 from metrics.metrics import AnswerMetrics, visibility_metrics
 from models.schemas import (
     AllRunMetricsResponse,
+    AllRunProductMetricsResponse,
     BrandMetrics,
+    ComparisonEvidenceSnippet,
+    ComparisonEntitySentimentSummary,
     MetricsResponse,
     ProductMetrics,
     ProductMetricsResponse,
+    RunComparisonMessage,
+    RunComparisonMetricsResponse,
     RunMetricsResponse,
 )
 from services.translater import format_entity_label
@@ -516,3 +528,201 @@ async def get_run_metrics(
         run_time=run.run_time,
         metrics=metrics_responses,
     )
+
+
+@router.get("/run/{run_id}/products", response_model=AllRunProductMetricsResponse)
+async def get_run_product_metrics(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> AllRunProductMetricsResponse:
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    vertical = get_vertical_or_raise(db, run.vertical_id)
+    rows = db.query(RunProductMetrics).filter(RunProductMetrics.run_id == run_id).all()
+    products = [_run_product_metric(db, r) for r in rows]
+    return AllRunProductMetricsResponse(
+        run_id=run.id,
+        vertical_id=run.vertical_id,
+        vertical_name=vertical.name,
+        provider=run.provider,
+        model_name=run.model_name,
+        run_time=run.run_time,
+        products=[p for p in products if p],
+    )
+
+
+def _run_product_metric(db: Session, row: RunProductMetrics) -> ProductMetrics | None:
+    product = db.query(Product).filter(Product.id == row.product_id).first()
+    if not product:
+        return None
+    brand_name = ""
+    if product.brand:
+        brand_name = format_entity_label(product.brand.original_name, product.brand.translated_name)
+    return ProductMetrics(
+        product_id=product.id,
+        product_name=format_entity_label(product.original_name, product.translated_name),
+        brand_id=product.brand_id,
+        brand_name=brand_name,
+        mention_rate=row.mention_rate,
+        share_of_voice=row.share_of_voice,
+        top_spot_share=row.top_spot_share,
+        sentiment_index=row.sentiment_index,
+        dragon_lens_visibility=row.dragon_lens_visibility,
+    )
+
+
+@router.get("/run/{run_id}/comparison", response_model=RunComparisonMetricsResponse)
+async def get_run_comparison_metrics(
+    run_id: int,
+    entity_type: str = Query("all", pattern="^(all|brand|product)$"),
+    include_snippets: bool = Query(False),
+    limit_entities: int = Query(50, ge=1, le=500),
+    limit_snippets: int = Query(3, ge=0, le=50),
+    db: Session = Depends(get_db),
+) -> RunComparisonMetricsResponse:
+    """
+    Get comparison sentiment results for a run.
+
+    Comparison prompts are executed after the main run completes and are never used for brand/product extraction.
+    """
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    config = db.query(RunComparisonConfig).filter(RunComparisonConfig.run_id == run_id).first()
+    if not config or not config.enabled:
+        raise HTTPException(status_code=404, detail=f"Comparison results not available for run {run_id}")
+    if config.status != ComparisonRunStatus.COMPLETED:
+        raise HTTPException(status_code=409, detail=f"Comparison results not ready (status={config.status.value})")
+    vertical = get_vertical_or_raise(db, run.vertical_id)
+    primary = db.query(Brand).filter(Brand.id == config.primary_brand_id).first()
+    messages = _comparison_messages(db, run_id)
+    brands = [] if entity_type == "product" else _comparison_summaries(db, run_id, EntityType.BRAND, include_snippets, limit_entities, limit_snippets)
+    products = [] if entity_type == "brand" else _comparison_summaries(db, run_id, EntityType.PRODUCT, include_snippets, limit_entities, limit_snippets)
+    return RunComparisonMetricsResponse(
+        run_id=run.id,
+        vertical_id=run.vertical_id,
+        vertical_name=vertical.name,
+        provider=run.provider,
+        model_name=run.model_name,
+        primary_brand_id=config.primary_brand_id,
+        primary_brand_name=format_entity_label(primary.original_name, primary.translated_name) if primary else "",
+        brands=brands,
+        products=products,
+        messages=messages,
+    )
+
+
+def _comparison_messages(db: Session, run_id: int) -> list[RunComparisonMessage]:
+    rows = db.query(ComparisonRunEvent).filter(ComparisonRunEvent.run_id == run_id).order_by(ComparisonRunEvent.created_at).all()
+    return [RunComparisonMessage(level=r.level, code=r.code, message=r.message) for r in rows]
+
+
+def _comparison_summaries(
+    db: Session,
+    run_id: int,
+    entity_type: EntityType,
+    include_snippets: bool,
+    limit_entities: int,
+    limit_snippets: int,
+) -> list[ComparisonEntitySentimentSummary]:
+    rows = (
+        db.query(
+            ComparisonSentimentObservation.entity_id,
+            ComparisonSentimentObservation.entity_role,
+            ComparisonSentimentObservation.sentiment,
+            ComparisonSentimentObservation.snippet_zh,
+            ComparisonSentimentObservation.snippet_en,
+            ComparisonSentimentObservation.aspect,
+            ComparisonSentimentObservation.created_at,
+        )
+        .filter(ComparisonSentimentObservation.run_id == run_id, ComparisonSentimentObservation.entity_type == entity_type)
+        .order_by(ComparisonSentimentObservation.created_at.desc())
+        .all()
+    )
+    ids = _limited_entity_ids(rows, limit_entities)
+    name_map = _entity_names(db, entity_type, ids)
+    return [_entity_summary(entity_type, i, name_map.get(i, ""), rows, include_snippets, limit_snippets) for i in ids]
+
+
+def _limited_entity_ids(rows: list, limit_entities: int) -> list[int]:
+    seen: set[int] = set()
+    ids: list[int] = []
+    for r in rows:
+        entity_id = int(r[0])
+        if entity_id in seen:
+            continue
+        seen.add(entity_id)
+        ids.append(entity_id)
+        if len(ids) >= int(limit_entities):
+            break
+    return ids
+
+
+def _entity_names(db: Session, entity_type: EntityType, ids: list[int]) -> dict[int, str]:
+    if not ids:
+        return {}
+    if entity_type == EntityType.BRAND:
+        brands = db.query(Brand).filter(Brand.id.in_(ids)).all()
+        return {b.id: format_entity_label(b.original_name, b.translated_name) for b in brands}
+    products = db.query(Product).filter(Product.id.in_(ids)).all()
+    return {p.id: format_entity_label(p.original_name, p.translated_name) for p in products}
+
+
+def _entity_summary(
+    entity_type: EntityType,
+    entity_id: int,
+    entity_name: str,
+    rows: list,
+    include_snippets: bool,
+    limit_snippets: int,
+) -> ComparisonEntitySentimentSummary:
+    pos, neu, neg = _sentiment_counts(rows, entity_id)
+    snippets = [] if not include_snippets else _snippets(rows, entity_id, int(limit_snippets))
+    role = _entity_role(rows, entity_id)
+    total = max(0, pos + neu + neg)
+    sentiment_index = float(pos) / float(total) if total else 0.0
+    return ComparisonEntitySentimentSummary(
+        entity_type=entity_type.value,
+        entity_id=entity_id,
+        entity_name=entity_name,
+        entity_role=role,
+        positive_count=pos,
+        neutral_count=neu,
+        negative_count=neg,
+        sentiment_index=sentiment_index,
+        snippets=snippets,
+    )
+
+
+def _sentiment_counts(rows: list, entity_id: int) -> tuple[int, int, int]:
+    pos = neu = neg = 0
+    for r in rows:
+        if int(r[0]) != int(entity_id):
+            continue
+        s = r[2]
+        if s == Sentiment.POSITIVE:
+            pos += 1
+        elif s == Sentiment.NEUTRAL:
+            neu += 1
+        else:
+            neg += 1
+    return pos, neu, neg
+
+
+def _entity_role(rows: list, entity_id: int) -> str:
+    for r in rows:
+        if int(r[0]) == int(entity_id) and r[1]:
+            return r[1].value
+    return "competitor"
+
+
+def _snippets(rows: list, entity_id: int, limit_snippets: int) -> list[ComparisonEvidenceSnippet]:
+    out: list[ComparisonEvidenceSnippet] = []
+    for r in rows:
+        if int(r[0]) != int(entity_id):
+            continue
+        out.append(ComparisonEvidenceSnippet(snippet_zh=r[3], snippet_en=r[4], sentiment=r[2].value, aspect=r[5]))
+        if len(out) >= limit_snippets:
+            break
+    return out
