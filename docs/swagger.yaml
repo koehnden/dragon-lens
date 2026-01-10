@@ -635,6 +635,73 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/metrics/run/{run_id}/comparison:
+    get:
+      tags:
+      - metrics
+      summary: Get Run Comparison Metrics
+      description: "Get sentiment comparison results for a run.\n\nComparison prompts are executed after the main run completes and are not used for brand/product extraction.\n\nQuery params:\n- entity_type: filter results by entity type (all, brand, product)\n- include_snippets: include example evidence snippets (default false)\n- limit_entities: max entities returned per type\n- limit_snippets: max snippets per entity"
+      operationId: get_run_comparison_metrics_api_v1_metrics_run_run_id_comparison_get
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Run Id
+      - name: entity_type
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - all
+          - brand
+          - product
+          default: all
+          title: Entity Type
+      - name: include_snippets
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Include Snippets
+      - name: limit_entities
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 50
+          minimum: 1
+          maximum: 500
+          title: Limit Entities
+      - name: limit_snippets
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 3
+          minimum: 0
+          maximum: 50
+          title: Limit Snippets
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunComparisonMetricsResponse'
+        '404':
+          description: Run not found
+        '409':
+          description: Comparison results not ready
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/api-keys:
     post:
       tags:
@@ -1651,12 +1718,191 @@ components:
           title: Model Name
           description: Specific model name or OpenRouter model ID
           default: qwen2.5:7b-instruct-q4_0
+        reuse_answers:
+          type: boolean
+          title: Reuse Answers
+          description: Whether to reuse answers from previous runs
+          default: false
+        web_search_enabled:
+          type: boolean
+          title: Web Search Enabled
+          description: Whether web search is enabled for this run
+          default: false
+        comparison_enabled:
+          type: boolean
+          title: Comparison Enabled
+          description: Whether to run comparison prompts after the main run completes
+          default: false
+        comparison_competitor_brands:
+          items:
+            type: string
+          type: array
+          title: Comparison Competitor Brands
+          description: Optional competitor brand display names to include in comparison prompts
+        comparison_prompts:
+          items:
+            $ref: '#/components/schemas/PromptCreate'
+          type: array
+          title: Comparison Prompts
+          description: Optional user-provided comparison prompts (will not be used for extraction)
+        comparison_target_count:
+          type: integer
+          title: Comparison Target Count
+          description: Target number of comparison prompts (may be exceeded to satisfy per-competitor minimums)
+          default: 20
+        comparison_min_prompts_per_competitor:
+          type: integer
+          title: Comparison Min Prompts Per Competitor
+          description: Minimum number of generated comparison prompts per user-provided competitor brand
+          default: 2
+        comparison_autogenerate_missing:
+          type: boolean
+          title: Comparison Autogenerate Missing
+          description: Whether to auto-generate missing prompts to reach the target count
+          default: true
       type: object
       required:
       - vertical_name
       - brands
       - prompts
       title: TrackingJobCreate
+    ComparisonEvidenceSnippet:
+      properties:
+        snippet_zh:
+          type: string
+          title: Snippet Zh
+        snippet_en:
+          type: string
+          title: Snippet En
+        sentiment:
+          type: string
+          title: Sentiment
+          description: positive, neutral, or negative
+        aspect:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Aspect
+      type: object
+      required:
+      - snippet_zh
+      - snippet_en
+      - sentiment
+      title: ComparisonEvidenceSnippet
+    ComparisonEntitySentimentSummary:
+      properties:
+        entity_type:
+          type: string
+          title: Entity Type
+          description: brand or product
+        entity_id:
+          type: integer
+          title: Entity Id
+        entity_name:
+          type: string
+          title: Entity Name
+        entity_role:
+          type: string
+          title: Entity Role
+          description: primary or competitor
+        positive_count:
+          type: integer
+          title: Positive Count
+        neutral_count:
+          type: integer
+          title: Neutral Count
+        negative_count:
+          type: integer
+          title: Negative Count
+        sentiment_index:
+          type: number
+          title: Sentiment Index
+          description: positive / total
+        snippets:
+          items:
+            $ref: '#/components/schemas/ComparisonEvidenceSnippet'
+          type: array
+          title: Snippets
+      type: object
+      required:
+      - entity_type
+      - entity_id
+      - entity_name
+      - entity_role
+      - positive_count
+      - neutral_count
+      - negative_count
+      - sentiment_index
+      - snippets
+      title: ComparisonEntitySentimentSummary
+    RunComparisonMessage:
+      properties:
+        level:
+          type: string
+          title: Level
+        code:
+          type: string
+          title: Code
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - level
+      - code
+      - message
+      title: RunComparisonMessage
+    RunComparisonMetricsResponse:
+      properties:
+        run_id:
+          type: integer
+          title: Run Id
+        vertical_id:
+          type: integer
+          title: Vertical Id
+        vertical_name:
+          type: string
+          title: Vertical Name
+        provider:
+          type: string
+          title: Provider
+        model_name:
+          type: string
+          title: Model Name
+        primary_brand_id:
+          type: integer
+          title: Primary Brand Id
+        primary_brand_name:
+          type: string
+          title: Primary Brand Name
+        brands:
+          items:
+            $ref: '#/components/schemas/ComparisonEntitySentimentSummary'
+          type: array
+          title: Brands
+        products:
+          items:
+            $ref: '#/components/schemas/ComparisonEntitySentimentSummary'
+          type: array
+          title: Products
+        messages:
+          items:
+            $ref: '#/components/schemas/RunComparisonMessage'
+          type: array
+          title: Messages
+      type: object
+      required:
+      - run_id
+      - vertical_id
+      - vertical_name
+      - provider
+      - model_name
+      - primary_brand_id
+      - primary_brand_name
+      - brands
+      - products
+      - messages
+      title: RunComparisonMetricsResponse
     TrackingJobResponse:
       properties:
         run_id:
