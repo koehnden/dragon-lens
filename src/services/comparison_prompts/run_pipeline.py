@@ -303,10 +303,10 @@ async def _fetch_one(db: Session, run: Run, prompt: ComparisonPrompt, llm_router
     existing = db.query(ComparisonAnswer).filter(ComparisonAnswer.run_id == run.id, ComparisonAnswer.comparison_prompt_id == prompt.id).first()
     if existing:
         return existing
-    prompt_zh = prompt.text_zh or translator.translate_text_sync(prompt.text_en or "", "English", "Chinese")
+    prompt_zh = prompt.text_zh or await translator.translate_text(prompt.text_en or "", "English", "Chinese")
     async with sem:
         answer_zh, tokens_in, tokens_out, latency = await llm_router.query_with_resolution(resolution, prompt_zh)
-    answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English") if answer_zh else None
+    answer_en = await translator.translate_text(answer_zh, "Chinese", "English") if answer_zh else None
     ans = ComparisonAnswer(run_id=run.id, comparison_prompt_id=prompt.id, provider=run.provider, model_name=run.model_name, route=resolution.route, raw_answer_zh=answer_zh or "", raw_answer_en=answer_en, tokens_in=tokens_in, tokens_out=tokens_out, latency=latency, cost_estimate=None)
     db.add(ans)
     db.commit()
@@ -426,6 +426,7 @@ async def _snippets_to_observations(
 ) -> None:
     for s in [sn for sn in snippets if sn][:3]:
         sentiment = await _sentiment_for_snippet(ollama, s)
+        translated = await translator.translate_text(s, "Chinese", "English")
         db.add(ComparisonSentimentObservation(
             run_id=run_id,
             comparison_answer_id=answer_id,
@@ -435,7 +436,7 @@ async def _snippets_to_observations(
             aspect=None,
             sentiment=sentiment,
             snippet_zh=s,
-            snippet_en=translator.translate_text_sync(s, "Chinese", "English"),
+            snippet_en=translated,
         ))
 
 
