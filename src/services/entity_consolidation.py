@@ -233,8 +233,10 @@ def _build_qwen_brand_candidates(
     if not normalized_brands:
         return [], set()
     brands = _load_brands(db, vertical_id)
+    user_brands = [b for b in brands if b.is_user_input]
     exact, norm = _qwen_maps(normalized_brands)
     groups = _group_brands_by_qwen(brands, exact, norm)
+    groups = _merge_groups_with_user_brands(groups, user_brands)
     validated = _validated_canonical_names(db, vertical_id)
     return _qwen_merge_candidates(groups, validated), _grouped_display_names(groups)
 
@@ -252,6 +254,79 @@ def _qwen_maps(normalized_brands: Dict[str, str]) -> Tuple[Dict[str, str], Dict[
 def _brand_variants_for_qwen(brand: Brand) -> List[str]:
     values = [brand.display_name, brand.original_name, brand.translated_name or ""]
     return [v for v in values if v]
+
+
+def _find_matching_user_brand(qwen_key: str, user_brands: List[Brand]) -> Optional[str]:
+    from src.services.wikidata_lookup import lookup_brand
+
+    qwen_lower = qwen_key.casefold()
+    qwen_norm = _normalize_for_comparison(qwen_key)
+
+    for brand in user_brands:
+        if brand.display_name.casefold() == qwen_lower:
+            return brand.display_name
+        if _normalize_for_comparison(brand.display_name) == qwen_norm:
+            return brand.display_name
+        if brand.display_name.casefold() in qwen_lower:
+            return brand.display_name
+        if brand.original_name and brand.original_name.casefold() in qwen_lower:
+            return brand.display_name
+
+    for brand in user_brands:
+        aliases = brand.aliases or {}
+        all_user_aliases = (aliases.get("zh") or []) + (aliases.get("en") or [])
+        for alias in all_user_aliases:
+            if not alias:
+                continue
+            alias_lower = alias.casefold()
+            if qwen_lower in alias_lower or alias_lower in qwen_lower:
+                return brand.display_name
+
+    wikidata_info = lookup_brand(qwen_key, "")
+    if wikidata_info:
+        all_aliases = _wikidata_aliases(wikidata_info)
+        for brand in user_brands:
+            for variant in _brand_variants_for_qwen(brand):
+                if not variant:
+                    continue
+                if variant.casefold() in all_aliases:
+                    return brand.display_name
+
+    return None
+
+
+def _wikidata_aliases(wikidata_info: dict) -> Set[str]:
+    aliases: Set[str] = set()
+    for key in ["name_en", "name_zh"]:
+        val = wikidata_info.get(key)
+        if val:
+            aliases.add(val.casefold())
+    for key in ["aliases_en", "aliases_zh"]:
+        for val in wikidata_info.get(key, []):
+            if val:
+                aliases.add(val.casefold())
+    return aliases
+
+
+def _merge_groups_with_user_brands(
+    groups: Dict[str, List[Brand]],
+    user_brands: List[Brand],
+) -> Dict[str, List[Brand]]:
+    merged: Dict[str, List[Brand]] = {}
+    user_keys = {b.display_name for b in user_brands}
+
+    for key, brands in groups.items():
+        if key in user_keys:
+            merged.setdefault(key, []).extend(brands)
+            continue
+
+        user_match = _find_matching_user_brand(key, user_brands)
+        if user_match:
+            merged.setdefault(user_match, []).extend(brands)
+        else:
+            merged.setdefault(key, []).extend(brands)
+
+    return merged
 
 
 def _resolve_qwen_canonical(
