@@ -4,7 +4,7 @@
   "model_name": "qwen",
   "brands": [
         {
-      "display_name": "VW",
+      "display_name": "Volkswagen",
       "aliases": {
         "zh": ["大众汽车", "一汽-大众", "上汽大众"],
         "en": ["VW", "Volkswagen"]

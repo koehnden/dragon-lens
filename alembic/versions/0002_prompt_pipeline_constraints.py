@@ -17,21 +17,21 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_unique_constraint(
-        "uq_llm_answers_run_prompt",
-        "llm_answers",
-        ["run_id", "prompt_id"],
-    )
-    op.create_unique_constraint(
-        "uq_brands_vertical_display",
-        "brands",
-        ["vertical_id", "display_name"],
-    )
-    op.create_unique_constraint(
-        "uq_products_vertical_display",
-        "products",
-        ["vertical_id", "display_name"],
-    )
+    with op.batch_alter_table("llm_answers") as batch_op:
+        batch_op.create_unique_constraint(
+            "uq_llm_answers_run_prompt",
+            ["run_id", "prompt_id"],
+        )
+    with op.batch_alter_table("brands") as batch_op:
+        batch_op.create_unique_constraint(
+            "uq_brands_vertical_display",
+            ["vertical_id", "display_name"],
+        )
+    with op.batch_alter_table("products") as batch_op:
+        batch_op.create_unique_constraint(
+            "uq_products_vertical_display",
+            ["vertical_id", "display_name"],
+        )
     op.create_index("ix_prompts_run_id", "prompts", ["run_id"], unique=False)
     op.create_index("ix_brand_mentions_llm_answer_id", "brand_mentions", ["llm_answer_id"], unique=False)
     op.create_index("ix_product_mentions_llm_answer_id", "product_mentions", ["llm_answer_id"], unique=False)
