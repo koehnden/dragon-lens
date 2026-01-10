@@ -50,7 +50,21 @@ def resolve_user_brand_display_name(
 ) -> Optional[str]:
     if key := exact.get((name or "").casefold()):
         return key
-    return normalized.get(normalize_entity_key(name))
+    if key := normalized.get(normalize_entity_key(name)):
+        return key
+    return _check_substring_match(name, exact, normalized)
+
+
+def _check_substring_match(
+    name: str, exact: Dict[str, str], normalized: Dict[str, str]
+) -> Optional[str]:
+    name_lower = (name or "").casefold()
+    if not name_lower:
+        return None
+    for variant, brand_name in exact.items():
+        if name_lower in variant or variant in name_lower:
+            return brand_name
+    return None
 
 
 def build_brand_canonical_maps(db: Session, vertical_id: int) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
@@ -78,6 +92,8 @@ def resolve_brand_key(
     if key := user_exact.get((name or "").casefold()):
         return key
     if key := user_norm.get(normalize_entity_key(name)):
+        return key
+    if key := _check_substring_match(name, user_exact, user_norm):
         return key
     return resolve_canonical_key(name, canonical_lower, alias_lower, canonical_norm)
 

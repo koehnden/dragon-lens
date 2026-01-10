@@ -3,146 +3,15 @@ import pandas as pd
 import streamlit as st
 
 from config import settings
-
-
-def _render_brand_view(metrics: dict) -> None:
-    if not metrics["brands"]:
-        st.info("No brand metrics available yet. The tracking job may still be processing.")
-        return
-
-    df = pd.DataFrame(metrics["brands"])
-
-    st.markdown("### Brand Mention Overview")
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.metric("Total Brands", len(df))
-
-    with col2:
-        avg_mention = df["mention_rate"].mean() * 100
-        st.metric("Avg Mention Rate", f"{avg_mention:.1f}%")
-
-    with col3:
-        mentioned_brands = (df["mention_rate"] > 0).sum()
-        st.metric("Brands Mentioned", mentioned_brands)
-
-    st.markdown("### Brands Overview")
-    display_df = df.copy()
-    display_df = display_df.sort_values("dragon_lens_visibility", ascending=False)
-    display_df["mention_rate"] = (display_df["mention_rate"] * 100).round(1).astype(str) + "%"
-    display_df["share_of_voice"] = (display_df["share_of_voice"] * 100).round(1).astype(str) + "%"
-    display_df["top_spot_share"] = (display_df["top_spot_share"] * 100).round(1).astype(str) + "%"
-    display_df["sentiment_index"] = display_df["sentiment_index"].round(3)
-    display_df["dragon_lens_visibility"] = display_df["dragon_lens_visibility"].round(3)
-
-    st.dataframe(
-        display_df[[
-            "brand_name",
-            "mention_rate",
-            "share_of_voice",
-            "top_spot_share",
-            "sentiment_index",
-            "dragon_lens_visibility",
-        ]].rename(columns={
-            "brand_name": "Brand",
-            "mention_rate": "Mention Rate",
-            "share_of_voice": "Share of Voice",
-            "top_spot_share": "Top Spot Share",
-            "sentiment_index": "Sentiment Index",
-            "dragon_lens_visibility": "DVS",
-        }),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    _render_charts(df, "brand_name")
-
-
-def _render_product_view(metrics: dict) -> None:
-    if not metrics["products"]:
-        st.info("No product metrics available yet. The tracking job may still be processing.")
-        return
-
-    df = pd.DataFrame(metrics["products"])
-
-    st.markdown("### Product Mention Overview")
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.metric("Total Products", len(df))
-
-    with col2:
-        avg_mention = df["mention_rate"].mean() * 100
-        st.metric("Avg Mention Rate", f"{avg_mention:.1f}%")
-
-    with col3:
-        mentioned_products = (df["mention_rate"] > 0).sum()
-        st.metric("Products Mentioned", mentioned_products)
-
-    st.markdown("### Products Overview")
-    display_df = df.copy()
-    display_df = display_df.sort_values("dragon_lens_visibility", ascending=False)
-    display_df["mention_rate"] = (display_df["mention_rate"] * 100).round(1).astype(str) + "%"
-    display_df["share_of_voice"] = (display_df["share_of_voice"] * 100).round(1).astype(str) + "%"
-    display_df["top_spot_share"] = (display_df["top_spot_share"] * 100).round(1).astype(str) + "%"
-    display_df["sentiment_index"] = display_df["sentiment_index"].round(3)
-    display_df["dragon_lens_visibility"] = display_df["dragon_lens_visibility"].round(3)
-
-    st.dataframe(
-        display_df[[
-            "product_name",
-            "brand_name",
-            "mention_rate",
-            "share_of_voice",
-            "top_spot_share",
-            "sentiment_index",
-            "dragon_lens_visibility",
-        ]].rename(columns={
-            "product_name": "Product",
-            "brand_name": "Brand",
-            "mention_rate": "Mention Rate",
-            "share_of_voice": "Share of Voice",
-            "top_spot_share": "Top Spot Share",
-            "sentiment_index": "Sentiment Index",
-            "dragon_lens_visibility": "DVS",
-        }),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    _render_charts(df, "product_name")
-
-
-def _render_charts(df: pd.DataFrame, name_col: str) -> None:
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown(f"### Mention Rate by {name_col.replace('_', ' ').title()}")
-        chart_data = df[[name_col, "mention_rate"]].copy()
-        chart_data["mention_rate"] = chart_data["mention_rate"] * 100
-        st.bar_chart(chart_data.set_index(name_col))
-
-    with col2:
-        st.markdown("### Share of Voice")
-        sov_data = df[[name_col, "share_of_voice"]].copy()
-        sov_data["share_of_voice"] = sov_data["share_of_voice"] * 100
-        st.bar_chart(sov_data.set_index(name_col))
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("### Dragon Lens Visibility (DVS)")
-        dvs_chart = df[[name_col, "dragon_lens_visibility"]].copy()
-        dvs_chart = dvs_chart.sort_values("dragon_lens_visibility", ascending=False)
-        dvs_chart = dvs_chart.set_index(name_col)
-        st.bar_chart(dvs_chart)
-
-    with col2:
-        st.markdown("### Sentiment Index")
-        sent_chart = df[[name_col, "sentiment_index"]].copy()
-        sent_chart = sent_chart.sort_values("sentiment_index", ascending=False)
-        sent_chart = sent_chart.set_index(name_col)
-        st.bar_chart(sent_chart)
+from ui.components.charts import (
+    render_metrics_comparison_bar,
+    render_positioning_matrix,
+    render_radar_chart,
+    render_sentiment_breakdown,
+    render_sov_bar_chart,
+    render_sov_treemap,
+)
+from ui.components.insights import render_insights, render_opportunity_analysis
 
 
 def _fetch_available_models(vertical_id: int) -> list[str]:
@@ -233,22 +102,284 @@ def _fetch_run_comparison(run_id: int, include_snippets: bool) -> dict | None:
         return None
 
 
-def _render_comparison_view(comparison: dict) -> None:
-    st.markdown("### Comparison Sentiment (Run)")
-    st.write(f"Primary brand: {comparison.get('primary_brand_name', '')}")
+def _fetch_user_brands(vertical_id: int) -> list[str]:
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/verticals/{vertical_id}/brands",
+            params={"user_input_only": True},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        brands = response.json()
+        return [b["display_name"] for b in brands]
+    except httpx.HTTPError:
+        return []
+
+
+def _get_sentiment_label(sentiment_index: float) -> str:
+    if sentiment_index > 0.3:
+        return "Positive"
+    elif sentiment_index < -0.3:
+        return "Negative"
+    return "Neutral"
+
+
+def _render_comparison_tab(comparison: dict) -> None:
+    st.markdown("### Brand & Product Comparison Sentiment")
+    st.write(f"Primary brand: **{comparison.get('primary_brand_name', '')}**")
+
     messages = comparison.get("messages") or []
     if messages:
-        with st.expander("Messages"):
+        with st.expander("Processing Messages"):
             for m in messages:
                 st.write(f"{m.get('level')}: {m.get('message')}")
+
     brands = comparison.get("brands") or []
     products = comparison.get("products") or []
+
     if brands:
         st.markdown("#### Brand Comparison")
         st.dataframe(brands, use_container_width=True, hide_index=True)
+
     if products:
         st.markdown("#### Product Comparison")
         st.dataframe(products, use_container_width=True, hide_index=True)
+
+    if not brands and not products:
+        st.info("No comparison data available for this run.")
+
+
+def _render_executive_scorecard(df: pd.DataFrame, name_col: str, user_brand: str = None) -> None:
+    st.markdown("### Executive Scorecard")
+
+    if user_brand and user_brand in df[name_col].values:
+        user_data = df[df[name_col] == user_brand].iloc[0]
+        user_rank = (df["dragon_lens_visibility"] > user_data["dragon_lens_visibility"]).sum() + 1
+    else:
+        user_data = df.nlargest(1, "dragon_lens_visibility").iloc[0]
+        user_rank = 1
+        user_brand = user_data[name_col]
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    with col1:
+        dvs_score = user_data["dragon_lens_visibility"] * 100
+        st.metric(
+            "Visibility Score",
+            f"{dvs_score:.0f}/100",
+            help="Dragon Lens Visibility Score (0-100)",
+        )
+
+    with col2:
+        sov = user_data["share_of_voice"] * 100
+        st.metric(
+            "Share of Voice",
+            f"{sov:.1f}%",
+            help="Percentage of all brand mentions",
+        )
+
+    with col3:
+        mention = user_data["mention_rate"] * 100
+        st.metric(
+            "Mention Rate",
+            f"{mention:.1f}%",
+            help="Percentage of prompts mentioning your brand",
+        )
+
+    with col4:
+        sentiment = user_data["sentiment_index"]
+        sentiment_label = _get_sentiment_label(sentiment)
+        st.metric(
+            "Sentiment",
+            sentiment_label,
+            f"{sentiment:+.2f}",
+            help="Overall sentiment index (-1 to +1)",
+        )
+
+    with col5:
+        total_brands = len(df)
+        st.metric(
+            "Market Rank",
+            f"#{user_rank} of {total_brands}",
+            help="Your position among all brands by DVS",
+        )
+
+    st.caption(f"Showing metrics for: **{user_brand}**")
+
+
+def _render_competitive_landscape_tab(df: pd.DataFrame, name_col: str, user_brand: str = None) -> None:
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        render_positioning_matrix(df, name_col, user_brand)
+
+    with col2:
+        render_sov_treemap(df, name_col)
+
+    st.markdown("---")
+    render_sov_bar_chart(df, name_col, user_brand)
+
+
+def _render_performance_tab(df: pd.DataFrame, name_col: str, user_brand: str = None) -> None:
+    col1, col2 = st.columns(2)
+
+    with col1:
+        brands_to_compare = []
+        if user_brand and user_brand in df[name_col].values:
+            brands_to_compare.append(user_brand)
+            top_competitors = df[df[name_col] != user_brand].nlargest(2, "dragon_lens_visibility")[name_col].tolist()
+            brands_to_compare.extend(top_competitors)
+        else:
+            brands_to_compare = df.nlargest(3, "dragon_lens_visibility")[name_col].tolist()
+
+        render_radar_chart(df, name_col, brands_to_compare)
+
+    with col2:
+        render_sentiment_breakdown(df, name_col)
+
+    st.markdown("---")
+    render_metrics_comparison_bar(df, name_col)
+
+
+def _render_opportunities_tab(df: pd.DataFrame, name_col: str, user_brand: str = None) -> None:
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        render_insights(df, name_col, user_brand)
+
+    with col2:
+        render_opportunity_analysis(df, name_col, user_brand)
+
+
+def _render_data_tab(df: pd.DataFrame, name_col: str) -> None:
+    st.markdown("### Detailed Data")
+
+    display_df = df.copy()
+    display_df = display_df.sort_values("dragon_lens_visibility", ascending=False)
+
+    display_df["Visibility Score"] = (display_df["dragon_lens_visibility"] * 100).round(0).astype(int)
+    display_df["Mention Rate"] = (display_df["mention_rate"] * 100).round(1).astype(str) + "%"
+    display_df["Share of Voice"] = (display_df["share_of_voice"] * 100).round(1).astype(str) + "%"
+    display_df["Top Spot Share"] = (display_df["top_spot_share"] * 100).round(1).astype(str) + "%"
+    display_df["Sentiment Index"] = display_df["sentiment_index"].round(3)
+
+    display_df["Rank"] = range(1, len(display_df) + 1)
+
+    if name_col == "brand_name":
+        columns = ["Rank", "brand_name", "Visibility Score", "Mention Rate", "Share of Voice", "Top Spot Share", "Sentiment Index"]
+        rename_map = {"brand_name": "Brand"}
+    else:
+        columns = ["Rank", "product_name", "brand_name", "Visibility Score", "Mention Rate", "Share of Voice", "Top Spot Share", "Sentiment Index"]
+        rename_map = {"product_name": "Product", "brand_name": "Brand"}
+
+    st.dataframe(
+        display_df[columns].rename(columns=rename_map),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("### Export Data")
+
+    export_df = df.copy()
+    export_df["visibility_score_100"] = export_df["dragon_lens_visibility"] * 100
+
+    csv = export_df.to_csv(index=False)
+    st.download_button(
+        label="Download CSV",
+        data=csv,
+        file_name=f"{name_col.replace('_name', '')}_metrics.csv",
+        mime="text/csv",
+    )
+
+
+def _render_brand_view(metrics: dict, user_brands: list[str], comparison: dict = None) -> None:
+    if not metrics["brands"]:
+        st.info("No brand metrics available yet. The tracking job may still be processing.")
+        return
+
+    df = pd.DataFrame(metrics["brands"])
+    user_brand = user_brands[0] if user_brands else None
+
+    _render_executive_scorecard(df, "brand_name", user_brand)
+
+    st.markdown("---")
+
+    if comparison:
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "Competitive Landscape",
+            "Performance Analysis",
+            "Opportunities",
+            "Detailed Data",
+            "Comparison Sentiment",
+        ])
+
+        with tab5:
+            _render_comparison_tab(comparison)
+    else:
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "Competitive Landscape",
+            "Performance Analysis",
+            "Opportunities",
+            "Detailed Data",
+        ])
+
+    with tab1:
+        _render_competitive_landscape_tab(df, "brand_name", user_brand)
+
+    with tab2:
+        _render_performance_tab(df, "brand_name", user_brand)
+
+    with tab3:
+        _render_opportunities_tab(df, "brand_name", user_brand)
+
+    with tab4:
+        _render_data_tab(df, "brand_name")
+
+
+def _render_product_view(metrics: dict, user_brands: list[str], comparison: dict = None) -> None:
+    if not metrics["products"]:
+        st.info("No product metrics available yet. The tracking job may still be processing.")
+        return
+
+    df = pd.DataFrame(metrics["products"])
+
+    user_products = df[df["brand_name"].isin(user_brands)]["product_name"].tolist() if user_brands else []
+    user_product = user_products[0] if user_products else None
+
+    _render_executive_scorecard(df, "product_name", user_product)
+
+    st.markdown("---")
+
+    if comparison:
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "Competitive Landscape",
+            "Performance Analysis",
+            "Opportunities",
+            "Detailed Data",
+            "Comparison Sentiment",
+        ])
+
+        with tab5:
+            _render_comparison_tab(comparison)
+    else:
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "Competitive Landscape",
+            "Performance Analysis",
+            "Opportunities",
+            "Detailed Data",
+        ])
+
+    with tab1:
+        _render_competitive_landscape_tab(df, "product_name", user_product)
+
+    with tab2:
+        _render_performance_tab(df, "product_name", user_product)
+
+    with tab3:
+        _render_opportunities_tab(df, "product_name", user_product)
+
+    with tab4:
+        _render_data_tab(df, "product_name")
 
 
 def show():
@@ -292,175 +423,49 @@ def show():
 
     model_param = "all" if selected_model == "All" else selected_model
 
-    run_id = None
+    user_brands = _fetch_user_brands(selected_vertical_id)
+
     if model_param == "all":
         with st.spinner("Loading metrics..."):
             metrics = _fetch_metrics(selected_vertical_id, model_param, view_mode)
+
         if not metrics:
             st.warning("No data found for this vertical and model combination.")
             st.info("Make sure a tracking job has been run and completed.")
             return
-        st.subheader(f"Latest Metrics: {metrics['vertical_name']} ({metrics['model_name']})")
+
+        st.subheader(f"{metrics['vertical_name']} ({metrics['model_name']})")
         st.caption(f"Data from: {metrics['date']}")
-        if view_mode == "Brand":
-            _render_brand_view(metrics)
-        else:
-            _render_product_view(metrics)
-        st.info("Comparison results are available for a specific model/run.")
+
+        comparison = None
     else:
         latest_run = _fetch_latest_completed_run(selected_vertical_id, model_param)
         if not latest_run:
             st.info("No completed runs found for this vertical/model yet.")
             return
+
         run_id = latest_run["id"]
         st.subheader(f"Latest Run Metrics: {selected_vertical_name} ({model_param})")
         st.caption(f"Run ID: {run_id} | Run time: {latest_run.get('run_time')}")
+
         with st.spinner("Loading run metrics..."):
-            metrics = _fetch_run_brand_metrics(run_id) if view_mode == "Brand" else _fetch_run_product_metrics(run_id)
+            if view_mode == "Brand":
+                metrics = _fetch_run_brand_metrics(run_id)
+            else:
+                metrics = _fetch_run_product_metrics(run_id)
+
         if not metrics:
             st.error("Failed to load run metrics.")
             return
-        if view_mode == "Brand":
-            _render_brand_view(metrics)
-        else:
-            _render_product_view(metrics)
+
         include_snippets = st.checkbox("Include comparison snippets", value=False)
-        with st.spinner("Loading comparison sentiment..."):
+        with st.spinner("Loading comparison data..."):
             comparison = _fetch_run_comparison(run_id, include_snippets)
-        if comparison:
-            _render_comparison_view(comparison)
+
+    if view_mode == "Brand":
+        _render_brand_view(metrics, user_brands, comparison)
+    else:
+        _render_product_view(metrics, user_brands, comparison)
 
     st.markdown("---")
-    st.markdown("## Last Run Inspector")
-    st.caption("View raw answers and extracted brand mentions from the most recent run")
-
-    _render_run_inspector(selected_vertical_id, model_param)
-
-
-def _render_run_inspector(vertical_id: int, model_name: str) -> None:
-    try:
-        params = {"vertical_id": vertical_id, "limit": 1}
-        if model_name != "all":
-            params["model_name"] = model_name
-
-        runs_response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/tracking/runs",
-            params=params,
-            timeout=10.0,
-        )
-        runs_response.raise_for_status()
-        runs = runs_response.json()
-
-        if not runs:
-            st.info("No runs found for this vertical and model.")
-            return
-
-        latest_run_id = runs[0]["id"]
-        details_response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/tracking/runs/{latest_run_id}/details",
-            timeout=30.0,
-        )
-        details_response.raise_for_status()
-        run_details = details_response.json()
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Run ID", run_details["id"])
-        with col2:
-            st.metric("Status", run_details["status"])
-        with col3:
-            st.metric("Prompts Answered", len(run_details["answers"]))
-
-        if not run_details["answers"]:
-            st.info("No answers available for this run yet. The job may still be processing.")
-            return
-
-        for i, answer in enumerate(run_details["answers"], 1):
-            with st.expander(f"Prompt & Answer {i}", expanded=(i == 1)):
-                _render_answer_details(answer, i)
-
-    except httpx.HTTPError as e:
-        st.error(f"Error fetching run details: {e}")
-    except Exception as e:
-        st.error(f"Unexpected error loading run inspector: {e}")
-
-
-def _render_answer_details(answer: dict, index: int) -> None:
-    st.markdown("#### Prompt")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**Chinese:**")
-        st.write(answer.get("prompt_text_zh") or "_No Chinese prompt_")
-    with col2:
-        st.markdown("**English:**")
-        st.write(answer.get("prompt_text_en") or "_No English prompt_")
-
-    st.markdown("---")
-    st.markdown("#### LLM Answer")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**Chinese Answer:**")
-        st.text_area(
-            "Chinese",
-            answer["raw_answer_zh"],
-            height=150,
-            key=f"answer_zh_{index}",
-            label_visibility="collapsed",
-        )
-    with col2:
-        st.markdown("**English Translation:**")
-        st.text_area(
-            "English",
-            answer.get("raw_answer_en") or "_Translation not available_",
-            height=150,
-            key=f"answer_en_{index}",
-            label_visibility="collapsed",
-        )
-
-    st.markdown("---")
-    st.markdown("#### Brand Mentions Detected")
-
-    if not answer["mentions"]:
-        st.info("No brand mentions detected in this answer.")
-        return
-
-    mentioned_brands = [m for m in answer["mentions"] if m["mentioned"]]
-    if not mentioned_brands:
-        st.info("No brands were mentioned in this answer.")
-        return
-
-    for mention in mentioned_brands:
-        _render_mention(mention)
-
-
-def _render_mention(mention: dict) -> None:
-    sentiment_emoji = {
-        "positive": "😊",
-        "neutral": "😐",
-        "negative": "😟",
-    }.get(mention["sentiment"], "")
-
-    rank_text = f"Rank #{mention['rank']}" if mention.get("rank") else "No rank"
-    st.markdown(
-        f"**{mention['brand_name']}** {sentiment_emoji} "
-        f"| {mention['sentiment'].upper()} | {rank_text}"
-    )
-
-    if mention.get("evidence_snippets"):
-        zh_snippets = mention["evidence_snippets"].get("zh", [])
-        en_snippets = mention["evidence_snippets"].get("en", [])
-
-        if zh_snippets or en_snippets:
-            col1, col2 = st.columns(2)
-            with col1:
-                if zh_snippets:
-                    st.caption("Evidence (Chinese):")
-                    for snippet in zh_snippets:
-                        st.markdown(f"> {snippet}")
-            with col2:
-                if en_snippets:
-                    st.caption("Evidence (English):")
-                    for snippet in en_snippets:
-                        st.markdown(f"> {snippet}")
-
-    st.markdown("---")
+    st.caption("For detailed prompt/answer analysis, visit the **Run Inspector** page.")
