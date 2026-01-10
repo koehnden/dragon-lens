@@ -17,6 +17,18 @@ branch_labels = None
 depends_on = None
 
 
+def _bind_dialect() -> str:
+    return op.get_bind().dialect.name
+
+
+def _existing_enum(name: str, values: list[str]):
+    if _bind_dialect() == "postgresql":
+        from sqlalchemy.dialects import postgresql
+
+        return postgresql.ENUM(*values, name=name, create_type=False)
+    return sa.Enum(*values, name=name)
+
+
 def upgrade() -> None:
     op.create_table(
         "run_comparison_configs",
@@ -58,7 +70,12 @@ def upgrade() -> None:
         ),
         sa.Column("text_en", sa.Text(), nullable=True),
         sa.Column("text_zh", sa.Text(), nullable=True),
-        sa.Column("language_original", sa.Enum("en", "zh", name="promptlanguage"), nullable=False, server_default=sa.text("'zh'")),
+        sa.Column(
+            "language_original",
+            _existing_enum("promptlanguage", ["en", "zh"]),
+            nullable=False,
+            server_default=sa.text("'zh'"),
+        ),
         sa.Column("primary_brand_id", sa.Integer(), sa.ForeignKey("brands.id"), nullable=True),
         sa.Column("competitor_brand_id", sa.Integer(), sa.ForeignKey("brands.id"), nullable=True),
         sa.Column("primary_product_id", sa.Integer(), sa.ForeignKey("products.id"), nullable=True),
@@ -75,7 +92,7 @@ def upgrade() -> None:
         sa.Column("comparison_prompt_id", sa.Integer(), sa.ForeignKey("comparison_prompts.id"), nullable=False),
         sa.Column("provider", sa.String(length=50), nullable=False),
         sa.Column("model_name", sa.String(length=255), nullable=False),
-        sa.Column("route", sa.Enum("local", "vendor", "openrouter", name="llmroute"), nullable=True),
+        sa.Column("route", _existing_enum("llmroute", ["local", "vendor", "openrouter"]), nullable=True),
         sa.Column("raw_answer_zh", sa.Text(), nullable=False),
         sa.Column("raw_answer_en", sa.Text(), nullable=True),
         sa.Column("tokens_in", sa.Integer(), nullable=True),
@@ -92,7 +109,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("run_id", sa.Integer(), sa.ForeignKey("runs.id"), nullable=False),
         sa.Column("comparison_answer_id", sa.Integer(), sa.ForeignKey("comparison_answers.id"), nullable=False),
-        sa.Column("entity_type", sa.Enum("brand", "product", name="entitytype"), nullable=False),
+        sa.Column("entity_type", _existing_enum("entitytype", ["brand", "product"]), nullable=False),
         sa.Column("entity_id", sa.Integer(), nullable=False),
         sa.Column(
             "entity_role",
@@ -100,7 +117,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("aspect", sa.String(length=255), nullable=True),
-        sa.Column("sentiment", sa.Enum("positive", "neutral", "negative", name="sentiment"), nullable=False),
+        sa.Column("sentiment", _existing_enum("sentiment", ["positive", "neutral", "negative"]), nullable=False),
         sa.Column("snippet_zh", sa.Text(), nullable=False),
         sa.Column("snippet_en", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
