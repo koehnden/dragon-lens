@@ -403,11 +403,11 @@ paths:
       - tracking
       summary: Reprocess Run
       description: "Trigger reprocessing of an existing run.\n\nThis will:\n1. Verify\
-        \ the run exists and is in pending status\n2. Enqueue a Celery task to reprocess\
+        \ the run exists and is not in progress\n2. Enqueue a Celery task to reprocess\
         \ the run\n3. The task will reuse existing LLM answers and re-run extraction\n\
         \nArgs:\n    run_id: Run ID to reprocess\n    db: Database session\n\nReturns:\n\
         \    Status message\n\nRaises:\n    HTTPException: If run not found or not\
-        \ in pending status"
+        \ in pending, completed, or failed status"
       operationId: reprocess_run_api_v1_tracking_runs__run_id__reprocess_post
       parameters:
       - name: run_id
