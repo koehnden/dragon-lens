@@ -766,7 +766,7 @@ example-all-mini: ## Smoke test: Run mini example (1 prompt) with 7 models (qwen
 	@echo "$(YELLOW)Running mini example smoke test (1 prompt, 7 models)...$(NC)"
 	@echo ""
 	@echo "$(YELLOW)This is a quick smoke test to verify the pipeline works correctly.$(NC)"
-	@echo "$(YELLOW)Each model should process exactly 1 prompt.$(NC)"
+	@echo "$(YELLOW)Each model should process 1 tracking prompt + 20 comparison prompts.$(NC)"
 	@echo ""
 	@echo "$(YELLOW)1/7 Running with Qwen...$(NC)"
 	@poetry run python scripts/run_example_with_reuse.py --provider=qwen --example-file=examples/suv_example_mini.json
@@ -794,7 +794,7 @@ example-all-mini: ## Smoke test: Run mini example (1 prompt) with 7 models (qwen
 	@echo "$(YELLOW)Verify results:$(NC)"
 	@echo "  curl http://localhost:$(API_PORT)/api/v1/tracking/runs | jq"
 	@echo ""
-	@echo "$(YELLOW)Expected: Each run should have processed exactly 1 prompt$(NC)"
+	@echo "$(YELLOW)Expected: Each run should have processed 1 tracking prompt + 20 comparison prompts$(NC)"
 
 example-all-mini-qwen: ## Smoke test: Run mini example with Qwen only
 	@echo "$(YELLOW)Running mini example with Qwen (1 prompt)...$(NC)"

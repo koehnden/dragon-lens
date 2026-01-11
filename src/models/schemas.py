@@ -76,28 +76,28 @@ class TrackingJobCreate(BaseModel):
     reuse_answers: bool = Field(default=False, description="Whether to reuse answers from previous runs")
     web_search_enabled: bool = Field(default=False, description="Whether web search is enabled for this run")
     comparison_enabled: bool = Field(
-        default=False, description="Whether to run comparison prompts after the main run completes"
+        default=True, description="Deprecated: comparison prompts run automatically after the main run completes"
     )
     comparison_competitor_brands: List[str] = Field(
-        default_factory=list, description="Optional competitor brand display names for comparisons"
+        default_factory=list, description="Ignored (comparison prompts are system-generated)"
     )
     comparison_prompts: List[PromptCreate] = Field(
-        default_factory=list, description="Optional user-provided comparison prompts (not used for extraction)"
+        default_factory=list, description="Ignored (comparison prompts are system-generated)"
     )
     comparison_target_count: int = Field(
         default=20,
         ge=1,
         le=500,
-        description="Target number of comparison prompts (may be exceeded to satisfy per-competitor minimums)",
+        description="Ignored (comparison prompts are system-generated with a fixed count)",
     )
     comparison_min_prompts_per_competitor: int = Field(
         default=2,
         ge=0,
         le=50,
-        description="Minimum number of generated comparison prompts per user-provided competitor brand",
+        description="Ignored (comparison prompts are system-generated)",
     )
     comparison_autogenerate_missing: bool = Field(
-        default=True, description="Whether to auto-generate missing prompts to reach the target count"
+        default=True, description="Ignored (comparison prompts are system-generated)"
     )
 
 
@@ -305,6 +305,50 @@ class RunComparisonMetricsResponse(BaseModel):
     primary_brand_name: str
     brands: List[ComparisonEntitySentimentSummary]
     products: List[ComparisonEntitySentimentSummary]
+    messages: List[RunComparisonMessage] = Field(default_factory=list)
+
+
+class ComparisonCharacteristicSummary(BaseModel):
+    characteristic_zh: str
+    characteristic_en: str
+    total_prompts: int
+    primary_wins: int
+    competitor_wins: int
+    ties: int
+    unknown: int
+
+
+class ComparisonPromptOutcomeDetail(BaseModel):
+    prompt_id: int
+    characteristic_zh: str
+    characteristic_en: str
+    prompt_zh: str
+    prompt_en: Optional[str] = None
+    answer_zh: Optional[str] = None
+    answer_en: Optional[str] = None
+    primary_product_id: Optional[int] = None
+    primary_product_name: str
+    competitor_product_id: Optional[int] = None
+    competitor_product_name: str
+    winner_role: str
+    winner_product_id: Optional[int] = None
+    winner_product_name: str
+    loser_product_id: Optional[int] = None
+    loser_product_name: str
+
+
+class RunComparisonSummaryResponse(BaseModel):
+    run_id: int
+    vertical_id: int
+    vertical_name: str
+    provider: str
+    model_name: str
+    primary_brand_id: int
+    primary_brand_name: str
+    brands: List[ComparisonEntitySentimentSummary]
+    products: List[ComparisonEntitySentimentSummary]
+    characteristics: List[ComparisonCharacteristicSummary] = Field(default_factory=list)
+    prompts: List[ComparisonPromptOutcomeDetail] = Field(default_factory=list)
     messages: List[RunComparisonMessage] = Field(default_factory=list)
 
 
