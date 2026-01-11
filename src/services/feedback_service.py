@@ -227,7 +227,9 @@ def _ensure_vertical_alias(
     alias: str,
 ) -> None:
     alias_key = normalize_entity_key(alias)
-    if not _find_vertical_alias(knowledge_db, vertical_id, alias_key):
+    existing = _find_vertical_alias(knowledge_db, alias_key)
+    _raise_if_vertical_alias_conflict(existing, vertical_id, alias)
+    if not existing:
         _add_vertical_alias(knowledge_db, vertical_id, alias, alias_key)
 
 
@@ -237,7 +239,9 @@ def _ensure_vertical_alias_created(
     alias: str,
 ) -> bool:
     alias_key = normalize_entity_key(alias)
-    if _find_vertical_alias(knowledge_db, vertical_id, alias_key):
+    existing = _find_vertical_alias(knowledge_db, alias_key)
+    _raise_if_vertical_alias_conflict(existing, vertical_id, alias)
+    if existing:
         return False
     _add_vertical_alias(knowledge_db, vertical_id, alias, alias_key)
     return True
@@ -245,17 +249,27 @@ def _ensure_vertical_alias_created(
 
 def _find_vertical_alias(
     knowledge_db: Session,
-    vertical_id: int,
     alias_key: str,
 ) -> KnowledgeVerticalAlias | None:
     return (
         knowledge_db.query(KnowledgeVerticalAlias)
-        .filter(
-            KnowledgeVerticalAlias.vertical_id == vertical_id,
-            KnowledgeVerticalAlias.alias_key == alias_key,
-        )
+        .filter(KnowledgeVerticalAlias.alias_key == alias_key)
         .first()
     )
+
+
+def _raise_if_vertical_alias_conflict(
+    existing: KnowledgeVerticalAlias | None,
+    requested_vertical_id: int,
+    alias: str,
+) -> None:
+    if existing and existing.vertical_id != requested_vertical_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Vertical alias '{alias}' already mapped to canonical_vertical_id={existing.vertical_id}"
+            ),
+        )
 
 
 def _add_vertical_alias(
