@@ -7,7 +7,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from models.sqlite_config import apply_sqlite_pragmas, is_sqlite_url, sqlite_connect_args
-from src.config import settings
+from config import settings
 
 
 class KnowledgeBase(DeclarativeBase):
@@ -31,11 +31,13 @@ def _is_memory_url(url: str) -> bool:
     return url == "sqlite:///:memory:"
 
 
-def _engine_args(url: str) -> dict:
+def _engine_args(url: str, auth_token: str | None = None) -> dict:
     args = {
         "connect_args": sqlite_connect_args(url),
         "echo": settings.debug,
     }
+    if auth_token:
+        args["connect_args"]["auth_token"] = auth_token
     if _is_memory_url(url):
         args["poolclass"] = StaticPool
     return args
@@ -56,21 +58,26 @@ def _turso_host() -> str:
     return base.rstrip("/")
 
 
-def _libsql_url(token: str | None) -> str:
+def _libsql_url() -> str:
     host = _turso_host()
     if not host:
         return ""
     query = {"secure": "true"}
-    if token:
-        query["authToken"] = token
     return f"sqlite+libsql://{host}/?{urlencode(query)}"
+
+
+def _turso_read_token() -> str | None:
+    return settings.turso_read_only_auth_token or settings.turso_auth_token
+
+
+def _turso_write_token() -> str | None:
+    return settings.turso_auth_token or settings.turso_read_only_auth_token
 
 
 def _knowledge_read_url() -> str:
     if not _turso_enabled():
         return settings.knowledge_database_url
-    token = settings.turso_read_only_auth_token or settings.turso_auth_token
-    return _libsql_url(token)
+    return _libsql_url()
 
 
 def _knowledge_write_url() -> str:
@@ -78,7 +85,7 @@ def _knowledge_write_url() -> str:
         return settings.knowledge_database_url
     if not settings.turso_auth_token:
         return _knowledge_read_url()
-    return _libsql_url(settings.turso_auth_token)
+    return _libsql_url()
 
 
 knowledge_read_url = _knowledge_read_url()
@@ -87,8 +94,14 @@ knowledge_write_url = _knowledge_write_url()
 if is_sqlite_url(knowledge_read_url):
     _ensure_dir(knowledge_read_url)
 
-knowledge_read_engine = create_engine(knowledge_read_url, **_engine_args(knowledge_read_url))
-knowledge_write_engine = create_engine(knowledge_write_url, **_engine_args(knowledge_write_url))
+knowledge_read_engine = create_engine(
+    knowledge_read_url,
+    **_engine_args(knowledge_read_url, _turso_read_token() if _turso_enabled() else None),
+)
+knowledge_write_engine = create_engine(
+    knowledge_write_url,
+    **_engine_args(knowledge_write_url, _turso_write_token() if _turso_enabled() else None),
+)
 
 KnowledgeReadSessionLocal = sessionmaker(
     autocommit=False, autoflush=False, bind=knowledge_read_engine
