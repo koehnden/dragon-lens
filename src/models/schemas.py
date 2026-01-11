@@ -308,6 +308,50 @@ class RunComparisonMetricsResponse(BaseModel):
     messages: List[RunComparisonMessage] = Field(default_factory=list)
 
 
+class ComparisonCharacteristicSummary(BaseModel):
+    characteristic_zh: str
+    characteristic_en: str
+    total_prompts: int
+    primary_wins: int
+    competitor_wins: int
+    ties: int
+    unknown: int
+
+
+class ComparisonPromptOutcomeDetail(BaseModel):
+    prompt_id: int
+    characteristic_zh: str
+    characteristic_en: str
+    prompt_zh: str
+    prompt_en: Optional[str] = None
+    answer_zh: Optional[str] = None
+    answer_en: Optional[str] = None
+    primary_product_id: Optional[int] = None
+    primary_product_name: str
+    competitor_product_id: Optional[int] = None
+    competitor_product_name: str
+    winner_role: str
+    winner_product_id: Optional[int] = None
+    winner_product_name: str
+    loser_product_id: Optional[int] = None
+    loser_product_name: str
+
+
+class RunComparisonSummaryResponse(BaseModel):
+    run_id: int
+    vertical_id: int
+    vertical_name: str
+    provider: str
+    model_name: str
+    primary_brand_id: int
+    primary_brand_name: str
+    brands: List[ComparisonEntitySentimentSummary]
+    products: List[ComparisonEntitySentimentSummary]
+    characteristics: List[ComparisonCharacteristicSummary] = Field(default_factory=list)
+    prompts: List[ComparisonPromptOutcomeDetail] = Field(default_factory=list)
+    messages: List[RunComparisonMessage] = Field(default_factory=list)
+
+
 class AllRunMetricsResponse(BaseModel):
     run_id: int
     vertical_id: int
