@@ -1,4 +1,4 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-db start-redis start-sentiment start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search logs-sentiment
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-db start-redis flush-redis start-sentiment start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search logs-sentiment
 
 # Default target
 .DEFAULT_GOAL := help
@@ -194,6 +194,16 @@ start-redis: ## Start Redis using Docker Compose
 	fi
 	@if [ -z "$$(docker ps -q -f name=dragonlens-redis 2>/dev/null)" ]; then \
 		if lsof -nP -tiTCP:$(REDIS_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
+			if command -v redis-cli >/dev/null 2>&1; then \
+				if redis-cli -p $(REDIS_PORT) PING 2>/dev/null | grep -qi pong; then \
+					echo "$(GREEN)✓ Redis already running on port $(REDIS_PORT) (skipping Docker start)$(NC)"; \
+					exit 0; \
+				fi; \
+			fi; \
+			if docker run --rm redis:7-alpine redis-cli -h host.docker.internal -p $(REDIS_PORT) PING 2>/dev/null | grep -qi pong; then \
+				echo "$(GREEN)✓ Redis already running on port $(REDIS_PORT) (skipping Docker start)$(NC)"; \
+				exit 0; \
+			fi; \
 			PID=$$(lsof -nP -tiTCP:$(REDIS_PORT) -sTCP:LISTEN | head -n 1); \
 			echo "$(RED)✗ Port $(REDIS_PORT) is already in use (PID $$PID)$(NC)"; \
 			echo "$(YELLOW)  Stop the process using port $(REDIS_PORT) or change REDIS_PORT/REDIS_URL/CELERY_BROKER_URL/CELERY_RESULT_BACKEND in .env$(NC)"; \
@@ -202,6 +212,34 @@ start-redis: ## Start Redis using Docker Compose
 	fi
 	@$(DOCKER_COMPOSE) up -d redis
 	@echo "$(GREEN)✓ Redis started$(NC)"
+
+flush-redis: ## Flush Redis (clears all queued tasks)
+	@echo "$(YELLOW)Flushing Redis...$(NC)"
+	@if docker ps -q -f name=dragonlens-redis 2>/dev/null | grep -q .; then \
+		docker exec dragonlens-redis redis-cli FLUSHALL >/dev/null; \
+		echo "$(GREEN)✓ Redis flushed (docker)$(NC)"; \
+		exit 0; \
+	fi
+	@if ! lsof -nP -tiTCP:$(REDIS_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
+		$(MAKE) --no-print-directory start-redis; \
+	fi
+	@if docker ps -q -f name=dragonlens-redis 2>/dev/null | grep -q .; then \
+		docker exec dragonlens-redis redis-cli FLUSHALL >/dev/null; \
+		echo "$(GREEN)✓ Redis flushed (docker)$(NC)"; \
+		exit 0; \
+	fi
+	@if command -v redis-cli >/dev/null 2>&1; then \
+		if redis-cli -p $(REDIS_PORT) FLUSHALL >/dev/null 2>&1; then \
+			echo "$(GREEN)✓ Redis flushed (local)$(NC)"; \
+			exit 0; \
+		fi; \
+	fi
+	@if docker run --rm redis:7-alpine redis-cli -h host.docker.internal -p $(REDIS_PORT) FLUSHALL >/dev/null 2>&1; then \
+		echo "$(GREEN)✓ Redis flushed (docker-cli)$(NC)"; \
+		exit 0; \
+	fi
+	@echo "$(RED)✗ Failed to flush Redis on port $(REDIS_PORT)$(NC)"
+	@exit 1
 
 stop-redis: ## Stop Redis
 	@echo "$(YELLOW)Stopping Redis...$(NC)"
@@ -438,8 +476,7 @@ clear: ## Full reset: kill all workers, flush Redis, clear database data (keep p
 	@echo "$(GREEN)✓ API, Streamlit, and Sentiment stopped$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 3: Flushing Redis (clearing all queued tasks)...$(NC)"
-	@$(MAKE) --no-print-directory start-redis
-	@docker exec dragonlens-redis redis-cli FLUSHALL >/dev/null
+	@$(MAKE) --no-print-directory flush-redis
 	@echo "$(GREEN)✓ Redis flushed$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 4: Clearing database data (keeping prompt results)...$(NC)"
@@ -494,8 +531,7 @@ clear-all: ## Clear ALL data including prompt results (LLM answers)
 	@echo "$(GREEN)✓ API, Streamlit, and Sentiment stopped$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 3: Flushing Redis (clearing all queued tasks)...$(NC)"
-	@$(MAKE) --no-print-directory start-redis
-	@docker exec dragonlens-redis redis-cli FLUSHALL >/dev/null
+	@$(MAKE) --no-print-directory flush-redis
 	@echo "$(GREEN)✓ Redis flushed$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Step 4: Clearing ALL database data including prompt results...$(NC)"
