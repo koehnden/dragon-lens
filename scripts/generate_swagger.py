@@ -3,12 +3,14 @@ from pathlib import Path
 import yaml
 import json
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+root = Path(__file__).parent.parent
+sys.path.insert(0, str(root / "src"))
+sys.path.insert(0, str(root))
 
 try:
-    from api import app
+    from api.app import app
 except ImportError:
-    from api import app
+    from src.api.app import app
 
 if __name__ == "__main__":
     openapi_schema = app.openapi()
@@ -25,6 +27,6 @@ if __name__ == "__main__":
     with open(json_path, "w") as f:
         json.dump(openapi_schema, f, indent=2)
 
-    print(f"✅ Generated Swagger documentation:")
+    print("✅ Generated Swagger documentation:")
     print(f"   - {yaml_path}")
     print(f"   - {json_path}")

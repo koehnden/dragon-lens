@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class VerticalCreate(BaseModel):
@@ -71,18 +71,30 @@ class TrackingJobCreate(BaseModel):
     vertical_description: Optional[str] = None
     brands: List[BrandCreate] = Field(default_factory=list)
     prompts: List[PromptCreate]
-    provider: str = Field(default="qwen", description="LLM provider (qwen, deepseek, kimi, openrouter)")
-    model_name: str = Field(default="qwen2.5:7b-instruct-q4_0", description="Specific model name or OpenRouter model ID")
-    reuse_answers: bool = Field(default=False, description="Whether to reuse answers from previous runs")
-    web_search_enabled: bool = Field(default=False, description="Whether web search is enabled for this run")
+    provider: str = Field(
+        default="qwen", description="LLM provider (qwen, deepseek, kimi, openrouter)"
+    )
+    model_name: str = Field(
+        default="qwen2.5:7b-instruct-q4_0",
+        description="Specific model name or OpenRouter model ID",
+    )
+    reuse_answers: bool = Field(
+        default=False, description="Whether to reuse answers from previous runs"
+    )
+    web_search_enabled: bool = Field(
+        default=False, description="Whether web search is enabled for this run"
+    )
     comparison_enabled: bool = Field(
-        default=False, description="Whether to run comparison prompts after the main run completes"
+        default=False,
+        description="Whether to run comparison prompts after the main run completes",
     )
     comparison_competitor_brands: List[str] = Field(
-        default_factory=list, description="Optional competitor brand display names for comparisons"
+        default_factory=list,
+        description="Optional competitor brand display names for comparisons",
     )
     comparison_prompts: List[PromptCreate] = Field(
-        default_factory=list, description="Optional user-provided comparison prompts (not used for extraction)"
+        default_factory=list,
+        description="Optional user-provided comparison prompts (not used for extraction)",
     )
     comparison_target_count: int = Field(
         default=20,
@@ -97,7 +109,8 @@ class TrackingJobCreate(BaseModel):
         description="Minimum number of generated comparison prompts per user-provided competitor brand",
     )
     comparison_autogenerate_missing: bool = Field(
-        default=True, description="Whether to auto-generate missing prompts to reach the target count"
+        default=True,
+        description="Whether to auto-generate missing prompts to reach the target count",
     )
 
 
@@ -345,7 +358,9 @@ class APIKeyCreate(BaseModel):
 
 
 class APIKeyUpdate(BaseModel):
-    api_key: Optional[str] = Field(None, min_length=1, description="New API key (optional)")
+    api_key: Optional[str] = Field(
+        None, min_length=1, description="New API key (optional)"
+    )
     is_active: Optional[bool] = Field(None, description="Active status")
 
 
@@ -431,6 +446,7 @@ class FeedbackAction(str, enum.Enum):
 
 class FeedbackMappingAction(str, enum.Enum):
     ADD = "add"
+    VALIDATE = "validate"
     REJECT = "reject"
 
 
@@ -488,7 +504,9 @@ class FeedbackSubmitRequest(BaseModel):
     brand_feedback: List[FeedbackBrandFeedbackItem] = Field(default_factory=list)
     product_feedback: List[FeedbackProductFeedbackItem] = Field(default_factory=list)
     mapping_feedback: List[FeedbackMappingFeedbackItem] = Field(default_factory=list)
-    translation_overrides: List[FeedbackTranslationOverrideItem] = Field(default_factory=list)
+    translation_overrides: List[FeedbackTranslationOverrideItem] = Field(
+        default_factory=list
+    )
 
 
 class FeedbackAppliedSummary(BaseModel):
@@ -504,3 +522,64 @@ class FeedbackSubmitResponse(BaseModel):
     canonical_vertical_id: int
     applied: FeedbackAppliedSummary
     warnings: List[str]
+
+
+class FeedbackCandidateBrand(BaseModel):
+    name: str
+    translated_name: Optional[str]
+    mention_count: int
+
+
+class FeedbackCandidateProduct(BaseModel):
+    name: str
+    translated_name: Optional[str]
+    brand_name: Optional[str]
+    mention_count: int
+
+
+class FeedbackCandidateMapping(BaseModel):
+    product_name: str
+    brand_name: str
+    confidence: Optional[float] = None
+    source: Optional[str] = None
+
+
+class FeedbackCandidateMissingMapping(BaseModel):
+    product_name: str
+
+
+class FeedbackCandidateTranslation(BaseModel):
+    entity_type: FeedbackEntityType
+    canonical_name: str
+    current_translation_en: Optional[str]
+    mention_count: int
+
+
+class FeedbackCandidatesResponse(BaseModel):
+    group_vertical_ids: List[int] = Field(default_factory=list)
+    vertical_id: int
+    vertical_name: str
+    latest_completed_run_id: Optional[int]
+    resolved_canonical_vertical_id: Optional[int]
+    resolved_canonical_vertical_name: Optional[str]
+    brands: List[FeedbackCandidateBrand] = Field(default_factory=list)
+    products: List[FeedbackCandidateProduct] = Field(default_factory=list)
+    mappings: List[FeedbackCandidateMapping] = Field(default_factory=list)
+    missing_mappings: List[FeedbackCandidateMissingMapping] = Field(
+        default_factory=list
+    )
+    translations: List[FeedbackCandidateTranslation] = Field(default_factory=list)
+
+
+class FeedbackVerticalAliasRequest(BaseModel):
+    vertical_id: int
+    canonical_vertical: FeedbackCanonicalVertical
+
+
+class FeedbackVerticalAliasResponse(BaseModel):
+    status: str
+    vertical_id: int
+    vertical_name: str
+    canonical_vertical_id: int
+    canonical_vertical_name: str
+    alias_created: bool
