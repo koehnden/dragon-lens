@@ -30,7 +30,9 @@ from services.brand_discovery import discover_brands_and_products
 from services.brand_recognition import extract_entities
 from services.entity_consolidation import consolidate_run
 from services.brand_recognition.consolidation_service import run_enhanced_consolidation
-from services.brand_recognition.product_brand_mapping import map_products_to_brands_for_run
+from services.brand_recognition.product_brand_mapping import (
+    map_products_to_brands_for_run,
+)
 from services.brand_recognition.vertical_gate import apply_vertical_gate_to_run
 from services.product_discovery import discover_and_store_products
 from services.translater import (
@@ -104,9 +106,21 @@ def _prompt_work_items(
         if not prompt_text_zh:
             logger.warning(f"Prompt {prompt.id} has no text, skipping")
             continue
-        existing = db.query(LLMAnswer).filter(LLMAnswer.run_id == run.id, LLMAnswer.prompt_id == prompt.id).first()
-        reusable = None if existing else find_reusable_answer(db, run, prompt_text_zh=prompt_text_zh, prompt_text_en=prompt.text_en)
-        items.append(_PromptWorkItem(prompt, prompt_text_zh, prompt.text_en, existing, reusable))
+        existing = (
+            db.query(LLMAnswer)
+            .filter(LLMAnswer.run_id == run.id, LLMAnswer.prompt_id == prompt.id)
+            .first()
+        )
+        reusable = (
+            None
+            if existing
+            else find_reusable_answer(
+                db, run, prompt_text_zh=prompt_text_zh, prompt_text_en=prompt.text_en
+            )
+        )
+        items.append(
+            _PromptWorkItem(prompt, prompt_text_zh, prompt.text_en, existing, reusable)
+        )
         if not existing and not reusable:
             requests.append(LLMRequest(prompt.id, prompt_text_zh))
     return items, requests
@@ -134,11 +148,21 @@ class DatabaseTask(Task):
 
 
 def _prompt_id_list(db: Session, run_id: int) -> list[int]:
-    return [prompt_id for (prompt_id,) in db.query(Prompt.id).filter(Prompt.run_id == run_id).order_by(Prompt.id).all()]
+    return [
+        prompt_id
+        for (prompt_id,) in db.query(Prompt.id)
+        .filter(Prompt.run_id == run_id)
+        .order_by(Prompt.id)
+        .all()
+    ]
 
 
 def _existing_answer(db: Session, run_id: int, prompt_id: int) -> LLMAnswer | None:
-    return db.query(LLMAnswer).filter(LLMAnswer.run_id == run_id, LLMAnswer.prompt_id == prompt_id).first()
+    return (
+        db.query(LLMAnswer)
+        .filter(LLMAnswer.run_id == run_id, LLMAnswer.prompt_id == prompt_id)
+        .first()
+    )
 
 
 def _ensure_prompt_text_zh(prompt: Prompt, translator: TranslaterService) -> str | None:
@@ -168,7 +192,9 @@ def _answer_payload(
     }
 
 
-def _extraction_payload(payload: dict, ok: bool, stage: str, error: str | None = None) -> dict:
+def _extraction_payload(
+    payload: dict, ok: bool, stage: str, error: str | None = None
+) -> dict:
     return {**payload, "ok": ok, "stage": stage, "error": error}
 
 
@@ -225,7 +251,9 @@ def start_run(
             | ensure_extraction.s(run_id, force_reextract).set(queue="ollama_extract")
         )
 
-    callback = finalize_run.s(run_id, force_reextract, skip_entity_consolidation).set(queue="default")
+    callback = finalize_run.s(run_id, force_reextract, skip_entity_consolidation).set(
+        queue="default"
+    )
     chord(group(header))(callback)
     return {"run_id": run_id, "prompt_count": len(prompt_ids)}
 
@@ -234,9 +262,15 @@ def start_run(
 def ensure_llm_answer(self: DatabaseTask, run_id: int, prompt_id: int) -> dict:
     try:
         run = self.db.query(Run).filter(Run.id == run_id).first()
-        prompt = self.db.query(Prompt).filter(Prompt.id == prompt_id, Prompt.run_id == run_id).first()
+        prompt = (
+            self.db.query(Prompt)
+            .filter(Prompt.id == prompt_id, Prompt.run_id == run_id)
+            .first()
+        )
         if not run or not prompt:
-            return _answer_payload(run_id, prompt_id, None, False, False, "Run or prompt not found")
+            return _answer_payload(
+                run_id, prompt_id, None, False, False, "Run or prompt not found"
+            )
 
         existing = _existing_answer(self.db, run_id, prompt_id)
         if existing:
@@ -245,9 +279,13 @@ def ensure_llm_answer(self: DatabaseTask, run_id: int, prompt_id: int) -> dict:
         translator = TranslaterService()
         prompt_text_zh = _ensure_prompt_text_zh(prompt, translator)
         if not prompt_text_zh:
-            return _answer_payload(run_id, prompt_id, None, False, False, "Prompt has no text")
+            return _answer_payload(
+                run_id, prompt_id, None, False, False, "Prompt has no text"
+            )
 
-        reusable = find_reusable_answer(self.db, run, prompt_text_zh=prompt_text_zh, prompt_text_en=prompt.text_en)
+        reusable = find_reusable_answer(
+            self.db, run, prompt_text_zh=prompt_text_zh, prompt_text_en=prompt.text_en
+        )
         if reusable:
             return _copy_reused_answer(self.db, run_id, prompt_id, run, reusable)
 
@@ -256,8 +294,14 @@ def ensure_llm_answer(self: DatabaseTask, run_id: int, prompt_id: int) -> dict:
         answer_zh, tokens_in, tokens_out, latency = _run_async(
             llm_router.query_with_resolution(resolution, prompt_text_zh)
         )
-        answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English") if answer_zh else None
-        cost_estimate = calculate_cost(run.provider, run.model_name, tokens_in, tokens_out, route=resolution.route)
+        answer_en = (
+            translator.translate_text_sync(answer_zh, "Chinese", "English")
+            if answer_zh
+            else None
+        )
+        cost_estimate = calculate_cost(
+            run.provider, run.model_name, tokens_in, tokens_out, route=resolution.route
+        )
         llm_answer = LLMAnswer(
             run_id=run_id,
             prompt_id=prompt_id,
@@ -280,13 +324,20 @@ def ensure_llm_answer(self: DatabaseTask, run_id: int, prompt_id: int) -> dict:
         existing = _existing_answer(self.db, run_id, prompt_id)
         if existing:
             return _answer_payload(run_id, prompt_id, existing.id, True, True)
-        return _answer_payload(run_id, prompt_id, None, False, False, "IntegrityError on llm_answer insert")
+        return _answer_payload(
+            run_id, prompt_id, None, False, False, "IntegrityError on llm_answer insert"
+        )
     except Exception as exc:
-        logger.error(f"ensure_llm_answer failed for run={run_id} prompt={prompt_id}: {exc}", exc_info=True)
+        logger.error(
+            f"ensure_llm_answer failed for run={run_id} prompt={prompt_id}: {exc}",
+            exc_info=True,
+        )
         return _answer_payload(run_id, prompt_id, None, False, False, str(exc))
 
 
-def _copy_reused_answer(db: Session, run_id: int, prompt_id: int, run: Run, reusable: LLMAnswer) -> dict:
+def _copy_reused_answer(
+    db: Session, run_id: int, prompt_id: int, run: Run, reusable: LLMAnswer
+) -> dict:
     try:
         llm_answer = LLMAnswer(
             run_id=run_id,
@@ -309,14 +360,20 @@ def _copy_reused_answer(db: Session, run_id: int, prompt_id: int, run: Run, reus
         db.rollback()
         existing = _existing_answer(db, run_id, prompt_id)
         if not existing:
-            return _answer_payload(run_id, prompt_id, None, False, False, "IntegrityError on reused insert")
+            return _answer_payload(
+                run_id, prompt_id, None, False, False, "IntegrityError on reused insert"
+            )
         return _answer_payload(run_id, prompt_id, existing.id, True, True)
 
 
 @celery_app.task(base=DatabaseTask, bind=True)
-def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reextract: bool = False) -> dict:
+def ensure_extraction(
+    self: DatabaseTask, payload: dict, run_id: int, force_reextract: bool = False
+) -> dict:
     if not payload.get("ok") or not payload.get("llm_answer_id"):
-        return _extraction_payload(payload, False, "extraction_skipped", payload.get("error"))
+        return _extraction_payload(
+            payload, False, "extraction_skipped", payload.get("error")
+        )
 
     prompt_id = int(payload["prompt_id"])
     llm_answer_id = int(payload["llm_answer_id"])
@@ -324,41 +381,68 @@ def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reex
         answer = self.db.query(LLMAnswer).filter(LLMAnswer.id == llm_answer_id).first()
         run = self.db.query(Run).filter(Run.id == run_id).first()
         if not answer or not run:
-            return _extraction_payload(payload, False, "extraction", "Run or answer not found")
+            return _extraction_payload(
+                payload, False, "extraction", "Run or answer not found"
+            )
 
         if not force_reextract and _has_mentions(self.db, llm_answer_id):
             return _extraction_payload(payload, True, "extraction_skipped", None)
 
-        self.db.query(BrandMention).filter(BrandMention.llm_answer_id == llm_answer_id).delete()
-        self.db.query(ProductMention).filter(ProductMention.llm_answer_id == llm_answer_id).delete()
+        self.db.query(BrandMention).filter(
+            BrandMention.llm_answer_id == llm_answer_id
+        ).delete()
+        self.db.query(ProductMention).filter(
+            ProductMention.llm_answer_id == llm_answer_id
+        ).delete()
         flush_with_retry(self.db)
 
         brands = self.db.query(Brand).filter(Brand.vertical_id == run.vertical_id).all()
         translator = TranslaterService()
         from services.ollama import OllamaService
+
         ollama_service = OllamaService()
 
         answer_zh = answer.raw_answer_zh or ""
-        all_brands, extraction_result = discover_brands_and_products(answer_zh, run.vertical_id, brands, self.db)
+        all_brands, extraction_result = discover_brands_and_products(
+            answer_zh, run.vertical_id, brands, self.db
+        )
 
         if extraction_result.debug_info:
-            self.db.query(ExtractionDebug).filter(ExtractionDebug.llm_answer_id == llm_answer_id).delete()
+            self.db.query(ExtractionDebug).filter(
+                ExtractionDebug.llm_answer_id == llm_answer_id
+            ).delete()
             debug_record = ExtractionDebug(
                 llm_answer_id=llm_answer_id,
-                raw_brands=json.dumps(extraction_result.debug_info.raw_brands, ensure_ascii=False),
-                raw_products=json.dumps(extraction_result.debug_info.raw_products, ensure_ascii=False),
-                rejected_at_light_filter=json.dumps(extraction_result.debug_info.rejected_at_light_filter, ensure_ascii=False),
-                final_brands=json.dumps(extraction_result.debug_info.final_brands, ensure_ascii=False),
-                final_products=json.dumps(extraction_result.debug_info.final_products, ensure_ascii=False),
+                raw_brands=json.dumps(
+                    extraction_result.debug_info.raw_brands, ensure_ascii=False
+                ),
+                raw_products=json.dumps(
+                    extraction_result.debug_info.raw_products, ensure_ascii=False
+                ),
+                rejected_at_light_filter=json.dumps(
+                    extraction_result.debug_info.rejected_at_light_filter,
+                    ensure_ascii=False,
+                ),
+                final_brands=json.dumps(
+                    extraction_result.debug_info.final_brands, ensure_ascii=False
+                ),
+                final_products=json.dumps(
+                    extraction_result.debug_info.final_products, ensure_ascii=False
+                ),
                 extraction_method="qwen",
             )
             self.db.add(debug_record)
 
-        discovered_products = discover_and_store_products(self.db, run.vertical_id, answer_zh, all_brands)
-        vertical = self.db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
+        discovered_products = discover_and_store_products(
+            self.db, run.vertical_id, answer_zh, all_brands
+        )
+        vertical = (
+            self.db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
+        )
         vertical_name = vertical.name if vertical else ""
         vertical_description = vertical.description if vertical else None
         from services.translation_feedback import apply_translation_feedback
+
         apply_translation_feedback(
             self.db,
             vertical_name=vertical_name,
@@ -368,22 +452,39 @@ def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reex
         )
 
         brand_names = [b.display_name for b in all_brands]
-        brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
-        brand_mentions = _run_async(ollama_service.extract_brands(answer_zh, brand_names, brand_aliases))
+        brand_aliases = [
+            b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands
+        ]
+        brand_mentions = _run_async(
+            ollama_service.extract_brands(answer_zh, brand_names, brand_aliases)
+        )
 
         product_names, product_aliases = _products_to_variants(discovered_products)
-        brand_names_for_products, brand_aliases_for_products = _brands_to_variants(all_brands)
+        brand_names_for_products, brand_aliases_for_products = _brands_to_variants(
+            all_brands
+        )
         product_mentions = _run_async(
             ollama_service.extract_products(
-                answer_zh, product_names, product_aliases, brand_names_for_products, brand_aliases_for_products
+                answer_zh,
+                product_names,
+                product_aliases,
+                brand_names_for_products,
+                brand_aliases_for_products,
             )
         )
 
-        all_snippets, snippet_map = _collect_all_snippets(brand_mentions, product_mentions)
+        all_snippets, snippet_map = _collect_all_snippets(
+            brand_mentions, product_mentions
+        )
         if settings.batch_translation_enabled and all_snippets:
-            translated = translator.translate_batch_sync(all_snippets, "Chinese", "English")
+            translated = translator.translate_batch_sync(
+                all_snippets, "Chinese", "English"
+            )
         else:
-            translated = [translator.translate_text_sync(s, "Chinese", "English") for s in all_snippets]
+            translated = [
+                translator.translate_text_sync(s, "Chinese", "English")
+                for s in all_snippets
+            ]
 
         for mention_data in brand_mentions:
             if not mention_data["mentioned"]:
@@ -391,19 +492,38 @@ def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reex
             brand = all_brands[mention_data["brand_index"]]
             sentiment_str = "neutral"
             if mention_data["snippets"]:
-                sentiment_str = _run_async(ollama_service.classify_sentiment(mention_data["snippets"][0]))
-            sentiment = Sentiment.POSITIVE if sentiment_str == "positive" else (
-                Sentiment.NEGATIVE if sentiment_str == "negative" else Sentiment.NEUTRAL
+                sentiment_str = _run_async(
+                    ollama_service.classify_sentiment(mention_data["snippets"][0])
+                )
+            sentiment = (
+                Sentiment.POSITIVE
+                if sentiment_str == "positive"
+                else (
+                    Sentiment.NEGATIVE
+                    if sentiment_str == "negative"
+                    else Sentiment.NEUTRAL
+                )
             )
-            en_snippets = _get_translated_snippets("brand", mention_data["brand_index"], mention_data["snippets"], snippet_map, translated)
-            self.db.add(BrandMention(
-                llm_answer_id=llm_answer_id,
-                brand_id=brand.id,
-                mentioned=True,
-                rank=mention_data["rank"],
-                sentiment=sentiment,
-                evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
-            ))
+            en_snippets = _get_translated_snippets(
+                "brand",
+                mention_data["brand_index"],
+                mention_data["snippets"],
+                snippet_map,
+                translated,
+            )
+            self.db.add(
+                BrandMention(
+                    llm_answer_id=llm_answer_id,
+                    brand_id=brand.id,
+                    mentioned=True,
+                    rank=mention_data["rank"],
+                    sentiment=sentiment,
+                    evidence_snippets={
+                        "zh": mention_data["snippets"],
+                        "en": en_snippets,
+                    },
+                )
+            )
 
         for mention_data in product_mentions:
             if not mention_data["mentioned"] or mention_data["rank"] is None:
@@ -411,30 +531,55 @@ def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reex
             product = discovered_products[mention_data["product_index"]]
             sentiment_str = "neutral"
             if mention_data["snippets"]:
-                sentiment_str = _run_async(ollama_service.classify_sentiment(mention_data["snippets"][0]))
+                sentiment_str = _run_async(
+                    ollama_service.classify_sentiment(mention_data["snippets"][0])
+                )
             sentiment = _map_sentiment(sentiment_str)
-            en_snippets = _get_translated_snippets("product", mention_data["product_index"], mention_data["snippets"], snippet_map, translated)
-            self.db.add(ProductMention(
-                llm_answer_id=llm_answer_id,
-                product_id=product.id,
-                mentioned=True,
-                rank=mention_data["rank"],
-                sentiment=sentiment,
-                evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
-            ))
+            en_snippets = _get_translated_snippets(
+                "product",
+                mention_data["product_index"],
+                mention_data["snippets"],
+                snippet_map,
+                translated,
+            )
+            self.db.add(
+                ProductMention(
+                    llm_answer_id=llm_answer_id,
+                    product_id=product.id,
+                    mentioned=True,
+                    rank=mention_data["rank"],
+                    sentiment=sentiment,
+                    evidence_snippets={
+                        "zh": mention_data["snippets"],
+                        "en": en_snippets,
+                    },
+                )
+            )
         flush_with_retry(self.db)
 
         commit_with_retry(self.db)
         return _extraction_payload(payload, True, "extraction", None)
     except Exception as exc:
-        logger.error(f"ensure_extraction failed for run={run_id} prompt={prompt_id}: {exc}", exc_info=True)
+        logger.error(
+            f"ensure_extraction failed for run={run_id} prompt={prompt_id}: {exc}",
+            exc_info=True,
+        )
         return _extraction_payload(payload, False, "extraction", str(exc))
 
 
 def _has_mentions(db: Session, llm_answer_id: int) -> bool:
-    if db.query(BrandMention.id).filter(BrandMention.llm_answer_id == llm_answer_id).first():
+    if (
+        db.query(BrandMention.id)
+        .filter(BrandMention.llm_answer_id == llm_answer_id)
+        .first()
+    ):
         return True
-    return db.query(ProductMention.id).filter(ProductMention.llm_answer_id == llm_answer_id).first() is not None
+    return (
+        db.query(ProductMention.id)
+        .filter(ProductMention.llm_answer_id == llm_answer_id)
+        .first()
+        is not None
+    )
 
 
 @celery_app.task(base=DatabaseTask, bind=True)
@@ -452,43 +597,73 @@ def finalize_run(
     failed_ids = _failed_prompt_ids(results)
     if _should_fail_run(results):
         run.status = RunStatus.FAILED
-        run.error_message = f"Run failed: failed_prompts={len(failed_ids)} prompt_ids={failed_ids}"
+        run.error_message = (
+            f"Run failed: failed_prompts={len(failed_ids)} prompt_ids={failed_ids}"
+        )
         run.completed_at = datetime.utcnow()
         commit_with_retry(self.db)
-        return {"run_id": run_id, "status": "failed", "failed_count": len(failed_ids), "failed_prompt_ids": failed_ids}
+        return {
+            "run_id": run_id,
+            "status": "failed",
+            "failed_count": len(failed_ids),
+            "failed_prompt_ids": failed_ids,
+        }
 
     _backfill_entity_english_names(self.db, run)
 
     enhanced_result = _run_async(run_enhanced_consolidation(self.db, run_id))
     _run_async(apply_vertical_gate_to_run(self.db, run_id))
     if not skip_entity_consolidation:
-        consolidate_run(self.db, run_id, normalized_brands=enhanced_result.normalized_brands)
+        consolidate_run(
+            self.db, run_id, normalized_brands=enhanced_result.normalized_brands
+        )
     _run_async(map_products_to_brands_for_run(self.db, run_id))
     calculate_and_save_metrics(self.db, run_id)
     calculate_and_save_run_product_metrics(self.db, run_id)
     _run_comparison_if_enabled(self.db, run_id)
+
+    if settings.vertical_auto_match_enabled:
+        try:
+            from services.vertical_auto_match import ensure_vertical_grouping_for_run
+
+            _run_async(ensure_vertical_grouping_for_run(self.db, run_id))
+        except Exception as exc:
+            logger.warning("Vertical auto-match skipped for run %s: %s", run_id, exc)
 
     run.status = RunStatus.COMPLETED
     run.completed_at = datetime.utcnow()
     if failed_ids:
         run.error_message = f"Completed with warnings: failed_prompts={len(failed_ids)} prompt_ids={failed_ids}"
     commit_with_retry(self.db)
-    return {"run_id": run_id, "status": "completed", "failed_count": len(failed_ids), "failed_prompt_ids": failed_ids}
+    return {
+        "run_id": run_id,
+        "status": "completed",
+        "failed_count": len(failed_ids),
+        "failed_prompt_ids": failed_ids,
+    }
 
 
 def _run_comparison_if_enabled(db: Session, run_id: int) -> None:
     from models import ComparisonRunStatus, RunComparisonConfig
-    from services.comparison_prompts.metrics_update import update_run_metrics_with_comparison_sentiment
+    from services.comparison_prompts.metrics_update import (
+        update_run_metrics_with_comparison_sentiment,
+    )
     from services.comparison_prompts.run_pipeline import run_comparison_pipeline
 
-    config = db.query(RunComparisonConfig).filter(RunComparisonConfig.run_id == run_id).first()
+    config = (
+        db.query(RunComparisonConfig)
+        .filter(RunComparisonConfig.run_id == run_id)
+        .first()
+    )
     if not config or not config.enabled:
         return
     try:
         _run_async(run_comparison_pipeline(db, run_id))
         update_run_metrics_with_comparison_sentiment(db, run_id)
     except Exception as exc:
-        logger.error(f"Comparison pipeline failed for run {run_id}: {exc}", exc_info=True)
+        logger.error(
+            f"Comparison pipeline failed for run {run_id}: {exc}", exc_info=True
+        )
         config.status = ComparisonRunStatus.FAILED
         config.error_message = str(exc)
         config.completed_at = datetime.utcnow()
@@ -536,20 +711,32 @@ def _backfill_entity_english_names(db: Session, run: Run) -> None:
     vertical = db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
     if not vertical:
         return
-    brands = db.query(Brand).filter(Brand.id.in_(_mentioned_brand_ids(db, run.id))).all()
-    products = db.query(Product).filter(Product.id.in_(_mentioned_product_ids(db, run.id))).all()
+    brands = (
+        db.query(Brand).filter(Brand.id.in_(_mentioned_brand_ids(db, run.id))).all()
+    )
+    products = (
+        db.query(Product)
+        .filter(Product.id.in_(_mentioned_product_ids(db, run.id)))
+        .all()
+    )
     translator = TranslaterService()
     _normalize_run_entities(brands, products)
     items = _entities_missing_english(brands, products)
     if items:
-        mapping = _run_async(translator.translate_entities_to_english_batch(items, vertical.name, vertical.description))
+        mapping = _run_async(
+            translator.translate_entities_to_english_batch(
+                items, vertical.name, vertical.description
+            )
+        )
         _apply_entity_english_mapping(brands, products, mapping)
     commit_with_retry(db)
 
 
 def _normalize_run_entities(brands: list[Brand], products: list[Product]) -> None:
     for brand in brands:
-        if has_latin_letters(brand.original_name) and has_chinese_characters(brand.original_name):
+        if has_latin_letters(brand.original_name) and has_chinese_characters(
+            brand.original_name
+        ):
             english, chinese = _normalize_mixed_original_name(brand.original_name)
             if english:
                 brand.original_name = english
@@ -559,24 +746,32 @@ def _normalize_run_entities(brands: list[Brand], products: list[Product]) -> Non
             if english:
                 brand.aliases = _append_alias(brand.aliases, "en", english)
     for product in products:
-        if has_latin_letters(product.original_name) and has_chinese_characters(product.original_name):
+        if has_latin_letters(product.original_name) and has_chinese_characters(
+            product.original_name
+        ):
             english, _ = _normalize_mixed_original_name(product.original_name)
             if english:
                 product.original_name = english
                 product.translated_name = None
 
 
-def _entities_missing_english(brands: list[Brand], products: list[Product]) -> list[dict]:
+def _entities_missing_english(
+    brands: list[Brand], products: list[Product]
+) -> list[dict]:
     items: list[dict] = []
     for brand in brands:
         if brand.translated_name:
             continue
-        if has_chinese_characters(brand.original_name) and not has_latin_letters(brand.original_name):
+        if has_chinese_characters(brand.original_name) and not has_latin_letters(
+            brand.original_name
+        ):
             items.append({"type": "brand", "name": brand.original_name.strip()})
     for product in products:
         if product.translated_name:
             continue
-        if has_chinese_characters(product.original_name) and not has_latin_letters(product.original_name):
+        if has_chinese_characters(product.original_name) and not has_latin_letters(
+            product.original_name
+        ):
             items.append({"type": "product", "name": product.original_name.strip()})
     return items
 
@@ -602,8 +797,12 @@ def _apply_entity_english_mapping(
 
 
 @celery_app.task(base=DatabaseTask, bind=True)
-def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, model_name: str, run_id: int):
-    logger.info(f"Starting vertical analysis: vertical={vertical_id}, provider={provider}, model={model_name}, run={run_id}")
+def run_vertical_analysis(
+    self: DatabaseTask, vertical_id: int, provider: str, model_name: str, run_id: int
+):
+    logger.info(
+        f"Starting vertical analysis: vertical={vertical_id}, provider={provider}, model={model_name}, run={run_id}"
+    )
 
     try:
         run = self.db.query(Run).filter(Run.id == run_id).first()
@@ -630,11 +829,14 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
         commit_with_retry(self.db)
         translator = TranslaterService()
         from services.ollama import OllamaService
+
         ollama_service = OllamaService()
 
         work_items, llm_requests = _prompt_work_items(self.db, run, prompts, translator)
         concurrency = _llm_fetch_concurrency(resolution.route)
-        logger.info(f"LLM parallel fetch: enabled={settings.parallel_llm_enabled}, concurrency={concurrency}, prompts={len(llm_requests)}")
+        logger.info(
+            f"LLM parallel fetch: enabled={settings.parallel_llm_enabled}, concurrency={concurrency}, prompts={len(llm_requests)}"
+        )
 
         async def _query_fn(prompt_zh: str):
             return await llm_router.query_with_resolution(resolution, prompt_zh)
@@ -642,12 +844,16 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
         llm_results_by_prompt_id: dict[int, LLMResult] = {}
         if llm_requests:
             if concurrency > 1 and len(llm_requests) > 1:
-                llm_results = _run_async(fetch_llm_answers_parallel(llm_requests, _query_fn, concurrency))
+                llm_results = _run_async(
+                    fetch_llm_answers_parallel(llm_requests, _query_fn, concurrency)
+                )
                 _raise_on_llm_errors(llm_results)
                 llm_results_by_prompt_id = {r.prompt_id: r for r in llm_results}
             else:
                 for req in llm_requests:
-                    answer_zh, tokens_in, tokens_out, latency = _run_async(_query_fn(req.prompt_text_zh))
+                    answer_zh, tokens_in, tokens_out, latency = _run_async(
+                        _query_fn(req.prompt_text_zh)
+                    )
                     llm_results_by_prompt_id[req.prompt_id] = LLMResult(
                         prompt_id=req.prompt_id,
                         answer_zh=answer_zh,
@@ -671,8 +877,12 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             if item.existing_answer:
                 llm_answer = item.existing_answer
                 answer_zh = llm_answer.raw_answer_zh
-                self.db.query(BrandMention).filter(BrandMention.llm_answer_id == llm_answer.id).delete()
-                self.db.query(ProductMention).filter(ProductMention.llm_answer_id == llm_answer.id).delete()
+                self.db.query(BrandMention).filter(
+                    BrandMention.llm_answer_id == llm_answer.id
+                ).delete()
+                self.db.query(ProductMention).filter(
+                    ProductMention.llm_answer_id == llm_answer.id
+                ).delete()
                 flush_with_retry(self.db)
             elif item.reusable_answer:
                 reusable = item.reusable_answer
@@ -690,14 +900,18 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                 tokens_in = result.tokens_in
                 tokens_out = result.tokens_out
                 latency = result.latency
-                cost_estimate = calculate_cost(provider, model_name, tokens_in, tokens_out, route=resolution.route)
+                cost_estimate = calculate_cost(
+                    provider, model_name, tokens_in, tokens_out, route=resolution.route
+                )
 
             if not llm_answer:
                 answer_route = resolution.route
                 if item.reusable_answer and item.reusable_answer.route:
                     answer_route = item.reusable_answer.route
                 if answer_zh and not answer_en and not item.reusable_answer:
-                    answer_en = translator.translate_text_sync(answer_zh, "Chinese", "English")
+                    answer_en = translator.translate_text_sync(
+                        answer_zh, "Chinese", "English"
+                    )
                 llm_answer = LLMAnswer(
                     run_id=run_id,
                     prompt_id=prompt.id,
@@ -723,14 +937,27 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             )
 
             if extraction_result.debug_info:
-                self.db.query(ExtractionDebug).filter(ExtractionDebug.llm_answer_id == llm_answer.id).delete()
+                self.db.query(ExtractionDebug).filter(
+                    ExtractionDebug.llm_answer_id == llm_answer.id
+                ).delete()
                 debug_record = ExtractionDebug(
                     llm_answer_id=llm_answer.id,
-                    raw_brands=json.dumps(extraction_result.debug_info.raw_brands, ensure_ascii=False),
-                    raw_products=json.dumps(extraction_result.debug_info.raw_products, ensure_ascii=False),
-                    rejected_at_light_filter=json.dumps(extraction_result.debug_info.rejected_at_light_filter, ensure_ascii=False),
-                    final_brands=json.dumps(extraction_result.debug_info.final_brands, ensure_ascii=False),
-                    final_products=json.dumps(extraction_result.debug_info.final_products, ensure_ascii=False),
+                    raw_brands=json.dumps(
+                        extraction_result.debug_info.raw_brands, ensure_ascii=False
+                    ),
+                    raw_products=json.dumps(
+                        extraction_result.debug_info.raw_products, ensure_ascii=False
+                    ),
+                    rejected_at_light_filter=json.dumps(
+                        extraction_result.debug_info.rejected_at_light_filter,
+                        ensure_ascii=False,
+                    ),
+                    final_brands=json.dumps(
+                        extraction_result.debug_info.final_brands, ensure_ascii=False
+                    ),
+                    final_products=json.dumps(
+                        extraction_result.debug_info.final_products, ensure_ascii=False
+                    ),
                     extraction_method="qwen",
                 )
                 self.db.add(debug_record)
@@ -742,7 +969,9 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             logger.info(f"Found {len(discovered_products)} products")
 
             brand_names = [b.display_name for b in all_brands]
-            brand_aliases = [b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands]
+            brand_aliases = [
+                b.aliases.get("zh", []) + b.aliases.get("en", []) for b in all_brands
+            ]
 
             logger.info(f"Extracting brand mentions for {len(all_brands)} brands...")
             brand_mentions_data = _run_async(
@@ -750,19 +979,32 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             )
 
             product_names, product_aliases = _products_to_variants(discovered_products)
-            brand_names_for_products, brand_aliases_for_products = _brands_to_variants(all_brands)
+            brand_names_for_products, brand_aliases_for_products = _brands_to_variants(
+                all_brands
+            )
             product_mentions_data = _run_async(
                 ollama_service.extract_products(
-                    answer_zh, product_names, product_aliases, brand_names_for_products, brand_aliases_for_products
+                    answer_zh,
+                    product_names,
+                    product_aliases,
+                    brand_names_for_products,
+                    brand_aliases_for_products,
                 )
             )
 
-            all_snippets, snippet_map = _collect_all_snippets(brand_mentions_data, product_mentions_data)
+            all_snippets, snippet_map = _collect_all_snippets(
+                brand_mentions_data, product_mentions_data
+            )
             if settings.batch_translation_enabled and all_snippets:
                 logger.info(f"Batch translating {len(all_snippets)} snippets...")
-                translated = translator.translate_batch_sync(all_snippets, "Chinese", "English")
+                translated = translator.translate_batch_sync(
+                    all_snippets, "Chinese", "English"
+                )
             else:
-                translated = [translator.translate_text_sync(s, "Chinese", "English") for s in all_snippets]
+                translated = [
+                    translator.translate_text_sync(s, "Chinese", "English")
+                    for s in all_snippets
+                ]
 
             for mention_data in brand_mentions_data:
                 if not mention_data["mentioned"]:
@@ -771,19 +1013,38 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                 sentiment_str = "neutral"
                 if mention_data["snippets"]:
                     snippet = mention_data["snippets"][0]
-                    sentiment_str = _run_async(ollama_service.classify_sentiment(snippet))
-                    logger.info(f"Brand {brand.display_name} sentiment: {sentiment_str}")
-                sentiment = Sentiment.POSITIVE if sentiment_str == "positive" else (
-                    Sentiment.NEGATIVE if sentiment_str == "negative" else Sentiment.NEUTRAL
+                    sentiment_str = _run_async(
+                        ollama_service.classify_sentiment(snippet)
+                    )
+                    logger.info(
+                        f"Brand {brand.display_name} sentiment: {sentiment_str}"
+                    )
+                sentiment = (
+                    Sentiment.POSITIVE
+                    if sentiment_str == "positive"
+                    else (
+                        Sentiment.NEGATIVE
+                        if sentiment_str == "negative"
+                        else Sentiment.NEUTRAL
+                    )
                 )
-                en_snippets = _get_translated_snippets("brand", mention_data["brand_index"], mention_data["snippets"], snippet_map, translated)
+                en_snippets = _get_translated_snippets(
+                    "brand",
+                    mention_data["brand_index"],
+                    mention_data["snippets"],
+                    snippet_map,
+                    translated,
+                )
                 mention = BrandMention(
                     llm_answer_id=llm_answer.id,
                     brand_id=brand.id,
                     mentioned=True,
                     rank=mention_data["rank"],
                     sentiment=sentiment,
-                    evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
+                    evidence_snippets={
+                        "zh": mention_data["snippets"],
+                        "en": en_snippets,
+                    },
                 )
                 self.db.add(mention)
 
@@ -793,17 +1054,30 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
                 product = discovered_products[mention_data["product_index"]]
                 sentiment_str = "neutral"
                 if mention_data["snippets"]:
-                    sentiment_str = _run_async(ollama_service.classify_sentiment(mention_data["snippets"][0]))
+                    sentiment_str = _run_async(
+                        ollama_service.classify_sentiment(mention_data["snippets"][0])
+                    )
                 sentiment = _map_sentiment(sentiment_str)
-                en_snippets = _get_translated_snippets("product", mention_data["product_index"], mention_data["snippets"], snippet_map, translated)
-                self.db.add(ProductMention(
-                    llm_answer_id=llm_answer.id,
-                    product_id=product.id,
-                    mentioned=True,
-                    rank=mention_data["rank"],
-                    sentiment=sentiment,
-                    evidence_snippets={"zh": mention_data["snippets"], "en": en_snippets},
-                ))
+                en_snippets = _get_translated_snippets(
+                    "product",
+                    mention_data["product_index"],
+                    mention_data["snippets"],
+                    snippet_map,
+                    translated,
+                )
+                self.db.add(
+                    ProductMention(
+                        llm_answer_id=llm_answer.id,
+                        product_id=product.id,
+                        mentioned=True,
+                        rank=mention_data["rank"],
+                        sentiment=sentiment,
+                        evidence_snippets={
+                            "zh": mention_data["snippets"],
+                            "en": en_snippets,
+                        },
+                    )
+                )
             flush_with_retry(self.db)
 
             commit_with_retry(self.db)
@@ -815,12 +1089,16 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
             f"{len(enhanced_result.final_products)} products after normalization/validation"
         )
 
-        logger.info(f"Applying off-vertical gate for discovered brands in run {run_id}...")
+        logger.info(
+            f"Applying off-vertical gate for discovered brands in run {run_id}..."
+        )
         rejected = _run_async(apply_vertical_gate_to_run(self.db, run_id))
         logger.info(f"Off-vertical gate rejected {rejected} discovered brands")
 
         logger.info(f"Consolidating entities for run {run_id}...")
-        consolidation_result = consolidate_run(self.db, run_id, normalized_brands=enhanced_result.normalized_brands)
+        consolidation_result = consolidate_run(
+            self.db, run_id, normalized_brands=enhanced_result.normalized_brands
+        )
         logger.info(
             f"Entity consolidation complete: {consolidation_result.brands_merged} brands merged, "
             f"{consolidation_result.products_merged} products merged, "
@@ -879,6 +1157,7 @@ def classify_sentiment(text: str) -> str:
     logger.info("Classifying sentiment")
     return "neutral"
 
+
 def _detect_mentions(answer_text: str, brands: List[Brand]) -> dict[int, List[str]]:
     if not brands:
         return {}
@@ -893,7 +1172,11 @@ def _detect_mentions(answer_text: str, brands: List[Brand]) -> dict[int, List[st
 
 def _ensure_brand(vertical_id: int, canonical_name: str, aliases: dict) -> Brand:
     session = SessionLocal()
-    brand = session.query(Brand).filter(Brand.vertical_id == vertical_id, Brand.display_name == canonical_name).first()
+    brand = (
+        session.query(Brand)
+        .filter(Brand.vertical_id == vertical_id, Brand.display_name == canonical_name)
+        .first()
+    )
     brand = brand or Brand(
         vertical_id=vertical_id,
         display_name=canonical_name,
@@ -943,12 +1226,16 @@ def _create_product_mentions(
         product = products[mention_data["product_index"]]
         sentiment_str = "neutral"
         if mention_data["snippets"]:
-            sentiment_str = _run_async(ollama_service.classify_sentiment(mention_data["snippets"][0]))
+            sentiment_str = _run_async(
+                ollama_service.classify_sentiment(mention_data["snippets"][0])
+            )
         sentiment = _map_sentiment(sentiment_str)
 
         en_snippets = []
         for snippet in mention_data["snippets"]:
-            en_snippets.append(translator.translate_text_sync(snippet, "Chinese", "English"))
+            en_snippets.append(
+                translator.translate_text_sync(snippet, "Chinese", "English")
+            )
 
         mention = ProductMention(
             llm_answer_id=llm_answer.id,
@@ -989,7 +1276,11 @@ def _brand_aliases(brand: Brand) -> List[str]:
 
 
 def _product_variants(product: Product) -> List[str]:
-    variants = [product.display_name, product.original_name, product.translated_name or ""]
+    variants = [
+        product.display_name,
+        product.original_name,
+        product.translated_name or "",
+    ]
     seen: set[str] = set()
     result: List[str] = []
     for v in variants:
