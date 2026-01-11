@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from models import (
     Brand,
     BrandMention,
+    ComparisonAnswer,
+    ComparisonPrompt,
     ComparisonRunEvent,
     ComparisonRunStatus,
     ComparisonSentimentObservation,
@@ -33,11 +35,14 @@ from models.schemas import (
     BrandMetrics,
     ComparisonEvidenceSnippet,
     ComparisonEntitySentimentSummary,
+    ComparisonCharacteristicSummary,
+    ComparisonPromptOutcomeDetail,
     MetricsResponse,
     ProductMetrics,
     ProductMetricsResponse,
     RunComparisonMessage,
     RunComparisonMetricsResponse,
+    RunComparisonSummaryResponse,
     RunMetricsResponse,
 )
 from services.translater import format_entity_label
@@ -726,3 +731,189 @@ def _snippets(rows: list, entity_id: int, limit_snippets: int) -> list[Compariso
         if len(out) >= limit_snippets:
             break
     return out
+
+
+def _aspect_en(aspect_zh: str) -> str:
+    mapping = {
+        "油耗": "Fuel efficiency",
+        "空间": "Space",
+        "舒适性": "Comfort",
+        "安全性": "Safety",
+        "性价比": "Value for money",
+        "可靠性": "Reliability",
+        "售后": "After-sales service",
+        "做工用料": "Build quality and materials",
+        "动力表现": "Performance",
+        "保值率": "Resale value",
+    }
+    return mapping.get((aspect_zh or "").strip(), (aspect_zh or "").strip())
+
+
+def _outcome_for_obs(rows: list[ComparisonSentimentObservation]) -> str:
+    from services.comparison_prompts.outcomes import outcome_for_role_sentiments
+
+    pairs = [(r.entity_role, r.sentiment) for r in rows if r.entity_role and r.sentiment]
+    return outcome_for_role_sentiments(pairs)
+
+
+def _characteristic(prompt: ComparisonPrompt) -> str:
+    if prompt.aspects and isinstance(prompt.aspects, list) and prompt.aspects:
+        return str(prompt.aspects[0] or "").strip()
+    return ""
+
+
+def _fallback_product_name(product: Product | None) -> str:
+    if not product:
+        return ""
+    return format_entity_label(product.original_name, product.translated_name)
+
+
+@router.get("/run/{run_id}/comparison/summary", response_model=RunComparisonSummaryResponse)
+async def get_run_comparison_summary(
+    run_id: int,
+    include_prompt_details: bool = Query(False),
+    limit_prompts: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> RunComparisonSummaryResponse:
+    """
+    Get winner/loser summary for comparison prompts grouped by characteristic.
+    """
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    config = db.query(RunComparisonConfig).filter(RunComparisonConfig.run_id == run_id).first()
+    if not config or not config.enabled:
+        raise HTTPException(status_code=404, detail=f"Comparison results not available for run {run_id}")
+    if config.status != ComparisonRunStatus.COMPLETED:
+        raise HTTPException(status_code=409, detail=f"Comparison results not ready (status={config.status.value})")
+    vertical = get_vertical_or_raise(db, run.vertical_id)
+    primary = db.query(Brand).filter(Brand.id == config.primary_brand_id).first()
+    messages = _comparison_messages(db, run_id)
+    brands = _comparison_summaries(db, run_id, EntityType.BRAND, False, 500, 0)
+    products = _comparison_summaries(db, run_id, EntityType.PRODUCT, False, 500, 0)
+    prompts, characteristics = _summary_prompts_and_characteristics(db, run_id, int(limit_prompts), bool(include_prompt_details))
+    return RunComparisonSummaryResponse(
+        run_id=run.id,
+        vertical_id=run.vertical_id,
+        vertical_name=vertical.name,
+        provider=run.provider,
+        model_name=run.model_name,
+        primary_brand_id=config.primary_brand_id,
+        primary_brand_name=format_entity_label(primary.original_name, primary.translated_name) if primary else "",
+        brands=brands,
+        products=products,
+        characteristics=characteristics,
+        prompts=prompts,
+        messages=messages,
+    )
+
+
+def _summary_prompts_and_characteristics(
+    db: Session,
+    run_id: int,
+    limit_prompts: int,
+    include_prompt_details: bool,
+) -> tuple[list[ComparisonPromptOutcomeDetail], list[ComparisonCharacteristicSummary]]:
+    prompts = db.query(ComparisonPrompt).filter(ComparisonPrompt.run_id == run_id).order_by(ComparisonPrompt.id).limit(limit_prompts).all()
+    answers = db.query(ComparisonAnswer).filter(ComparisonAnswer.run_id == run_id).all()
+    answer_by_prompt = {int(a.comparison_prompt_id): a for a in answers}
+    prod_ids = _prompt_product_ids(prompts)
+    products = db.query(Product).filter(Product.id.in_(prod_ids)).all() if prod_ids else []
+    prod_map = {int(p.id): p for p in products}
+    details = [] if not include_prompt_details else [_prompt_detail(db, p, answer_by_prompt.get(int(p.id)), prod_map) for p in prompts]
+    outcomes = [_prompt_outcome(db, p, answer_by_prompt.get(int(p.id))) for p in prompts]
+    return details, _characteristic_summaries(outcomes)
+
+
+def _prompt_product_ids(prompts: list[ComparisonPrompt]) -> list[int]:
+    ids: set[int] = set()
+    for p in prompts:
+        for pid in [p.primary_product_id, p.competitor_product_id]:
+            if pid:
+                ids.add(int(pid))
+    return list(ids)
+
+
+def _prompt_outcome(db: Session, prompt: ComparisonPrompt, answer: ComparisonAnswer | None) -> dict:
+    aspect_zh = _characteristic(prompt)
+    aspect_en = _aspect_en(aspect_zh)
+    obs = [] if not answer else db.query(ComparisonSentimentObservation).filter(
+        ComparisonSentimentObservation.comparison_answer_id == answer.id,
+        ComparisonSentimentObservation.entity_type == EntityType.PRODUCT,
+    ).all()
+    outcome = _outcome_for_obs(obs)
+    return {"characteristic_zh": aspect_zh, "characteristic_en": aspect_en, "winner_role": outcome}
+
+
+def _prompt_detail(
+    db: Session,
+    prompt: ComparisonPrompt,
+    answer: ComparisonAnswer | None,
+    prod_map: dict[int, Product],
+) -> ComparisonPromptOutcomeDetail:
+    aspect_zh = _characteristic(prompt)
+    aspect_en = _aspect_en(aspect_zh)
+    primary_p = prod_map.get(int(prompt.primary_product_id)) if prompt.primary_product_id else None
+    competitor_p = prod_map.get(int(prompt.competitor_product_id)) if prompt.competitor_product_id else None
+    obs = [] if not answer else db.query(ComparisonSentimentObservation).filter(
+        ComparisonSentimentObservation.comparison_answer_id == answer.id,
+        ComparisonSentimentObservation.entity_type == EntityType.PRODUCT,
+    ).all()
+    winner_role = _outcome_for_obs(obs)
+    winner_id, loser_id = _winner_loser_ids(prompt, winner_role)
+    return ComparisonPromptOutcomeDetail(
+        prompt_id=int(prompt.id),
+        characteristic_zh=aspect_zh,
+        characteristic_en=aspect_en,
+        prompt_zh=prompt.text_zh or "",
+        prompt_en=prompt.text_en,
+        answer_zh=answer.raw_answer_zh if answer else None,
+        answer_en=answer.raw_answer_en if answer else None,
+        primary_product_id=int(prompt.primary_product_id) if prompt.primary_product_id else None,
+        primary_product_name=_fallback_product_name(primary_p),
+        competitor_product_id=int(prompt.competitor_product_id) if prompt.competitor_product_id else None,
+        competitor_product_name=_fallback_product_name(competitor_p),
+        winner_role=winner_role,
+        winner_product_id=winner_id,
+        winner_product_name=_fallback_product_name(prod_map.get(int(winner_id))) if winner_id else "",
+        loser_product_id=loser_id,
+        loser_product_name=_fallback_product_name(prod_map.get(int(loser_id))) if loser_id else "",
+    )
+
+
+def _winner_loser_ids(prompt: ComparisonPrompt, winner_role: str) -> tuple[int | None, int | None]:
+    primary = int(prompt.primary_product_id) if prompt.primary_product_id else None
+    competitor = int(prompt.competitor_product_id) if prompt.competitor_product_id else None
+    if winner_role == "primary":
+        return primary, competitor
+    if winner_role == "competitor":
+        return competitor, primary
+    return None, None
+
+
+def _characteristic_summaries(outcomes: list[dict]) -> list[ComparisonCharacteristicSummary]:
+    out: dict[str, dict] = {}
+    for o in outcomes:
+        key = str(o.get("characteristic_zh") or "").strip()
+        en = str(o.get("characteristic_en") or "").strip()
+        bucket = out.get(key) or {"en": en, "total": 0, "primary": 0, "competitor": 0, "tie": 0, "unknown": 0}
+        bucket["total"] += 1
+        winner = o.get("winner_role")
+        if winner == "primary":
+            bucket["primary"] += 1
+        elif winner == "competitor":
+            bucket["competitor"] += 1
+        elif winner == "tie":
+            bucket["tie"] += 1
+        else:
+            bucket["unknown"] += 1
+        out[key] = bucket
+    return [ComparisonCharacteristicSummary(
+        characteristic_zh=k,
+        characteristic_en=v["en"] or k,
+        total_prompts=v["total"],
+        primary_wins=v["primary"],
+        competitor_wins=v["competitor"],
+        ties=v["tie"],
+        unknown=v["unknown"],
+    ) for k, v in out.items() if k]

@@ -102,6 +102,22 @@ def _fetch_run_comparison(run_id: int, include_snippets: bool) -> dict | None:
         return None
 
 
+def _fetch_run_comparison_summary(run_id: int, include_prompt_details: bool) -> dict | None:
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}/comparison/summary",
+            params={
+                "include_prompt_details": include_prompt_details,
+                "limit_prompts": 100,
+            },
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError:
+        return None
+
+
 def _fetch_user_brands(vertical_id: int) -> list[str]:
     try:
         response = httpx.get(
@@ -147,6 +163,78 @@ def _render_comparison_tab(comparison: dict) -> None:
 
     if not brands and not products:
         st.info("No comparison data available for this run.")
+
+
+def _sentiment_table(rows: list[dict], label: str) -> None:
+    if not rows:
+        st.info(f"No {label} data available.")
+        return
+    df = pd.DataFrame(rows).copy()
+    if "sentiment_index" in df.columns:
+        df = df.sort_values("sentiment_index", ascending=False)
+    cols = [c for c in ["entity_name", "entity_role", "sentiment_index", "positive_count", "neutral_count", "negative_count"] if c in df.columns]
+    st.dataframe(df[cols], use_container_width=True, hide_index=True)
+
+
+def _render_prompt_outcome_details(rows: list[dict]) -> None:
+    if not rows:
+        st.info("No prompt details available.")
+        return
+    df = pd.DataFrame(rows).copy()
+    cols = [
+        "characteristic_en",
+        "primary_product_name",
+        "competitor_product_name",
+        "winner_role",
+        "winner_product_name",
+        "loser_product_name",
+    ]
+    cols = [c for c in cols if c in df.columns]
+    st.dataframe(df[cols], use_container_width=True, hide_index=True)
+    for r in rows:
+        title = f"{r.get('characteristic_en', '')}: {r.get('primary_product_name', '')} vs {r.get('competitor_product_name', '')}"
+        winner = r.get("winner_product_name") or r.get("winner_role") or ""
+        with st.expander(f"{title} (winner: {winner})"):
+            st.markdown("**Prompt (EN)**")
+            st.write(r.get("prompt_en") or "")
+            st.markdown("**Answer (EN)**")
+            st.write(r.get("answer_en") or "")
+
+
+def _render_comparison_summary_tab(run_id: int, summary: dict) -> None:
+    st.markdown("### Winners & Losers (Comparison Prompts)")
+    st.write(f"Primary brand: **{summary.get('primary_brand_name', '')}**")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("#### Brand Sentiment Index (Comparison)")
+        _sentiment_table(summary.get("brands") or [], "brand")
+    with col2:
+        st.markdown("#### Product Sentiment Index (Comparison)")
+        _sentiment_table(summary.get("products") or [], "product")
+    st.markdown("#### Outcome Summary by Characteristic")
+    characteristics = summary.get("characteristics") or []
+    if not characteristics:
+        st.info("No characteristic summary available.")
+    else:
+        df = pd.DataFrame(characteristics).copy()
+        cols = [
+            "characteristic_en",
+            "total_prompts",
+            "primary_wins",
+            "competitor_wins",
+            "ties",
+            "unknown",
+        ]
+        cols = [c for c in cols if c in df.columns]
+        st.dataframe(df[cols], use_container_width=True, hide_index=True)
+    with st.expander("Prompt details (translated prompts and answers)", expanded=False):
+        include_details = st.checkbox("Load prompt details", value=False, key=f"comparison_details_{run_id}")
+        if include_details:
+            details = _fetch_run_comparison_summary(run_id, include_prompt_details=True)
+            if not details:
+                st.info("Prompt details are not available yet.")
+            else:
+                _render_prompt_outcome_details(details.get("prompts") or [])
 
 
 def _render_executive_scorecard(df: pd.DataFrame, name_col: str, user_brand: str = None) -> None:
