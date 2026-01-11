@@ -19,6 +19,8 @@ API_LOG ?= api.log
 STREAMLIT_LOG ?= streamlit.log
 SENTIMENT_LOG ?= sentiment.log
 SENTIMENT_PORT ?= 8100
+SENTIMENT_STARTUP_TIMEOUT ?= 120
+API_STARTUP_TIMEOUT ?= 60
 
 export API_PORT
 export STREAMLIT_PORT
@@ -238,16 +240,24 @@ start-sentiment: ## Start Erlangshen sentiment microservice
 	fi
 	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run uvicorn services.sentiment_server:app --host 127.0.0.1 --port $(SENTIMENT_PORT) > $(SENTIMENT_LOG) 2>&1 & echo $$! > .sentiment.pid
 	@set -e; \
-	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+	i=0; \
+	while [ $$i -lt $(SENTIMENT_STARTUP_TIMEOUT) ]; do \
 		if curl -fsS http://127.0.0.1:$(SENTIMENT_PORT)/health >/dev/null 2>&1; then \
 			echo "$(GREEN)✓ Sentiment service started on http://127.0.0.1:$(SENTIMENT_PORT)$(NC)"; \
 			echo "  Logs: tail -f $(SENTIMENT_LOG)"; \
 			exit 0; \
 		fi; \
+		if [ -f .sentiment.pid ] && ! kill -0 $$(cat .sentiment.pid) 2>/dev/null; then \
+			echo "$(RED)✗ Sentiment service exited during startup$(NC)"; \
+			cat $(SENTIMENT_LOG); \
+			exit 1; \
+		fi; \
 		sleep 1; \
+		i=$$((i+1)); \
 	done; \
 	echo "$(RED)✗ Failed to start Sentiment service$(NC)"; \
 	cat $(SENTIMENT_LOG); \
+	if [ -f .sentiment.pid ]; then kill -9 $$(cat .sentiment.pid) 2>/dev/null || true; rm -f .sentiment.pid; fi; \
 	exit 1
 
 start-api: check-deps start-db ## Start FastAPI server
@@ -260,16 +270,24 @@ start-api: check-deps start-db ## Start FastAPI server
 	fi
 	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run uvicorn api.app:app --host 0.0.0.0 --port $(API_PORT) > $(API_LOG) 2>&1 & echo $$! > .api.pid
 	@set -e; \
-	for i in 1 2 3 4 5 6 7 8 9 10; do \
-		if curl -fsS http://localhost:$(API_PORT)/health >/dev/null 2>&1; then \
+	i=0; \
+	while [ $$i -lt $(API_STARTUP_TIMEOUT) ]; do \
+		if curl -fsS http://127.0.0.1:$(API_PORT)/health >/dev/null 2>&1; then \
 			echo "$(GREEN)✓ FastAPI server started on http://localhost:$(API_PORT)$(NC)"; \
 			echo "  Logs: tail -f $(API_LOG)"; \
 			exit 0; \
 		fi; \
+		if [ -f .api.pid ] && ! kill -0 $$(cat .api.pid) 2>/dev/null; then \
+			echo "$(RED)✗ FastAPI server exited during startup$(NC)"; \
+			cat $(API_LOG); \
+			exit 1; \
+		fi; \
 		sleep 1; \
+		i=$$((i+1)); \
 	done; \
 	echo "$(RED)✗ Failed to start FastAPI server$(NC)"; \
 	cat $(API_LOG); \
+	if [ -f .api.pid ]; then kill -9 $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid; fi; \
 	exit 1
 
 start-celery: check-deps start-db start-redis ## Start Celery worker
