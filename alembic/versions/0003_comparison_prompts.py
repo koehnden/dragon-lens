@@ -28,6 +28,11 @@ def _existing_enum(name: str, values: list[str]):
         return postgresql.ENUM(*values, name=name, create_type=False)
     return sa.Enum(*values, name=name)
 
+def _bool_default(value: bool) -> sa.TextClause:
+    if _bind_dialect() == "postgresql":
+        return sa.text("true") if value else sa.text("false")
+    return sa.text("1") if value else sa.text("0")
+
 
 def upgrade() -> None:
     op.create_table(
@@ -36,16 +41,16 @@ def upgrade() -> None:
         sa.Column("run_id", sa.Integer(), sa.ForeignKey("runs.id"), nullable=False, unique=True),
         sa.Column("vertical_id", sa.Integer(), sa.ForeignKey("verticals.id"), nullable=False),
         sa.Column("primary_brand_id", sa.Integer(), sa.ForeignKey("brands.id"), nullable=False),
-        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=_bool_default(False)),
         sa.Column("competitor_brands", sa.JSON(), nullable=False),
         sa.Column("target_count", sa.Integer(), nullable=False, server_default=sa.text("20")),
         sa.Column("min_prompts_per_competitor", sa.Integer(), nullable=False, server_default=sa.text("2")),
-        sa.Column("autogenerate_missing", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("autogenerate_missing", sa.Boolean(), nullable=False, server_default=_bool_default(True)),
         sa.Column(
             "status",
-            sa.Enum("pending", "in_progress", "completed", "failed", "skipped", name="comparisonrunstatus"),
+            sa.Enum("PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED", name="comparisonrunstatus"),
             nullable=False,
-            server_default=sa.text("'pending'"),
+            server_default=sa.text("'PENDING'"),
         ),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
@@ -60,21 +65,21 @@ def upgrade() -> None:
         sa.Column("vertical_id", sa.Integer(), sa.ForeignKey("verticals.id"), nullable=False),
         sa.Column(
             "prompt_type",
-            sa.Enum("brand_vs_brand", "product_vs_product", name="comparisonprompttype"),
+            sa.Enum("BRAND_VS_BRAND", "PRODUCT_VS_PRODUCT", name="comparisonprompttype"),
             nullable=False,
         ),
         sa.Column(
             "source",
-            sa.Enum("user", "generated", name="comparisonpromptsource"),
+            sa.Enum("USER", "GENERATED", name="comparisonpromptsource"),
             nullable=False,
         ),
         sa.Column("text_en", sa.Text(), nullable=True),
         sa.Column("text_zh", sa.Text(), nullable=True),
         sa.Column(
             "language_original",
-            _existing_enum("promptlanguage", ["en", "zh"]),
+            _existing_enum("promptlanguage", ["EN", "ZH"]),
             nullable=False,
-            server_default=sa.text("'zh'"),
+            server_default=sa.text("'ZH'"),
         ),
         sa.Column("primary_brand_id", sa.Integer(), sa.ForeignKey("brands.id"), nullable=True),
         sa.Column("competitor_brand_id", sa.Integer(), sa.ForeignKey("brands.id"), nullable=True),
@@ -92,7 +97,7 @@ def upgrade() -> None:
         sa.Column("comparison_prompt_id", sa.Integer(), sa.ForeignKey("comparison_prompts.id"), nullable=False),
         sa.Column("provider", sa.String(length=50), nullable=False),
         sa.Column("model_name", sa.String(length=255), nullable=False),
-        sa.Column("route", _existing_enum("llmroute", ["local", "vendor", "openrouter"]), nullable=True),
+        sa.Column("route", _existing_enum("llmroute", ["LOCAL", "VENDOR", "OPENROUTER"]), nullable=True),
         sa.Column("raw_answer_zh", sa.Text(), nullable=False),
         sa.Column("raw_answer_en", sa.Text(), nullable=True),
         sa.Column("tokens_in", sa.Integer(), nullable=True),
@@ -109,15 +114,15 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("run_id", sa.Integer(), sa.ForeignKey("runs.id"), nullable=False),
         sa.Column("comparison_answer_id", sa.Integer(), sa.ForeignKey("comparison_answers.id"), nullable=False),
-        sa.Column("entity_type", _existing_enum("entitytype", ["brand", "product"]), nullable=False),
+        sa.Column("entity_type", _existing_enum("entitytype", ["BRAND", "PRODUCT"]), nullable=False),
         sa.Column("entity_id", sa.Integer(), nullable=False),
         sa.Column(
             "entity_role",
-            sa.Enum("primary", "competitor", name="comparisonentityrole"),
+            sa.Enum("PRIMARY", "COMPETITOR", name="comparisonentityrole"),
             nullable=False,
         ),
         sa.Column("aspect", sa.String(length=255), nullable=True),
-        sa.Column("sentiment", _existing_enum("sentiment", ["positive", "neutral", "negative"]), nullable=False),
+        sa.Column("sentiment", _existing_enum("sentiment", ["POSITIVE", "NEUTRAL", "NEGATIVE"]), nullable=False),
         sa.Column("snippet_zh", sa.Text(), nullable=False),
         sa.Column("snippet_en", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),

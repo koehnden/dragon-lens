@@ -13,9 +13,6 @@ from sqlalchemy.orm import Session, joinedload, sessionmaker
 from models import (
     Brand,
     BrandMention,
-    ComparisonPrompt,
-    ComparisonPromptSource,
-    ComparisonPromptType,
     LLMAnswer,
     Product,
     ProductBrandMapping,
@@ -189,29 +186,21 @@ async def create_tracking_job(
 
 
 def _create_run_comparison_config(db: Session, run_id: int, vertical_id: int, job: TrackingJobCreate) -> None:
-    if not _comparison_requested(job):
-        return
     primary_brand = _primary_brand_or_none(db, vertical_id, job)
     if not primary_brand:
         return
-    _ensure_competitor_brands(db, vertical_id, job.comparison_competitor_brands)
     config = RunComparisonConfig(
         run_id=run_id,
         vertical_id=vertical_id,
         primary_brand_id=primary_brand.id,
-        enabled=_comparison_requested(job),
-        competitor_brands=list(job.comparison_competitor_brands or []),
-        target_count=int(job.comparison_target_count),
-        min_prompts_per_competitor=int(job.comparison_min_prompts_per_competitor),
-        autogenerate_missing=bool(job.comparison_autogenerate_missing),
+        enabled=True,
+        competitor_brands=[],
+        target_count=20,
+        min_prompts_per_competitor=0,
+        autogenerate_missing=True,
     )
     db.add(config)
-    _add_user_comparison_prompts(db, run_id, vertical_id, primary_brand.id, job)
     commit_with_retry(db)
-
-
-def _comparison_requested(job: TrackingJobCreate) -> bool:
-    return bool(job.comparison_enabled or job.comparison_competitor_brands or job.comparison_prompts)
 
 
 def _primary_brand_or_none(db: Session, vertical_id: int, job: TrackingJobCreate) -> Brand | None:
@@ -219,32 +208,6 @@ def _primary_brand_or_none(db: Session, vertical_id: int, job: TrackingJobCreate
         return None
     name = job.brands[0].display_name
     return db.query(Brand).filter(Brand.vertical_id == vertical_id, func.lower(Brand.display_name) == name.lower()).first()
-
-
-def _ensure_competitor_brands(db: Session, vertical_id: int, names: list[str]) -> None:
-    for name in [n.strip() for n in (names or []) if n and n.strip()]:
-        existing = db.query(Brand).filter(Brand.vertical_id == vertical_id, func.lower(Brand.display_name) == name.lower()).first()
-        if existing:
-            continue
-        db.add(Brand(vertical_id=vertical_id, display_name=name, original_name=name, translated_name=None, aliases={"zh": [], "en": []}, is_user_input=True))
-
-
-def _add_user_comparison_prompts(db: Session, run_id: int, vertical_id: int, primary_brand_id: int, job: TrackingJobCreate) -> None:
-    for prompt_data in list(job.comparison_prompts or []):
-        db.add(ComparisonPrompt(
-            run_id=run_id,
-            vertical_id=vertical_id,
-            prompt_type=ComparisonPromptType.BRAND_VS_BRAND,
-            source=ComparisonPromptSource.USER,
-            text_en=prompt_data.text_en,
-            text_zh=prompt_data.text_zh,
-            language_original=PromptLanguage(prompt_data.language_original),
-            primary_brand_id=primary_brand_id,
-            competitor_brand_id=None,
-            primary_product_id=None,
-            competitor_product_id=None,
-            aspects=[],
-        ))
 
 
 @router.delete("/jobs", response_model=DeleteJobsResponse)
@@ -742,3 +705,18 @@ def _complete_run_inline(db: Session, run: Run, vertical: Vertical) -> None:
     commit_with_retry(db)
 
     calculate_and_save_metrics(db, run.id)
+    _mark_comparison_skipped_inline(db, run.id)
+
+
+def _mark_comparison_skipped_inline(db: Session, run_id: int) -> None:
+    from models import ComparisonRunStatus, RunComparisonConfig
+
+    config = db.query(RunComparisonConfig).filter(RunComparisonConfig.run_id == run_id).first()
+    if not config or not config.enabled:
+        return
+    if config.status != ComparisonRunStatus.PENDING:
+        return
+    config.status = ComparisonRunStatus.SKIPPED
+    config.completed_at = datetime.utcnow()
+    config.error_message = "Comparison skipped in RUN_TASKS_INLINE mode"
+    commit_with_retry(db)

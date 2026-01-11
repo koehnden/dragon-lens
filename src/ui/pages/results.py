@@ -102,6 +102,22 @@ def _fetch_run_comparison(run_id: int, include_snippets: bool) -> dict | None:
         return None
 
 
+def _fetch_run_comparison_summary(run_id: int, include_prompt_details: bool) -> dict | None:
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}/comparison/summary",
+            params={
+                "include_prompt_details": include_prompt_details,
+                "limit_prompts": 100,
+            },
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError:
+        return None
+
+
 def _fetch_user_brands(vertical_id: int) -> list[str]:
     try:
         response = httpx.get(
@@ -147,6 +163,78 @@ def _render_comparison_tab(comparison: dict) -> None:
 
     if not brands and not products:
         st.info("No comparison data available for this run.")
+
+
+def _sentiment_table(rows: list[dict], label: str) -> None:
+    if not rows:
+        st.info(f"No {label} data available.")
+        return
+    df = pd.DataFrame(rows).copy()
+    if "sentiment_index" in df.columns:
+        df = df.sort_values("sentiment_index", ascending=False)
+    cols = [c for c in ["entity_name", "entity_role", "sentiment_index", "positive_count", "neutral_count", "negative_count"] if c in df.columns]
+    st.dataframe(df[cols], use_container_width=True, hide_index=True)
+
+
+def _render_prompt_outcome_details(rows: list[dict]) -> None:
+    if not rows:
+        st.info("No prompt details available.")
+        return
+    df = pd.DataFrame(rows).copy()
+    cols = [
+        "characteristic_en",
+        "primary_product_name",
+        "competitor_product_name",
+        "winner_role",
+        "winner_product_name",
+        "loser_product_name",
+    ]
+    cols = [c for c in cols if c in df.columns]
+    st.dataframe(df[cols], use_container_width=True, hide_index=True)
+    for r in rows:
+        title = f"{r.get('characteristic_en', '')}: {r.get('primary_product_name', '')} vs {r.get('competitor_product_name', '')}"
+        winner = r.get("winner_product_name") or r.get("winner_role") or ""
+        with st.expander(f"{title} (winner: {winner})"):
+            st.markdown("**Prompt (EN)**")
+            st.write(r.get("prompt_en") or "")
+            st.markdown("**Answer (EN)**")
+            st.write(r.get("answer_en") or "")
+
+
+def _render_comparison_summary_tab(run_id: int, summary: dict) -> None:
+    st.markdown("### Winners & Losers (Comparison Prompts)")
+    st.write(f"Primary brand: **{summary.get('primary_brand_name', '')}**")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("#### Brand Sentiment Index (Comparison)")
+        _sentiment_table(summary.get("brands") or [], "brand")
+    with col2:
+        st.markdown("#### Product Sentiment Index (Comparison)")
+        _sentiment_table(summary.get("products") or [], "product")
+    st.markdown("#### Outcome Summary by Characteristic")
+    characteristics = summary.get("characteristics") or []
+    if not characteristics:
+        st.info("No characteristic summary available.")
+    else:
+        df = pd.DataFrame(characteristics).copy()
+        cols = [
+            "characteristic_en",
+            "total_prompts",
+            "primary_wins",
+            "competitor_wins",
+            "ties",
+            "unknown",
+        ]
+        cols = [c for c in cols if c in df.columns]
+        st.dataframe(df[cols], use_container_width=True, hide_index=True)
+    with st.expander("Prompt details (translated prompts and answers)", expanded=False):
+        include_details = st.checkbox("Load prompt details", value=False, key=f"comparison_details_{run_id}")
+        if include_details:
+            details = _fetch_run_comparison_summary(run_id, include_prompt_details=True)
+            if not details:
+                st.info("Prompt details are not available yet.")
+            else:
+                _render_prompt_outcome_details(details.get("prompts") or [])
 
 
 def _render_executive_scorecard(df: pd.DataFrame, name_col: str, user_brand: str = None) -> None:
@@ -292,7 +380,13 @@ def _render_data_tab(df: pd.DataFrame, name_col: str) -> None:
     )
 
 
-def _render_brand_view(metrics: dict, user_brands: list[str], comparison: dict = None) -> None:
+def _render_brand_view(
+    metrics: dict,
+    user_brands: list[str],
+    comparison: dict | None = None,
+    comparison_summary: dict | None = None,
+    run_id: int | None = None,
+) -> None:
     if not metrics["brands"]:
         st.info("No brand metrics available yet. The tracking job may still be processing.")
         return
@@ -304,39 +398,49 @@ def _render_brand_view(metrics: dict, user_brands: list[str], comparison: dict =
 
     st.markdown("---")
 
+    labels = [
+        "Competitive Landscape",
+        "Performance Analysis",
+        "Opportunities",
+        "Detailed Data",
+    ]
+    if comparison_summary:
+        labels.append("Comparison Winners")
     if comparison:
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "Competitive Landscape",
-            "Performance Analysis",
-            "Opportunities",
-            "Detailed Data",
-            "Comparison Sentiment",
-        ])
+        labels.append("Comparison Sentiment")
+    tabs = st.tabs(labels)
 
-        with tab5:
-            _render_comparison_tab(comparison)
-    else:
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "Competitive Landscape",
-            "Performance Analysis",
-            "Opportunities",
-            "Detailed Data",
-        ])
-
-    with tab1:
+    with tabs[0]:
         _render_competitive_landscape_tab(df, "brand_name", user_brand)
 
-    with tab2:
+    with tabs[1]:
         _render_performance_tab(df, "brand_name", user_brand)
 
-    with tab3:
+    with tabs[2]:
         _render_opportunities_tab(df, "brand_name", user_brand)
 
-    with tab4:
+    with tabs[3]:
         _render_data_tab(df, "brand_name")
 
+    if comparison_summary:
+        with tabs[labels.index("Comparison Winners")]:
+            if run_id is None:
+                st.info("Comparison summary requires a run id.")
+            else:
+                _render_comparison_summary_tab(run_id, comparison_summary)
 
-def _render_product_view(metrics: dict, user_brands: list[str], comparison: dict = None) -> None:
+    if comparison:
+        with tabs[labels.index("Comparison Sentiment")]:
+            _render_comparison_tab(comparison)
+
+
+def _render_product_view(
+    metrics: dict,
+    user_brands: list[str],
+    comparison: dict | None = None,
+    comparison_summary: dict | None = None,
+    run_id: int | None = None,
+) -> None:
     if not metrics["products"]:
         st.info("No product metrics available yet. The tracking job may still be processing.")
         return
@@ -350,36 +454,40 @@ def _render_product_view(metrics: dict, user_brands: list[str], comparison: dict
 
     st.markdown("---")
 
+    labels = [
+        "Competitive Landscape",
+        "Performance Analysis",
+        "Opportunities",
+        "Detailed Data",
+    ]
+    if comparison_summary:
+        labels.append("Comparison Winners")
     if comparison:
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "Competitive Landscape",
-            "Performance Analysis",
-            "Opportunities",
-            "Detailed Data",
-            "Comparison Sentiment",
-        ])
+        labels.append("Comparison Sentiment")
+    tabs = st.tabs(labels)
 
-        with tab5:
-            _render_comparison_tab(comparison)
-    else:
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "Competitive Landscape",
-            "Performance Analysis",
-            "Opportunities",
-            "Detailed Data",
-        ])
-
-    with tab1:
+    with tabs[0]:
         _render_competitive_landscape_tab(df, "product_name", user_product)
 
-    with tab2:
+    with tabs[1]:
         _render_performance_tab(df, "product_name", user_product)
 
-    with tab3:
+    with tabs[2]:
         _render_opportunities_tab(df, "product_name", user_product)
 
-    with tab4:
+    with tabs[3]:
         _render_data_tab(df, "product_name")
+
+    if comparison_summary:
+        with tabs[labels.index("Comparison Winners")]:
+            if run_id is None:
+                st.info("Comparison summary requires a run id.")
+            else:
+                _render_comparison_summary_tab(run_id, comparison_summary)
+
+    if comparison:
+        with tabs[labels.index("Comparison Sentiment")]:
+            _render_comparison_tab(comparison)
 
 
 def show():
@@ -424,6 +532,8 @@ def show():
     model_param = "all" if selected_model == "All" else selected_model
 
     user_brands = _fetch_user_brands(selected_vertical_id)
+    comparison_summary = None
+    run_id = None
 
     if model_param == "all":
         with st.spinner("Loading metrics..."):
@@ -461,11 +571,12 @@ def show():
         include_snippets = st.checkbox("Include comparison snippets", value=False)
         with st.spinner("Loading comparison data..."):
             comparison = _fetch_run_comparison(run_id, include_snippets)
+            comparison_summary = _fetch_run_comparison_summary(run_id, include_prompt_details=False)
 
     if view_mode == "Brand":
-        _render_brand_view(metrics, user_brands, comparison)
+        _render_brand_view(metrics, user_brands, comparison, comparison_summary, run_id)
     else:
-        _render_product_view(metrics, user_brands, comparison)
+        _render_product_view(metrics, user_brands, comparison, comparison_summary, run_id)
 
     st.markdown("---")
     st.caption("For detailed prompt/answer analysis, visit the **Run Inspector** page.")
