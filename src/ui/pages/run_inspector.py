@@ -1,7 +1,13 @@
+import logging
+
 import httpx
 import streamlit as st
 
 from config import settings
+from ui.utils.run_formatting import format_run_option_label
+
+
+logger = logging.getLogger(__name__)
 
 
 def _fetch_available_models(vertical_id: int) -> list[str]:
@@ -166,7 +172,7 @@ def show():
             st.info("No runs found for this vertical and model.")
             return
 
-        run_options = {f"Run {r['id']} - {r['created_at'][:10]}": r["id"] for r in runs}
+        run_options = {format_run_option_label(r): r["id"] for r in runs}
         selected_run_label = st.selectbox("Select Run", list(run_options.keys()))
         selected_run_id = run_options[selected_run_label]
 
@@ -183,4 +189,5 @@ def show():
     except httpx.HTTPError as e:
         st.error(f"Error fetching run details: {e}")
     except Exception as e:
+        logger.exception("Unexpected error loading run inspector")
         st.error(f"Unexpected error loading run inspector: {e}")
