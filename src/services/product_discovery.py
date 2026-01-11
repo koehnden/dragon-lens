@@ -1,15 +1,18 @@
+import logging
 from typing import Dict, List, Optional
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from models import Brand, Product
+from models import Brand, Product, Vertical
 from services.brand_recognition import (
     KNOWN_PRODUCTS,
     extract_primary_entities_from_list_item,
     is_list_format,
     split_into_list_items,
 )
+
+logger = logging.getLogger(__name__)
 
 
 BRAND_PRODUCT_MAP: Dict[str, str] = {
@@ -151,7 +154,19 @@ def discover_products_in_text(
     return products
 
 
-def _find_parent_brand(product_name: str, context_brand: str | None) -> str:
+def _find_parent_brand(
+    product_name: str,
+    context_brand: str | None,
+    extraction_relationships: Optional[Dict[str, str]] = None,
+) -> str:
+    if extraction_relationships:
+        if product_name in extraction_relationships:
+            return extraction_relationships[product_name]
+        product_lower = product_name.lower()
+        for product, brand in extraction_relationships.items():
+            if product.lower() == product_lower:
+                return brand
+
     product_lower = product_name.lower()
     if product_lower in BRAND_PRODUCT_MAP:
         return BRAND_PRODUCT_MAP[product_lower]
@@ -288,9 +303,14 @@ def discover_and_store_products(
     vertical_id: int,
     text: str,
     brands: List[Brand],
+    extraction_relationships: Optional[Dict[str, str]] = None,
+    knowledge_cache: Optional[Dict[str, str]] = None,
 ) -> List[Product]:
     discovered = discover_products_in_text(text)
     products: List[Product] = []
+
+    if knowledge_cache is None:
+        knowledge_cache = _load_knowledge_cache(db, vertical_id)
 
     brand_name_to_id = {b.display_name.lower(): b.id for b in brands}
     for b in brands:
@@ -307,6 +327,18 @@ def discover_and_store_products(
         if parent_brand:
             brand_id = brand_name_to_id.get(parent_brand.lower())
 
+        if not brand_id and extraction_relationships:
+            extracted_brand = _lookup_relationship(product_name, extraction_relationships)
+            if extracted_brand:
+                brand_id = brand_name_to_id.get(extracted_brand.lower())
+
+        if not brand_id and knowledge_cache:
+            knowledge_brand = _lookup_relationship(product_name, knowledge_cache)
+            if knowledge_brand:
+                brand_id = brand_name_to_id.get(knowledge_brand.lower())
+                if brand_id:
+                    logger.debug(f"[ProductDiscovery] Matched {product_name} to {knowledge_brand} from knowledge base")
+
         if not brand_id and parent_brand:
             brand = find_brand_for_product(db, vertical_id, product_name)
             if brand:
@@ -321,3 +353,28 @@ def discover_and_store_products(
         products.append(product)
 
     return products
+
+
+def _load_knowledge_cache(db: Session, vertical_id: int) -> Dict[str, str]:
+    vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+    if not vertical:
+        return {}
+    try:
+        from services.knowledge_lookup import build_mapping_cache
+        return build_mapping_cache(vertical.name)
+    except Exception as e:
+        logger.warning(f"[ProductDiscovery] Failed to load knowledge cache: {e}")
+        return {}
+
+
+def _lookup_relationship(
+    product_name: str,
+    extraction_relationships: Dict[str, str],
+) -> Optional[str]:
+    if product_name in extraction_relationships:
+        return extraction_relationships[product_name]
+    product_lower = product_name.lower()
+    for product, brand in extraction_relationships.items():
+        if product.lower() == product_lower:
+            return brand
+    return None
