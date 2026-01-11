@@ -12,3 +12,8 @@ def build_comparison_prompt_generation_prompt(context: dict, requested_count: in
         context_json=context_json,
         requested_count=int(requested_count),
     )
+
+
+def build_product_comparison_prompt_generation_prompt(pairs: list[dict]) -> str:
+    pairs_json = json.dumps(pairs or [], ensure_ascii=False)
+    return load_prompt("comparison_prompts/generate_product_comparison_prompts", pairs_json=pairs_json)
