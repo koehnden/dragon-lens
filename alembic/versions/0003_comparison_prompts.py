@@ -28,6 +28,14 @@ def _existing_enum(name: str, values: list[str]):
         return postgresql.ENUM(*values, name=name, create_type=False)
     return sa.Enum(*values, name=name)
 
+
+def _new_enum(name: str, values: list[str]):
+    if _bind_dialect() == "postgresql":
+        from sqlalchemy.dialects import postgresql
+
+        return postgresql.ENUM(*values, name=name, create_type=False)
+    return sa.Enum(*values, name=name)
+
 def _bool_default(value: bool) -> sa.TextClause:
     if _bind_dialect() == "postgresql":
         return sa.text("true") if value else sa.text("false")

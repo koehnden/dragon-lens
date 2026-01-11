@@ -232,3 +232,97 @@ class TestFindBrandByAlias:
         result = _find_brand_by_alias(db_session, vertical2.id, "Volkswagen")
 
         assert result is None
+
+    def test_normalized_match_ignores_apostrophe(self, db_session):
+        vertical = Vertical(name="SUV cars", description="SUV cars")
+        db_session.add(vertical)
+        db_session.flush()
+
+        brand = Brand(
+            vertical_id=vertical.id,
+            display_name="Changan (长安)",
+            original_name="Changan",
+            aliases={"en": ["Changan"], "zh": ["长安"]},
+        )
+        db_session.add(brand)
+        db_session.flush()
+
+        result = _find_brand_by_alias(db_session, vertical.id, "Chang'an")
+
+        assert result is not None
+        assert result.id == brand.id
+
+    def test_chinese_substring_match(self, db_session):
+        vertical = Vertical(name="SUV cars", description="SUV cars")
+        db_session.add(vertical)
+        db_session.flush()
+
+        brand = Brand(
+            vertical_id=vertical.id,
+            display_name="Changan (长安)",
+            original_name="长安",
+            aliases={"en": [], "zh": ["长安"]},
+        )
+        db_session.add(brand)
+        db_session.flush()
+
+        result = _find_brand_by_alias(db_session, vertical.id, "长安汽车")
+
+        assert result is not None
+        assert result.id == brand.id
+
+    def test_english_substring_match_with_suffix(self, db_session):
+        vertical = Vertical(name="SUV cars", description="SUV cars")
+        db_session.add(vertical)
+        db_session.flush()
+
+        brand = Brand(
+            vertical_id=vertical.id,
+            display_name="GAC (广汽)",
+            original_name="GAC",
+            aliases={"en": ["GAC"], "zh": ["广汽"]},
+        )
+        db_session.add(brand)
+        db_session.flush()
+
+        result = _find_brand_by_alias(db_session, vertical.id, "GAC Motors")
+
+        assert result is not None
+        assert result.id == brand.id
+
+    def test_matches_display_name_not_just_aliases(self, db_session):
+        vertical = Vertical(name="SUV cars", description="SUV cars")
+        db_session.add(vertical)
+        db_session.flush()
+
+        brand = Brand(
+            vertical_id=vertical.id,
+            display_name="Liauto (理想)",
+            original_name="理想",
+            aliases={"en": [], "zh": []},
+        )
+        db_session.add(brand)
+        db_session.flush()
+
+        result = _find_brand_by_alias(db_session, vertical.id, "理想汽车")
+
+        assert result is not None
+        assert result.id == brand.id
+
+    def test_no_false_positive_on_short_substrings(self, db_session):
+        vertical = Vertical(name="SUV cars", description="SUV cars")
+        db_session.add(vertical)
+        db_session.flush()
+
+        brand = Brand(
+            vertical_id=vertical.id,
+            display_name="BYD (比亚迪)",
+            original_name="BYD",
+            aliases={"en": ["BYD"], "zh": ["比亚迪"]},
+        )
+        db_session.add(brand)
+        db_session.flush()
+
+        result = _find_brand_by_alias(db_session, vertical.id, "BY")
+
+        assert result is None
