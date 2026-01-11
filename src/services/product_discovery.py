@@ -316,8 +316,10 @@ def discover_and_store_products(
     for b in brands:
         if b.original_name:
             brand_name_to_id[b.original_name.lower()] = b.id
-        if b.translated_name:
-            brand_name_to_id[b.translated_name.lower()] = b.id
+        aliases = b.aliases or {}
+        for alias in aliases.get("en", []) + aliases.get("zh", []):
+            if alias:
+                brand_name_to_id[alias.lower()] = b.id
 
     for item in discovered:
         product_name = item["name"]

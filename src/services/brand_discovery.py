@@ -32,6 +32,10 @@ def discover_all_brands(
         original_key = user_brand.display_name.lower().strip()
         if original_key != normalized_key:
             all_brands_map[original_key] = user_brand
+        for alias in _collect_brand_variants(user_brand):
+            alias_key = alias.lower().strip()
+            if alias_key and alias_key not in all_brands_map:
+                all_brands_map[alias_key] = user_brand
 
     extraction_result = extract_entities(
         text, "", {},
@@ -93,6 +97,10 @@ def discover_brands_and_products(
         original_key = user_brand.display_name.lower().strip()
         if original_key != normalized_key:
             all_brands_map[original_key] = user_brand
+        for alias in _collect_brand_variants(user_brand):
+            alias_key = alias.lower().strip()
+            if alias_key and alias_key not in all_brands_map:
+                all_brands_map[alias_key] = user_brand
 
     for brand_name in extraction_result.brands.keys():
         canonical_name = _canonicalize_brand_name(brand_name, vertical_name or "")
@@ -174,16 +182,52 @@ def _find_brand_by_alias(
     vertical_id: int,
     name: str,
 ) -> Optional[Brand]:
-    name_lower = name.lower().strip()
-    if not name_lower:
+    from services.canonicalization_metrics import normalize_entity_key
+
+    name_normalized = normalize_entity_key(name)
+    if not name_normalized:
         return None
     brands = db.query(Brand).filter(Brand.vertical_id == vertical_id).all()
     for brand in brands:
-        aliases = brand.aliases or {}
-        for alias in aliases.get("en", []) + aliases.get("zh", []):
-            if alias.lower() == name_lower:
+        variants = _collect_brand_variants(brand)
+        for variant in variants:
+            variant_normalized = normalize_entity_key(variant)
+            if not variant_normalized:
+                continue
+            if variant_normalized == name_normalized:
+                return brand
+            if _is_substring_match(name_normalized, variant_normalized):
                 return brand
     return None
+
+
+def _collect_brand_variants(brand: Brand) -> List[str]:
+    variants = [brand.display_name, brand.original_name]
+    if brand.translated_name:
+        variants.append(brand.translated_name)
+    aliases = brand.aliases or {}
+    variants.extend(aliases.get("en", []))
+    variants.extend(aliases.get("zh", []))
+    return [v for v in variants if v]
+
+
+def _is_substring_match(name1: str, name2: str) -> bool:
+    if len(name1) < 2 or len(name2) < 2:
+        return False
+    shorter = min(name1, name2, key=len)
+    longer = max(name1, name2, key=len)
+    if shorter not in longer:
+        return False
+    has_cjk = any("\u4e00" <= c <= "\u9fff" for c in shorter)
+    min_len = 2 if has_cjk else 3
+    if len(shorter) < min_len:
+        return False
+    if longer.startswith(shorter):
+        return True
+    min_ratio = 0.3 if has_cjk else 0.5
+    if len(shorter) / len(longer) < min_ratio:
+        return False
+    return True
 
 
 def _get_or_create_discovered_brand(
