@@ -133,10 +133,17 @@ async def test_map_products_to_brands_for_run_updates_product_brand(db_session):
 
 @pytest.mark.asyncio
 async def test_map_products_to_brands_for_run_skips_rejected_brand(db_session):
+    from unittest.mock import patch
     from models import Product
     from services.brand_recognition.product_brand_mapping import map_products_to_brands_for_run
 
     run_id, product_id = _setup_rejected_brand_case(db_session)
-    await map_products_to_brands_for_run(db_session, run_id)
+
+    with patch(
+        "services.brand_recognition.product_brand_mapping._rejected_brand_names"
+    ) as mock_rejected:
+        mock_rejected.return_value = {"orion"}
+        await map_products_to_brands_for_run(db_session, run_id)
+
     product = db_session.query(Product).filter(Product.id == product_id).first()
     assert product.brand_id is None
