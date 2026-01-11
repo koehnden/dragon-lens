@@ -380,7 +380,13 @@ def _render_data_tab(df: pd.DataFrame, name_col: str) -> None:
     )
 
 
-def _render_brand_view(metrics: dict, user_brands: list[str], comparison: dict = None) -> None:
+def _render_brand_view(
+    metrics: dict,
+    user_brands: list[str],
+    comparison: dict | None = None,
+    comparison_summary: dict | None = None,
+    run_id: int | None = None,
+) -> None:
     if not metrics["brands"]:
         st.info("No brand metrics available yet. The tracking job may still be processing.")
         return
@@ -392,39 +398,49 @@ def _render_brand_view(metrics: dict, user_brands: list[str], comparison: dict =
 
     st.markdown("---")
 
+    labels = [
+        "Competitive Landscape",
+        "Performance Analysis",
+        "Opportunities",
+        "Detailed Data",
+    ]
+    if comparison_summary:
+        labels.append("Comparison Winners")
     if comparison:
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "Competitive Landscape",
-            "Performance Analysis",
-            "Opportunities",
-            "Detailed Data",
-            "Comparison Sentiment",
-        ])
+        labels.append("Comparison Sentiment")
+    tabs = st.tabs(labels)
 
-        with tab5:
-            _render_comparison_tab(comparison)
-    else:
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "Competitive Landscape",
-            "Performance Analysis",
-            "Opportunities",
-            "Detailed Data",
-        ])
-
-    with tab1:
+    with tabs[0]:
         _render_competitive_landscape_tab(df, "brand_name", user_brand)
 
-    with tab2:
+    with tabs[1]:
         _render_performance_tab(df, "brand_name", user_brand)
 
-    with tab3:
+    with tabs[2]:
         _render_opportunities_tab(df, "brand_name", user_brand)
 
-    with tab4:
+    with tabs[3]:
         _render_data_tab(df, "brand_name")
 
+    if comparison_summary:
+        with tabs[labels.index("Comparison Winners")]:
+            if run_id is None:
+                st.info("Comparison summary requires a run id.")
+            else:
+                _render_comparison_summary_tab(run_id, comparison_summary)
 
-def _render_product_view(metrics: dict, user_brands: list[str], comparison: dict = None) -> None:
+    if comparison:
+        with tabs[labels.index("Comparison Sentiment")]:
+            _render_comparison_tab(comparison)
+
+
+def _render_product_view(
+    metrics: dict,
+    user_brands: list[str],
+    comparison: dict | None = None,
+    comparison_summary: dict | None = None,
+    run_id: int | None = None,
+) -> None:
     if not metrics["products"]:
         st.info("No product metrics available yet. The tracking job may still be processing.")
         return
@@ -438,36 +454,40 @@ def _render_product_view(metrics: dict, user_brands: list[str], comparison: dict
 
     st.markdown("---")
 
+    labels = [
+        "Competitive Landscape",
+        "Performance Analysis",
+        "Opportunities",
+        "Detailed Data",
+    ]
+    if comparison_summary:
+        labels.append("Comparison Winners")
     if comparison:
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "Competitive Landscape",
-            "Performance Analysis",
-            "Opportunities",
-            "Detailed Data",
-            "Comparison Sentiment",
-        ])
+        labels.append("Comparison Sentiment")
+    tabs = st.tabs(labels)
 
-        with tab5:
-            _render_comparison_tab(comparison)
-    else:
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "Competitive Landscape",
-            "Performance Analysis",
-            "Opportunities",
-            "Detailed Data",
-        ])
-
-    with tab1:
+    with tabs[0]:
         _render_competitive_landscape_tab(df, "product_name", user_product)
 
-    with tab2:
+    with tabs[1]:
         _render_performance_tab(df, "product_name", user_product)
 
-    with tab3:
+    with tabs[2]:
         _render_opportunities_tab(df, "product_name", user_product)
 
-    with tab4:
+    with tabs[3]:
         _render_data_tab(df, "product_name")
+
+    if comparison_summary:
+        with tabs[labels.index("Comparison Winners")]:
+            if run_id is None:
+                st.info("Comparison summary requires a run id.")
+            else:
+                _render_comparison_summary_tab(run_id, comparison_summary)
+
+    if comparison:
+        with tabs[labels.index("Comparison Sentiment")]:
+            _render_comparison_tab(comparison)
 
 
 def show():
@@ -512,6 +532,8 @@ def show():
     model_param = "all" if selected_model == "All" else selected_model
 
     user_brands = _fetch_user_brands(selected_vertical_id)
+    comparison_summary = None
+    run_id = None
 
     if model_param == "all":
         with st.spinner("Loading metrics..."):
@@ -549,11 +571,12 @@ def show():
         include_snippets = st.checkbox("Include comparison snippets", value=False)
         with st.spinner("Loading comparison data..."):
             comparison = _fetch_run_comparison(run_id, include_snippets)
+            comparison_summary = _fetch_run_comparison_summary(run_id, include_prompt_details=False)
 
     if view_mode == "Brand":
-        _render_brand_view(metrics, user_brands, comparison)
+        _render_brand_view(metrics, user_brands, comparison, comparison_summary, run_id)
     else:
-        _render_product_view(metrics, user_brands, comparison)
+        _render_product_view(metrics, user_brands, comparison, comparison_summary, run_id)
 
     st.markdown("---")
     st.caption("For detailed prompt/answer analysis, visit the **Run Inspector** page.")
