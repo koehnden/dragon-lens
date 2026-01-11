@@ -76,28 +76,28 @@ class TrackingJobCreate(BaseModel):
     reuse_answers: bool = Field(default=False, description="Whether to reuse answers from previous runs")
     web_search_enabled: bool = Field(default=False, description="Whether web search is enabled for this run")
     comparison_enabled: bool = Field(
-        default=False, description="Whether to run comparison prompts after the main run completes"
+        default=True, description="Deprecated: comparison prompts run automatically after the main run completes"
     )
     comparison_competitor_brands: List[str] = Field(
-        default_factory=list, description="Optional competitor brand display names for comparisons"
+        default_factory=list, description="Ignored (comparison prompts are system-generated)"
     )
     comparison_prompts: List[PromptCreate] = Field(
-        default_factory=list, description="Optional user-provided comparison prompts (not used for extraction)"
+        default_factory=list, description="Ignored (comparison prompts are system-generated)"
     )
     comparison_target_count: int = Field(
         default=20,
         ge=1,
         le=500,
-        description="Target number of comparison prompts (may be exceeded to satisfy per-competitor minimums)",
+        description="Ignored (comparison prompts are system-generated with a fixed count)",
     )
     comparison_min_prompts_per_competitor: int = Field(
         default=2,
         ge=0,
         le=50,
-        description="Minimum number of generated comparison prompts per user-provided competitor brand",
+        description="Ignored (comparison prompts are system-generated)",
     )
     comparison_autogenerate_missing: bool = Field(
-        default=True, description="Whether to auto-generate missing prompts to reach the target count"
+        default=True, description="Ignored (comparison prompts are system-generated)"
     )
 
 
