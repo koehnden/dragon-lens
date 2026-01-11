@@ -169,6 +169,23 @@ def _is_brand_like(canonical_name: str, surface_forms: List[str]) -> bool:
     return False
 
 
+def _find_brand_by_alias(
+    db: Session,
+    vertical_id: int,
+    name: str,
+) -> Optional[Brand]:
+    name_lower = name.lower().strip()
+    if not name_lower:
+        return None
+    brands = db.query(Brand).filter(Brand.vertical_id == vertical_id).all()
+    for brand in brands:
+        aliases = brand.aliases or {}
+        for alias in aliases.get("en", []) + aliases.get("zh", []):
+            if alias.lower() == name_lower:
+                return brand
+    return None
+
+
 def _get_or_create_discovered_brand(
     db: Session,
     vertical_id: int,
@@ -204,6 +221,10 @@ def _get_or_create_discovered_brand(
 
     if existing_by_original:
         return existing_by_original
+
+    existing_by_alias = _find_brand_by_alias(db, vertical_id, normalized_name)
+    if existing_by_alias:
+        return existing_by_alias
 
     wikidata_info = lookup_brand(normalized_name, vertical_name) if vertical_name else None
 

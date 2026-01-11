@@ -2,9 +2,11 @@ import pytest
 
 from services.brand_discovery import (
     _canonicalize_brand_name,
+    _find_brand_by_alias,
     _get_canonical_lookup_name,
 )
 from src.services.wikidata_lookup import get_cache_available
+from models import Brand, Vertical
 
 AUTOMOTIVE_VERTICAL = "SUV cars"
 
@@ -132,3 +134,101 @@ class TestDeduplicationIntegration:
             canonical = _canonicalize_brand_name(b, AUTOMOTIVE_VERTICAL)
             canonical_keys.add(canonical.lower())
         assert len(canonical_keys) == 3
+
+
+class TestFindBrandByAlias:
+
+    def test_finds_brand_by_english_alias(self, db_session):
+        vertical = Vertical(name="SUV cars", description="SUV cars")
+        db_session.add(vertical)
+        db_session.flush()
+
+        brand = Brand(
+            vertical_id=vertical.id,
+            display_name="VW",
+            original_name="VW",
+            aliases={"en": ["Volkswagen", "VW"], "zh": ["大众"]},
+        )
+        db_session.add(brand)
+        db_session.flush()
+
+        result = _find_brand_by_alias(db_session, vertical.id, "Volkswagen")
+
+        assert result is not None
+        assert result.id == brand.id
+
+    def test_finds_brand_by_chinese_alias(self, db_session):
+        vertical = Vertical(name="SUV cars", description="SUV cars")
+        db_session.add(vertical)
+        db_session.flush()
+
+        brand = Brand(
+            vertical_id=vertical.id,
+            display_name="VW",
+            original_name="VW",
+            aliases={"en": ["Volkswagen"], "zh": ["大众", "福斯"]},
+        )
+        db_session.add(brand)
+        db_session.flush()
+
+        result = _find_brand_by_alias(db_session, vertical.id, "大众")
+
+        assert result is not None
+        assert result.id == brand.id
+
+    def test_case_insensitive_alias_match(self, db_session):
+        vertical = Vertical(name="SUV cars", description="SUV cars")
+        db_session.add(vertical)
+        db_session.flush()
+
+        brand = Brand(
+            vertical_id=vertical.id,
+            display_name="VW",
+            original_name="VW",
+            aliases={"en": ["Volkswagen"], "zh": []},
+        )
+        db_session.add(brand)
+        db_session.flush()
+
+        result = _find_brand_by_alias(db_session, vertical.id, "volkswagen")
+
+        assert result is not None
+        assert result.id == brand.id
+
+    def test_returns_none_when_no_match(self, db_session):
+        vertical = Vertical(name="SUV cars", description="SUV cars")
+        db_session.add(vertical)
+        db_session.flush()
+
+        brand = Brand(
+            vertical_id=vertical.id,
+            display_name="VW",
+            original_name="VW",
+            aliases={"en": ["Volkswagen"], "zh": ["大众"]},
+        )
+        db_session.add(brand)
+        db_session.flush()
+
+        result = _find_brand_by_alias(db_session, vertical.id, "Toyota")
+
+        assert result is None
+
+    def test_only_matches_within_same_vertical(self, db_session):
+        vertical1 = Vertical(name="SUV cars", description="SUV cars")
+        vertical2 = Vertical(name="Phones", description="Mobile phones")
+        db_session.add(vertical1)
+        db_session.add(vertical2)
+        db_session.flush()
+
+        brand = Brand(
+            vertical_id=vertical1.id,
+            display_name="VW",
+            original_name="VW",
+            aliases={"en": ["Volkswagen"], "zh": []},
+        )
+        db_session.add(brand)
+        db_session.flush()
+
+        result = _find_brand_by_alias(db_session, vertical2.id, "Volkswagen")
+
+        assert result is None
