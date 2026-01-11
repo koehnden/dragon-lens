@@ -1,23 +1,34 @@
 import json
+import logging
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
+
+from sqlalchemy import func
 
 from services.canonicalization_metrics import normalize_entity_key
 from services.brand_recognition.list_processor import is_list_format, split_into_list_items
 from services.brand_recognition.prompts import load_prompt
 from services.brand_recognition.text_utils import _parse_json_response
 from services.knowledge_session import knowledge_session
-from services.knowledge_verticals import resolve_knowledge_vertical_id
+from services.knowledge_verticals import resolve_knowledge_vertical_id, get_or_create_vertical
 from models import EntityType, Vertical
 from models.knowledge_domain import (
+    KnowledgeBrand,
+    KnowledgeProduct,
     KnowledgeProductBrandMapping,
     KnowledgeRejectedEntity,
 )
+
+logger = logging.getLogger(__name__)
+
+from config import settings
 
 MIN_CONFIDENCE = float(os.getenv("MAPPING_CONFIDENCE_THRESHOLD", "0.7"))
 MIN_PROXIMITY_SHARE = float(os.getenv("MAPPING_PROXIMITY_SHARE", "0.6"))
 MIN_PROXIMITY_COUNT = int(os.getenv("MAPPING_MIN_COUNT", "1"))
 QWEN_CONFIDENCE = float(os.getenv("MAPPING_QWEN_CONFIDENCE", "0.7"))
+KNOWLEDGE_PERSIST_THRESHOLD = settings.knowledge_persist_threshold
+KNOWLEDGE_PERSIST_ENABLED = settings.knowledge_persist_enabled
 MAX_EXAMPLES = 20
 
 
@@ -116,7 +127,10 @@ async def _map_products_for_input(db, input_data) -> Dict[str, str]:
     product_lookup = _product_lookup(db, input_data.vertical_id)
     counts = map_product_brand_counts(input_data.answer_entities)
     known = load_mapping_examples(db, input_data.vertical_id)
-    return await _map_products(db, input_data, counts, brand_lookup, product_lookup, known)
+    knowledge_cache = _load_knowledge_cache(db, input_data.vertical_id)
+    return await _map_products(
+        db, input_data, counts, brand_lookup, product_lookup, known, knowledge_cache
+    )
 
 
 async def _map_products(
@@ -126,11 +140,13 @@ async def _map_products(
     brand_lookup: Dict[str, int],
     product_lookup: Dict[str, object],
     known: List[dict],
+    knowledge_cache: Dict[str, str],
 ) -> Dict[str, str]:
     results: Dict[str, str] = {}
     for product, brand_counts in counts.items():
         mapping = await _map_single_product(
-            db, input_data, product, brand_counts, brand_lookup, product_lookup, known
+            db, input_data, product, brand_counts, brand_lookup, product_lookup,
+            known, knowledge_cache
         )
         results.update(mapping)
     return results
@@ -144,20 +160,37 @@ async def _map_single_product(
     brand_lookup: Dict[str, int],
     product_lookup: Dict[str, object],
     known: List[dict],
+    knowledge_cache: Dict[str, str],
 ) -> Dict[str, str]:
     product_record = _resolve_product(product, product_lookup)
     if not product_record:
         return {}
     candidate_ids = _candidate_brand_ids(brand_counts, brand_lookup)
-    if not candidate_ids:
-        return {}
-    winner = _top_brand(brand_counts)
-    if _is_confident_brand(winner, brand_counts):
-        return _apply_mapping(db, input_data.vertical_id, product_record, winner, brand_counts, candidate_ids, "proximity")
-    brand = await _qwen_brand(product, list(candidate_ids.keys()), input_data.answer_entities, known)
-    if not brand:
-        return {}
-    return _apply_mapping(db, input_data.vertical_id, product_record, brand, brand_counts, candidate_ids, "qwen")
+
+    if candidate_ids:
+        winner = _top_brand(brand_counts)
+        if _is_confident_brand(winner, brand_counts):
+            return _apply_mapping(
+                db, input_data.vertical_id, product_record, winner,
+                brand_counts, candidate_ids, "proximity"
+            )
+        brand = await _qwen_brand(
+            product, list(candidate_ids.keys()), input_data.answer_entities, known
+        )
+        if brand:
+            return _apply_mapping(
+                db, input_data.vertical_id, product_record, brand,
+                brand_counts, candidate_ids, "qwen"
+            )
+
+    knowledge_brand = _lookup_in_knowledge_cache(product, knowledge_cache)
+    if knowledge_brand:
+        brand_id = _resolve_brand_id(knowledge_brand, brand_lookup)
+        if brand_id:
+            return _apply_knowledge_mapping(
+                db, input_data.vertical_id, product_record, knowledge_brand, brand_id
+            )
+    return {}
 
 
 def _brand_lookup(db, vertical_id: int) -> Dict[str, int]:
@@ -183,15 +216,19 @@ def _rejected_brand_names(db, vertical_id: int) -> set[str]:
     vertical_name = _vertical_name(db, vertical_id)
     if not vertical_name:
         return set()
-    with knowledge_session() as knowledge_db:
-        knowledge_id = resolve_knowledge_vertical_id(knowledge_db, vertical_name)
-        if not knowledge_id:
-            return set()
-        rows = knowledge_db.query(KnowledgeRejectedEntity.name).filter(
-            KnowledgeRejectedEntity.vertical_id == knowledge_id,
-            KnowledgeRejectedEntity.entity_type == EntityType.BRAND,
-        ).all()
-        return {name.casefold() for (name,) in rows if name}
+    try:
+        with knowledge_session() as knowledge_db:
+            knowledge_id = resolve_knowledge_vertical_id(knowledge_db, vertical_name)
+            if not knowledge_id:
+                return set()
+            rows = knowledge_db.query(KnowledgeRejectedEntity.name).filter(
+                KnowledgeRejectedEntity.vertical_id == knowledge_id,
+                KnowledgeRejectedEntity.entity_type == EntityType.BRAND,
+            ).all()
+            return {name.casefold() for (name,) in rows if name}
+    except Exception as e:
+        logger.debug(f"[PostHocMapping] Could not load rejected brands: {e}")
+        return set()
 
 
 def _brand_variant_map(brands: List[object], rejected: set[str]) -> Dict[str, int]:
@@ -273,6 +310,14 @@ def _apply_mapping(
     _upsert_mapping(db, vertical_id, product.id, brand_id, confidence, source)
     if _should_update_product(product, brand_id, confidence):
         product.brand_id = brand_id
+
+    if KNOWLEDGE_PERSIST_ENABLED and confidence >= KNOWLEDGE_PERSIST_THRESHOLD:
+        vertical_name = _vertical_name(db, vertical_id)
+        if vertical_name:
+            _persist_to_knowledge_base(
+                vertical_name, product.display_name, brand_name, confidence, source
+            )
+
     return {product.display_name: brand_name}
 
 
@@ -494,6 +539,46 @@ def _vertical_name(db, vertical_id: int) -> str:
     return vertical.name if vertical else ""
 
 
+def _load_knowledge_cache(db, vertical_id: int) -> Dict[str, str]:
+    vertical_name = _vertical_name(db, vertical_id)
+    if not vertical_name:
+        return {}
+    try:
+        from services.knowledge_lookup import build_mapping_cache
+        return build_mapping_cache(vertical_name)
+    except Exception as e:
+        logger.warning(f"[PostHocMapping] Failed to load knowledge cache: {e}")
+        return {}
+
+
+def _lookup_in_knowledge_cache(product: str, cache: Dict[str, str]) -> Optional[str]:
+    if not cache:
+        return None
+    product_lower = product.lower()
+    if product_lower in cache:
+        return cache[product_lower]
+    product_key = normalize_entity_key(product)
+    if product_key in cache:
+        return cache[product_key]
+    return None
+
+
+def _apply_knowledge_mapping(
+    db,
+    vertical_id: int,
+    product,
+    brand_name: str,
+    brand_id: int,
+) -> Dict[str, str]:
+    _upsert_mapping(db, vertical_id, product.id, brand_id, 0.75, "knowledge")
+    if product.brand_id is None:
+        product.brand_id = brand_id
+    logger.info(
+        f"[PostHocMapping] Applied knowledge mapping: {product.display_name} -> {brand_name}"
+    )
+    return {product.display_name: brand_name}
+
+
 def _knowledge_mappings(
     knowledge_db,
     vertical_id: int,
@@ -511,3 +596,109 @@ def _legacy_mapping_examples(db, vertical_id: int) -> List[dict]:
     ).all()
     examples = [_record_to_example(record) for record in records]
     return select_mapping_examples([example for example in examples if example])
+
+
+def _persist_to_knowledge_base(
+    vertical_name: str,
+    product_name: str,
+    brand_name: str,
+    confidence: float,
+    source: str,
+) -> None:
+    try:
+        with knowledge_session(write=True) as knowledge_db:
+            vertical = get_or_create_vertical(knowledge_db, vertical_name)
+            brand = _get_or_create_knowledge_brand(knowledge_db, vertical.id, brand_name)
+            product = _get_or_create_knowledge_product(knowledge_db, vertical.id, product_name)
+            _upsert_knowledge_mapping(
+                knowledge_db, vertical.id, product.id, brand.id, f"auto_{source}"
+            )
+            logger.debug(
+                f"[KnowledgePersist] Stored mapping: {product_name} -> {brand_name} "
+                f"(confidence={confidence:.2f}, source={source})"
+            )
+    except Exception as e:
+        logger.warning(f"[KnowledgePersist] Failed to persist mapping: {e}")
+
+
+def _get_or_create_knowledge_brand(
+    db,
+    vertical_id: int,
+    brand_name: str,
+) -> KnowledgeBrand:
+    canonical = normalize_entity_key(brand_name)
+    existing = db.query(KnowledgeBrand).filter(
+        KnowledgeBrand.vertical_id == vertical_id,
+        func.lower(KnowledgeBrand.canonical_name) == canonical,
+    ).first()
+    if existing:
+        return existing
+
+    brand = KnowledgeBrand(
+        vertical_id=vertical_id,
+        canonical_name=canonical,
+        display_name=brand_name,
+        is_validated=False,
+        validation_source="auto",
+    )
+    db.add(brand)
+    db.flush()
+    return brand
+
+
+def _get_or_create_knowledge_product(
+    db,
+    vertical_id: int,
+    product_name: str,
+) -> KnowledgeProduct:
+    canonical = normalize_entity_key(product_name)
+    existing = db.query(KnowledgeProduct).filter(
+        KnowledgeProduct.vertical_id == vertical_id,
+        func.lower(KnowledgeProduct.canonical_name) == canonical,
+    ).first()
+    if existing:
+        return existing
+
+    product = KnowledgeProduct(
+        vertical_id=vertical_id,
+        canonical_name=canonical,
+        display_name=product_name,
+        is_validated=False,
+        validation_source="auto",
+    )
+    db.add(product)
+    db.flush()
+    return product
+
+
+def _upsert_knowledge_mapping(
+    db,
+    vertical_id: int,
+    product_id: int,
+    brand_id: int,
+    source: str,
+) -> KnowledgeProductBrandMapping:
+    existing = db.query(KnowledgeProductBrandMapping).filter(
+        KnowledgeProductBrandMapping.vertical_id == vertical_id,
+        KnowledgeProductBrandMapping.product_id == product_id,
+    ).first()
+
+    if existing:
+        if existing.source in ("feedback", "user_reject"):
+            return existing
+        if existing.is_validated:
+            return existing
+        existing.brand_id = brand_id
+        existing.source = source
+        return existing
+
+    mapping = KnowledgeProductBrandMapping(
+        vertical_id=vertical_id,
+        product_id=product_id,
+        brand_id=brand_id,
+        is_validated=False,
+        source=source,
+    )
+    db.add(mapping)
+    db.flush()
+    return mapping

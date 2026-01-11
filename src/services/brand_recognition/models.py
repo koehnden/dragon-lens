@@ -5,7 +5,7 @@ This module contains the core data structures used throughout the brand recognit
 pipeline, including entity candidates, extraction results, and debug information.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 
@@ -54,6 +54,7 @@ class ExtractionResult:
     """Final result of entity extraction."""
     brands: Dict[str, List[str]]
     products: Dict[str, List[str]]
+    product_brand_relationships: Dict[str, str] = field(default_factory=dict)
     debug_info: Optional[ExtractionDebugInfo] = None
 
     def all_entities(self) -> Dict[str, List[str]]:

@@ -295,7 +295,13 @@ async def _extract_single_result(
                 "final_products": extraction_result.debug_info.final_products,
             }
 
-        discovered_products = discover_and_store_products(db, vertical_id, answer_zh, all_brands)
+        discovered_products = discover_and_store_products(
+            db,
+            vertical_id,
+            answer_zh,
+            all_brands,
+            extraction_relationships=extraction_result.product_brand_relationships,
+        )
 
         product_mentions = await _extract_product_mentions(
             llm_answer, discovered_products, answer_zh, translator, all_brands, ollama_service

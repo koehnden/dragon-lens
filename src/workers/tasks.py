@@ -354,7 +354,13 @@ def ensure_extraction(self: DatabaseTask, payload: dict, run_id: int, force_reex
             )
             self.db.add(debug_record)
 
-        discovered_products = discover_and_store_products(self.db, run.vertical_id, answer_zh, all_brands)
+        discovered_products = discover_and_store_products(
+            self.db,
+            run.vertical_id,
+            answer_zh,
+            all_brands,
+            extraction_relationships=extraction_result.product_brand_relationships,
+        )
         vertical = self.db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
         vertical_name = vertical.name if vertical else ""
         vertical_description = vertical.description if vertical else None
@@ -737,7 +743,11 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, provider: str, m
 
             logger.info("Discovering products in response...")
             discovered_products = discover_and_store_products(
-                self.db, vertical_id, answer_zh, all_brands
+                self.db,
+                vertical_id,
+                answer_zh,
+                all_brands,
+                extraction_relationships=extraction_result.product_brand_relationships,
             )
             logger.info(f"Found {len(discovered_products)} products")
 

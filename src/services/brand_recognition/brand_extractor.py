@@ -92,8 +92,11 @@ async def _extract_entities_with_qwen(
         result = _parse_extraction_response(response)
         raw_brands = result.get("brands", [])
         raw_products = result.get("products", [])
+        raw_relationships = result.get("relationships", {})
 
         logger.info(f"[Extraction] Raw from Qwen: brands={raw_brands}, products={raw_products}")
+        if raw_relationships:
+            logger.info(f"[Extraction] Relationships from Qwen: {raw_relationships}")
 
         filtered_brands, rejected_brands = _apply_light_filter_with_bypass(
             raw_brands, validated_brand_names
@@ -117,15 +120,27 @@ async def _extract_entities_with_qwen(
             final_products=filtered_products,
         )
 
+        filtered_relationships = _filter_relationships(
+            raw_relationships, set(filtered_products), set(filtered_brands)
+        )
+
         logger.info(
             f"[Extraction] Final: {len(raw_brands)} raw brands -> {len(filtered_brands)} after light filter, "
             f"{len(raw_products)} raw products -> {len(filtered_products)} after light filter"
         )
-        return ExtractionResult(brands=brand_clusters, products=product_clusters, debug_info=debug_info)
+        if filtered_relationships:
+            logger.info(f"[Extraction] Filtered relationships: {filtered_relationships}")
+
+        return ExtractionResult(
+            brands=brand_clusters,
+            products=product_clusters,
+            product_brand_relationships=filtered_relationships,
+            debug_info=debug_info,
+        )
 
     except Exception as e:
         logger.error(f"Qwen extraction failed: {e}")
-        return ExtractionResult(brands={}, products={})
+        return ExtractionResult(brands={}, products={}, product_brand_relationships={})
 
 
 def _apply_light_filter(entities: List[str]) -> Tuple[List[str], List[str]]:
@@ -161,6 +176,25 @@ def _apply_light_filter_with_bypass(
             filtered.append(entity)
 
     return filtered, rejected
+
+
+def _filter_relationships(
+    relationships: Dict[str, str],
+    valid_products: Set[str],
+    valid_brands: Set[str],
+) -> Dict[str, str]:
+    """Filter relationships to only include valid products and brands."""
+    filtered = {}
+    valid_products_lower = {p.lower() for p in valid_products}
+    valid_brands_lower = {b.lower() for b in valid_brands}
+
+    for product, brand in relationships.items():
+        product_valid = product in valid_products or product.lower() in valid_products_lower
+        brand_valid = brand in valid_brands or brand.lower() in valid_brands_lower
+        if product_valid and brand_valid:
+            filtered[product] = brand
+
+    return filtered
 
 
 async def _process_with_confidence_verification(
