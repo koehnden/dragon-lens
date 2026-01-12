@@ -6,7 +6,11 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from models.sqlite_config import apply_sqlite_pragmas, is_sqlite_url, sqlite_connect_args
+from models.sqlite_config import (
+    apply_sqlite_pragmas,
+    is_sqlite_url,
+    sqlite_connect_args,
+)
 from config import settings
 
 
@@ -96,12 +100,20 @@ if is_sqlite_url(knowledge_read_url):
 
 knowledge_read_engine = create_engine(
     knowledge_read_url,
-    **_engine_args(knowledge_read_url, _turso_read_token() if _turso_enabled() else None),
+    **_engine_args(
+        knowledge_read_url, _turso_read_token() if _turso_enabled() else None
+    ),
 )
-knowledge_write_engine = create_engine(
-    knowledge_write_url,
-    **_engine_args(knowledge_write_url, _turso_write_token() if _turso_enabled() else None),
-)
+knowledge_write_engine = knowledge_read_engine
+if not (
+    is_sqlite_url(knowledge_read_url) and knowledge_write_url == knowledge_read_url
+):
+    knowledge_write_engine = create_engine(
+        knowledge_write_url,
+        **_engine_args(
+            knowledge_write_url, _turso_write_token() if _turso_enabled() else None
+        ),
+    )
 
 KnowledgeReadSessionLocal = sessionmaker(
     autocommit=False, autoflush=False, bind=knowledge_read_engine
@@ -117,7 +129,9 @@ def _apply_sqlite_pragmas(dbapi_connection, _):
 
 if is_sqlite_url(knowledge_read_url):
     event.listen(knowledge_read_engine, "connect", _apply_sqlite_pragmas)
-if knowledge_write_engine is not knowledge_read_engine and is_sqlite_url(knowledge_write_url):
+if knowledge_write_engine is not knowledge_read_engine and is_sqlite_url(
+    knowledge_write_url
+):
     event.listen(knowledge_write_engine, "connect", _apply_sqlite_pragmas)
 
 knowledge_engine = knowledge_read_engine

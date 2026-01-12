@@ -1,6 +1,17 @@
-def build_feedback_payload(run_id, vertical_id, canonical_vertical, brand_rows, product_rows, mapping_rows, missing_rows, translation_rows) -> dict:
+def build_feedback_payload(
+    run_id,
+    vertical_id,
+    canonical_vertical,
+    brand_rows,
+    product_rows,
+    mapping_rows,
+    missing_rows,
+    translation_rows,
+) -> dict:
     return {
-        "run_id": run_id, "vertical_id": vertical_id, "canonical_vertical": canonical_vertical,
+        "run_id": run_id,
+        "vertical_id": vertical_id,
+        "canonical_vertical": canonical_vertical,
         "brand_feedback": build_brand_feedback(brand_rows),
         "product_feedback": build_product_feedback(product_rows),
         "mapping_feedback": build_mapping_feedback(mapping_rows, missing_rows),
@@ -16,8 +27,12 @@ def build_product_feedback(rows: list[dict]) -> list[dict]:
     return _items(rows, _product_item)
 
 
-def build_mapping_feedback(existing_rows: list[dict], missing_rows: list[dict]) -> list[dict]:
-    return _items(existing_rows, _reject_mapping_item) + _items(missing_rows, _add_mapping_item)
+def build_mapping_feedback(
+    existing_rows: list[dict], missing_rows: list[dict]
+) -> list[dict]:
+    return _items(existing_rows, _existing_mapping_item) + _items(
+        missing_rows, _add_mapping_item
+    )
 
 
 def build_translation_overrides(rows: list[dict]) -> list[dict]:
@@ -65,14 +80,27 @@ def _replace_item(row: dict, wrong_name: str) -> dict | None:
     }
 
 
-def _reject_mapping_item(row: dict) -> dict | None:
-    if _action(row) != "wrong":
-        return None
+def _existing_mapping_item(row: dict) -> dict | None:
+    action = _action(row)
     product_name = _text(row, "product_name")
     brand_name = _text(row, "brand_name")
     if not product_name or not brand_name:
         return None
-    return {"action": "reject", "product_name": product_name, "brand_name": brand_name, "reason": _reason(row)}
+    if action == "valid":
+        return {
+            "action": "validate",
+            "product_name": product_name,
+            "brand_name": brand_name,
+            "reason": _reason(row),
+        }
+    if action == "wrong":
+        return {
+            "action": "reject",
+            "product_name": product_name,
+            "brand_name": brand_name,
+            "reason": _reason(row),
+        }
+    return None
 
 
 def _add_mapping_item(row: dict) -> dict | None:
@@ -82,17 +110,34 @@ def _add_mapping_item(row: dict) -> dict | None:
     brand_name = _text(row, "brand_name")
     if not product_name or not brand_name:
         return None
-    return {"action": "add", "product_name": product_name, "brand_name": brand_name, "reason": _reason(row)}
+    return {
+        "action": "add",
+        "product_name": product_name,
+        "brand_name": brand_name,
+        "reason": _reason(row),
+    }
 
 
 def _translation_item(row: dict) -> dict | None:
     entity_type = _text(row, "entity_type")
     canonical_name = _text(row, "canonical_name")
     language = _text(row, "language")
-    override_text = _text(row, "override_text")
+    override_text = _translation_override_text(row)
     if not all([entity_type, canonical_name, language, override_text]):
         return None
-    return {"entity_type": entity_type, "canonical_name": canonical_name, "language": language, "override_text": override_text, "reason": _reason(row)}
+    return {
+        "entity_type": entity_type,
+        "canonical_name": canonical_name,
+        "language": language,
+        "override_text": override_text,
+        "reason": _reason(row),
+    }
+
+
+def _translation_override_text(row: dict) -> str:
+    if _action(row) == "valid":
+        return _text(row, "current_translation_en")
+    return _text(row, "override_text")
 
 
 def _action(row: dict) -> str:
