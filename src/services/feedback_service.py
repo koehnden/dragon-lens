@@ -29,6 +29,7 @@ from models.schemas import (
     FeedbackSubmitResponse,
     FeedbackTranslationOverrideItem,
     FeedbackBrandFeedbackItem,
+    FeedbackVerticalAliasResponse,
 )
 from services.canonicalization_metrics import normalize_entity_key
 
@@ -56,6 +57,26 @@ def validate_feedback_request(
     _validate_payload(payload)
     _validate_run(db, payload.run_id, payload.vertical_id)
     return _load_vertical(db, payload.vertical_id)
+
+
+def save_vertical_alias(
+    db: Session,
+    knowledge_db: Session,
+    vertical_id: int,
+    canonical: FeedbackCanonicalVertical,
+) -> FeedbackVerticalAliasResponse:
+    vertical = _load_vertical(db, vertical_id)
+    resolved = _resolve_canonical_vertical(knowledge_db, canonical)
+    created = _ensure_vertical_alias_created(knowledge_db, resolved.id, vertical.name)
+    knowledge_db.commit()
+    return FeedbackVerticalAliasResponse(
+        status="ok",
+        vertical_id=vertical.id,
+        vertical_name=vertical.name,
+        canonical_vertical_id=resolved.id,
+        canonical_vertical_name=resolved.name,
+        alias_created=created,
+    )
 
 
 def _validate_payload(payload: FeedbackSubmitRequest) -> None:
@@ -125,7 +146,9 @@ def _validate_mapping_item(item: FeedbackMappingFeedbackItem) -> None:
     _require(item.brand_name, "Brand name is required for mapping")
 
 
-def _validate_translation_items(items: Iterable[FeedbackTranslationOverrideItem]) -> None:
+def _validate_translation_items(
+    items: Iterable[FeedbackTranslationOverrideItem],
+) -> None:
     for item in items:
         _validate_translation_item(item)
 
@@ -133,10 +156,15 @@ def _validate_translation_items(items: Iterable[FeedbackTranslationOverrideItem]
 def _validate_translation_item(item: FeedbackTranslationOverrideItem) -> None:
     _require(item.canonical_name, "Canonical name is required for translation")
     _require(item.override_text, "Override text is required for translation")
-    _require(item.language == FeedbackLanguage.EN, "Only EN translation overrides are supported")
+    _require(
+        item.language == FeedbackLanguage.EN,
+        "Only EN translation overrides are supported",
+    )
 
 
-def _validate_replace_item(wrong_name: str | None, correct_name: str | None, label: str) -> None:
+def _validate_replace_item(
+    wrong_name: str | None, correct_name: str | None, label: str
+) -> None:
     _require(wrong_name, f"Wrong {label} name is required")
     _require(correct_name, f"Correct {label} name is required")
     _require(wrong_name != correct_name, f"{label} replacement must differ")
@@ -163,19 +191,27 @@ def _get_or_create_vertical_by_name(
     knowledge_db: Session,
     name: str,
 ) -> KnowledgeVertical:
-    return _get_vertical_by_name(knowledge_db, name) or _create_vertical(knowledge_db, name)
+    return _get_vertical_by_name(knowledge_db, name) or _create_vertical(
+        knowledge_db, name
+    )
 
 
 def _get_vertical_by_name(knowledge_db: Session, name: str) -> KnowledgeVertical | None:
-    return knowledge_db.query(KnowledgeVertical).filter(
-        func.lower(KnowledgeVertical.name) == name.casefold()
-    ).first()
+    return (
+        knowledge_db.query(KnowledgeVertical)
+        .filter(func.lower(KnowledgeVertical.name) == name.casefold())
+        .first()
+    )
 
 
-def _get_vertical_by_id(knowledge_db: Session, vertical_id: int) -> KnowledgeVertical | None:
-    return knowledge_db.query(KnowledgeVertical).filter(
-        KnowledgeVertical.id == vertical_id
-    ).first()
+def _get_vertical_by_id(
+    knowledge_db: Session, vertical_id: int
+) -> KnowledgeVertical | None:
+    return (
+        knowledge_db.query(KnowledgeVertical)
+        .filter(KnowledgeVertical.id == vertical_id)
+        .first()
+    )
 
 
 def _create_vertical(knowledge_db: Session, name: str) -> KnowledgeVertical:
@@ -191,19 +227,49 @@ def _ensure_vertical_alias(
     alias: str,
 ) -> None:
     alias_key = normalize_entity_key(alias)
-    if not _find_vertical_alias(knowledge_db, vertical_id, alias_key):
+    existing = _find_vertical_alias(knowledge_db, alias_key)
+    _raise_if_vertical_alias_conflict(existing, vertical_id, alias)
+    if not existing:
         _add_vertical_alias(knowledge_db, vertical_id, alias, alias_key)
+
+
+def _ensure_vertical_alias_created(
+    knowledge_db: Session,
+    vertical_id: int,
+    alias: str,
+) -> bool:
+    alias_key = normalize_entity_key(alias)
+    existing = _find_vertical_alias(knowledge_db, alias_key)
+    _raise_if_vertical_alias_conflict(existing, vertical_id, alias)
+    if existing:
+        return False
+    _add_vertical_alias(knowledge_db, vertical_id, alias, alias_key)
+    return True
 
 
 def _find_vertical_alias(
     knowledge_db: Session,
-    vertical_id: int,
     alias_key: str,
 ) -> KnowledgeVerticalAlias | None:
-    return knowledge_db.query(KnowledgeVerticalAlias).filter(
-        KnowledgeVerticalAlias.vertical_id == vertical_id,
-        KnowledgeVerticalAlias.alias_key == alias_key,
-    ).first()
+    return (
+        knowledge_db.query(KnowledgeVerticalAlias)
+        .filter(KnowledgeVerticalAlias.alias_key == alias_key)
+        .first()
+    )
+
+
+def _raise_if_vertical_alias_conflict(
+    existing: KnowledgeVerticalAlias | None,
+    requested_vertical_id: int,
+    alias: str,
+) -> None:
+    if existing and existing.vertical_id != requested_vertical_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Vertical alias '{alias}' already mapped to canonical_vertical_id={existing.vertical_id}"
+            ),
+        )
 
 
 def _add_vertical_alias(
@@ -212,7 +278,14 @@ def _add_vertical_alias(
     alias: str,
     alias_key: str,
 ) -> None:
-    knowledge_db.add(KnowledgeVerticalAlias(vertical_id=vertical_id, alias=alias, alias_key=alias_key, source="user_input"))
+    knowledge_db.add(
+        KnowledgeVerticalAlias(
+            vertical_id=vertical_id,
+            alias=alias,
+            alias_key=alias_key,
+            source="user_input",
+        )
+    )
 
 
 def _apply_feedback(
@@ -232,7 +305,9 @@ def _apply_counts(
         _apply_brand_feedback(knowledge_db, vertical_id, payload.brand_feedback),
         _apply_product_feedback(knowledge_db, vertical_id, payload.product_feedback),
         _apply_mapping_feedback(knowledge_db, vertical_id, payload.mapping_feedback),
-        _apply_translation_overrides(knowledge_db, vertical_id, payload.translation_overrides),
+        _apply_translation_overrides(
+            knowledge_db, vertical_id, payload.translation_overrides
+        ),
     )
 
 
@@ -276,7 +351,9 @@ def _apply_brand_replace(
     vertical_id: int,
     item: FeedbackBrandFeedbackItem,
 ) -> None:
-    _upsert_rejected_entity(knowledge_db, vertical_id, EntityType.BRAND, item.wrong_name, item.reason)
+    _upsert_rejected_entity(
+        knowledge_db, vertical_id, EntityType.BRAND, item.wrong_name, item.reason
+    )
     _upsert_brand(knowledge_db, vertical_id, item.correct_name, True, "feedback")
 
 
@@ -293,7 +370,9 @@ def _apply_brand_reject(
     vertical_id: int,
     item: FeedbackBrandFeedbackItem,
 ) -> None:
-    _upsert_rejected_entity(knowledge_db, vertical_id, EntityType.BRAND, item.name, item.reason)
+    _upsert_rejected_entity(
+        knowledge_db, vertical_id, EntityType.BRAND, item.name, item.reason
+    )
 
 
 def _apply_product_feedback(
@@ -327,8 +406,12 @@ def _apply_product_replace(
     vertical_id: int,
     item: FeedbackProductFeedbackItem,
 ) -> None:
-    _upsert_rejected_entity(knowledge_db, vertical_id, EntityType.PRODUCT, item.wrong_name, item.reason)
-    _upsert_product(knowledge_db, vertical_id, None, item.correct_name, True, "feedback")
+    _upsert_rejected_entity(
+        knowledge_db, vertical_id, EntityType.PRODUCT, item.wrong_name, item.reason
+    )
+    _upsert_product(
+        knowledge_db, vertical_id, None, item.correct_name, True, "feedback"
+    )
 
 
 def _apply_product_validate(
@@ -344,7 +427,9 @@ def _apply_product_reject(
     vertical_id: int,
     item: FeedbackProductFeedbackItem,
 ) -> None:
-    _upsert_rejected_entity(knowledge_db, vertical_id, EntityType.PRODUCT, item.name, item.reason)
+    _upsert_rejected_entity(
+        knowledge_db, vertical_id, EntityType.PRODUCT, item.name, item.reason
+    )
 
 
 def _apply_mapping_feedback(
@@ -367,6 +452,9 @@ def _apply_mapping_item(
     if item.action == FeedbackMappingAction.ADD:
         _apply_mapping_add(knowledge_db, vertical_id, item)
         return
+    if item.action == FeedbackMappingAction.VALIDATE:
+        _apply_mapping_validate(knowledge_db, vertical_id, item)
+        return
     _apply_mapping_reject(knowledge_db, vertical_id, item)
 
 
@@ -376,7 +464,21 @@ def _apply_mapping_add(
     item: FeedbackMappingFeedbackItem,
 ) -> None:
     brand = _upsert_brand(knowledge_db, vertical_id, item.brand_name, True, "feedback")
-    product = _upsert_product(knowledge_db, vertical_id, brand.id, item.product_name, True, "feedback")
+    product = _upsert_product(
+        knowledge_db, vertical_id, brand.id, item.product_name, True, "feedback"
+    )
+    _upsert_mapping(knowledge_db, vertical_id, product.id, brand.id, True, "feedback")
+
+
+def _apply_mapping_validate(
+    knowledge_db: Session,
+    vertical_id: int,
+    item: FeedbackMappingFeedbackItem,
+) -> None:
+    brand = _upsert_brand(knowledge_db, vertical_id, item.brand_name, True, "feedback")
+    product = _upsert_product(
+        knowledge_db, vertical_id, brand.id, item.product_name, True, "feedback"
+    )
     _upsert_mapping(knowledge_db, vertical_id, product.id, brand.id, True, "feedback")
 
 
@@ -386,8 +488,12 @@ def _apply_mapping_reject(
     item: FeedbackMappingFeedbackItem,
 ) -> None:
     brand = _upsert_brand(knowledge_db, vertical_id, item.brand_name, False, None)
-    product = _upsert_product(knowledge_db, vertical_id, None, item.product_name, False, None)
-    _upsert_mapping(knowledge_db, vertical_id, product.id, brand.id, False, "user_reject")
+    product = _upsert_product(
+        knowledge_db, vertical_id, None, item.product_name, False, None
+    )
+    _upsert_mapping(
+        knowledge_db, vertical_id, product.id, brand.id, False, "user_reject"
+    )
 
 
 def _apply_translation_overrides(
@@ -419,10 +525,14 @@ def _find_brand(
     vertical_id: int,
     name: str,
 ) -> KnowledgeBrand | None:
-    return knowledge_db.query(KnowledgeBrand).filter(
-        KnowledgeBrand.vertical_id == vertical_id,
-        func.lower(KnowledgeBrand.canonical_name) == name.casefold(),
-    ).first()
+    return (
+        knowledge_db.query(KnowledgeBrand)
+        .filter(
+            KnowledgeBrand.vertical_id == vertical_id,
+            func.lower(KnowledgeBrand.canonical_name) == name.casefold(),
+        )
+        .first()
+    )
 
 
 def _save_brand(
@@ -490,7 +600,9 @@ def _upsert_product(
 ) -> KnowledgeProduct:
     clean = _clean_name(name)
     product = _find_product(knowledge_db, vertical_id, clean)
-    return _save_product(knowledge_db, product, vertical_id, brand_id, clean, validated, source)
+    return _save_product(
+        knowledge_db, product, vertical_id, brand_id, clean, validated, source
+    )
 
 
 def _find_product(
@@ -498,10 +610,14 @@ def _find_product(
     vertical_id: int,
     name: str,
 ) -> KnowledgeProduct | None:
-    return knowledge_db.query(KnowledgeProduct).filter(
-        KnowledgeProduct.vertical_id == vertical_id,
-        func.lower(KnowledgeProduct.canonical_name) == name.casefold(),
-    ).first()
+    return (
+        knowledge_db.query(KnowledgeProduct)
+        .filter(
+            KnowledgeProduct.vertical_id == vertical_id,
+            func.lower(KnowledgeProduct.canonical_name) == name.casefold(),
+        )
+        .first()
+    )
 
 
 def _save_product(
@@ -586,11 +702,15 @@ def _find_rejected_entity(
     entity_type: EntityType,
     name: str,
 ) -> KnowledgeRejectedEntity | None:
-    return knowledge_db.query(KnowledgeRejectedEntity).filter(
-        KnowledgeRejectedEntity.vertical_id == vertical_id,
-        KnowledgeRejectedEntity.entity_type == entity_type,
-        func.lower(KnowledgeRejectedEntity.name) == name.casefold(),
-    ).first()
+    return (
+        knowledge_db.query(KnowledgeRejectedEntity)
+        .filter(
+            KnowledgeRejectedEntity.vertical_id == vertical_id,
+            KnowledgeRejectedEntity.entity_type == entity_type,
+            func.lower(KnowledgeRejectedEntity.name) == name.casefold(),
+        )
+        .first()
+    )
 
 
 def _update_rejected(
@@ -630,7 +750,9 @@ def _upsert_mapping(
     mapping = _find_mapping(knowledge_db, vertical_id, product_id, brand_id)
     if mapping:
         return _update_mapping(mapping, validated, source)
-    return _create_mapping(knowledge_db, vertical_id, product_id, brand_id, validated, source)
+    return _create_mapping(
+        knowledge_db, vertical_id, product_id, brand_id, validated, source
+    )
 
 
 def _find_mapping(
@@ -639,11 +761,15 @@ def _find_mapping(
     product_id: int,
     brand_id: int,
 ) -> KnowledgeProductBrandMapping | None:
-    return knowledge_db.query(KnowledgeProductBrandMapping).filter(
-        KnowledgeProductBrandMapping.vertical_id == vertical_id,
-        KnowledgeProductBrandMapping.product_id == product_id,
-        KnowledgeProductBrandMapping.brand_id == brand_id,
-    ).first()
+    return (
+        knowledge_db.query(KnowledgeProductBrandMapping)
+        .filter(
+            KnowledgeProductBrandMapping.vertical_id == vertical_id,
+            KnowledgeProductBrandMapping.product_id == product_id,
+            KnowledgeProductBrandMapping.brand_id == brand_id,
+        )
+        .first()
+    )
 
 
 def _update_mapping(
@@ -682,7 +808,11 @@ def _upsert_translation_override(
     item: FeedbackTranslationOverrideItem,
 ) -> KnowledgeTranslationOverride:
     override = _find_translation_override(
-        knowledge_db, vertical_id, item.entity_type, item.canonical_name, item.language.value
+        knowledge_db,
+        vertical_id,
+        item.entity_type,
+        item.canonical_name,
+        item.language.value,
     )
     if override:
         return _update_translation_override(override, item)
@@ -696,12 +826,17 @@ def _find_translation_override(
     canonical_name: str,
     language: str,
 ) -> KnowledgeTranslationOverride | None:
-    return knowledge_db.query(KnowledgeTranslationOverride).filter(
-        KnowledgeTranslationOverride.vertical_id == vertical_id,
-        KnowledgeTranslationOverride.entity_type == entity_type,
-        func.lower(KnowledgeTranslationOverride.canonical_name) == canonical_name.casefold(),
-        KnowledgeTranslationOverride.language == language,
-    ).first()
+    return (
+        knowledge_db.query(KnowledgeTranslationOverride)
+        .filter(
+            KnowledgeTranslationOverride.vertical_id == vertical_id,
+            KnowledgeTranslationOverride.entity_type == entity_type,
+            func.lower(KnowledgeTranslationOverride.canonical_name)
+            == canonical_name.casefold(),
+            KnowledgeTranslationOverride.language == language,
+        )
+        .first()
+    )
 
 
 def _update_translation_override(
@@ -749,6 +884,7 @@ def _new_feedback_event(
         status=FeedbackStatus.RECEIVED,
         payload=payload.model_dump(),
     )
+
 
 def _response(
     run_id: int,

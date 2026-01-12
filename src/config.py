@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     app_name: str = "DragonLens"
     debug: bool = False
 
-    database_url: str = "postgresql+psycopg://dragonlens:dragonlens@localhost:5432/dragonlens"
+    database_url: str = (
+        "postgresql+psycopg://dragonlens:dragonlens@localhost:5432/dragonlens"
+    )
     knowledge_database_url: str = "sqlite:///./data/knowledge.db"
 
     turso_database_url: Optional[str] = None
@@ -27,6 +29,10 @@ class Settings(BaseSettings):
     knowledge_persist_threshold: float = 0.8
     feedback_sanity_checks_enabled: bool = True
     feedback_trigger_rerun_enabled: bool = True
+    vertical_auto_match_enabled: bool = True
+    vertical_auto_match_min_confidence: float = 0.9
+    vertical_auto_match_max_candidates: int = 10
+    vertical_auto_match_model: Optional[str] = None
 
     redis_url: str = "redis://localhost:6379/0"
 

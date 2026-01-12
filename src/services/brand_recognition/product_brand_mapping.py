@@ -6,12 +6,15 @@ from typing import Dict, List, Optional
 from sqlalchemy import func
 
 from services.canonicalization_metrics import normalize_entity_key
-from services.brand_recognition.list_processor import is_list_format, split_into_list_items
+from services.brand_recognition.list_processor import (
+    is_list_format,
+    split_into_list_items,
+)
 from services.brand_recognition.prompts import load_prompt
 from services.brand_recognition.text_utils import _parse_json_response
 from services.knowledge_session import knowledge_session
 from services.knowledge_verticals import resolve_knowledge_vertical_id, get_or_create_vertical
-from models import EntityType, Vertical
+from models import EntityType, RejectedEntity, Vertical
 from models.knowledge_domain import (
     KnowledgeBrand,
     KnowledgeProduct,
@@ -114,7 +117,9 @@ def _iter_items(text: str) -> List[str]:
 
 
 def _mapping_input(db, run_id: int):
-    from services.brand_recognition.consolidation_service import gather_consolidation_input
+    from services.brand_recognition.consolidation_service import (
+        gather_consolidation_input,
+    )
 
     input_data = gather_consolidation_input(db, run_id)
     if not input_data.all_unique_products:
@@ -165,6 +170,13 @@ async def _map_single_product(
     product_record = _resolve_product(product, product_lookup)
     if not product_record:
         return {}
+    validated = _validated_brand_for_product(
+        db, input_data.vertical_id, product_record.original_name
+    )
+    if validated:
+        return _apply_validated_mapping(
+            db, input_data.vertical_id, product_record, validated, brand_lookup
+        )
     candidate_ids = _candidate_brand_ids(brand_counts, brand_lookup)
 
     if candidate_ids:
@@ -193,6 +205,81 @@ async def _map_single_product(
     return {}
 
 
+def _validated_brand_for_product(db, vertical_id: int, product_name: str) -> str:
+    vertical_name = _vertical_name(db, vertical_id)
+    if not vertical_name or not product_name:
+        return ""
+    with knowledge_session() as knowledge_db:
+        knowledge_id = resolve_knowledge_vertical_id(knowledge_db, vertical_name)
+        return _knowledge_validated_brand(knowledge_db, knowledge_id, product_name)
+
+
+def _knowledge_validated_brand(
+    knowledge_db, vertical_id: int | None, product_name: str
+) -> str:
+    if not vertical_id:
+        return ""
+    product = _knowledge_product(knowledge_db, vertical_id, product_name)
+    if not product:
+        return ""
+    mapping = _knowledge_validated_mapping(knowledge_db, vertical_id, product.id)
+    if not mapping:
+        return ""
+    brand = (
+        knowledge_db.query(KnowledgeBrand)
+        .filter(KnowledgeBrand.id == mapping.brand_id)
+        .first()
+    )
+    return brand.canonical_name if brand else ""
+
+
+def _knowledge_product(knowledge_db, vertical_id: int, name: str):
+    return (
+        knowledge_db.query(KnowledgeProduct)
+        .filter(
+            KnowledgeProduct.vertical_id == vertical_id,
+            func.lower(KnowledgeProduct.canonical_name) == name.casefold(),
+        )
+        .first()
+    )
+
+
+def _knowledge_validated_mapping(knowledge_db, vertical_id: int, product_id: int):
+    return (
+        knowledge_db.query(KnowledgeProductBrandMapping)
+        .filter(
+            KnowledgeProductBrandMapping.vertical_id == vertical_id,
+            KnowledgeProductBrandMapping.product_id == product_id,
+            KnowledgeProductBrandMapping.is_validated.is_(True),
+        )
+        .first()
+    )
+
+
+def _apply_validated_mapping(
+    db,
+    vertical_id: int,
+    product,
+    brand_name: str,
+    brand_lookup: Dict[str, int],
+) -> Dict[str, str]:
+    brand_id = _resolve_brand_id(brand_name, brand_lookup)
+    if not brand_id:
+        return {}
+    _force_mapping(db, vertical_id, product.id, brand_id, "knowledge_validated")
+    product.brand_id = brand_id
+    return {product.display_name: brand_name}
+
+
+def _force_mapping(db, vertical_id: int, product_id: int, brand_id: int, source: str):
+    mapping = _existing_mapping(db, vertical_id, product_id)
+    if not mapping:
+        mapping = _new_mapping(vertical_id, product_id, brand_id, 1.0, source)
+        db.add(mapping)
+        return mapping
+    return _update_mapping(mapping, brand_id, 1.0, source)
+
+
 def _brand_lookup(db, vertical_id: int) -> Dict[str, int]:
     from models import Brand
 
@@ -213,6 +300,24 @@ def _product_lookup(db, vertical_id: int) -> Dict[str, object]:
 
 
 def _rejected_brand_names(db, vertical_id: int) -> set[str]:
+    local = _local_rejected_brand_names(db, vertical_id)
+    remote = _knowledge_rejected_brand_names(db, vertical_id)
+    return local | remote
+
+
+def _local_rejected_brand_names(db, vertical_id: int) -> set[str]:
+    rows = (
+        db.query(RejectedEntity.name)
+        .filter(
+            RejectedEntity.vertical_id == vertical_id,
+            RejectedEntity.entity_type == EntityType.BRAND,
+        )
+        .all()
+    )
+    return {name.casefold() for (name,) in rows if name}
+
+
+def _knowledge_rejected_brand_names(db, vertical_id: int) -> set[str]:
     vertical_name = _vertical_name(db, vertical_id)
     if not vertical_name:
         return set()
@@ -250,7 +355,11 @@ def _brand_is_rejected(brand, rejected: set[str]) -> bool:
 
 def _brand_variants(brand) -> List[str]:
     aliases = brand.aliases or {}
-    return [brand.display_name, brand.original_name, brand.translated_name] + (aliases.get("zh") or []) + (aliases.get("en") or [])
+    return (
+        [brand.display_name, brand.original_name, brand.translated_name]
+        + (aliases.get("zh") or [])
+        + (aliases.get("en") or [])
+    )
 
 
 def _add_variant(lookup: Dict[str, int], variant: str | None, brand_id: int) -> None:
@@ -260,7 +369,9 @@ def _add_variant(lookup: Dict[str, int], variant: str | None, brand_id: int) -> 
     lookup.setdefault(_norm_key(variant), brand_id)
 
 
-def _add_product_variant(lookup: Dict[str, object], variant: str | None, product: object) -> None:
+def _add_product_variant(
+    lookup: Dict[str, object], variant: str | None, product: object
+) -> None:
     if not variant:
         return
     lookup.setdefault(_name_key(variant), product)
@@ -271,7 +382,9 @@ def _resolve_product(name: str, product_lookup: Dict[str, object]):
     return product_lookup.get(_name_key(name)) or product_lookup.get(_norm_key(name))
 
 
-def _candidate_brand_ids(brand_counts: dict[str, int], brand_lookup: Dict[str, int]) -> Dict[str, int]:
+def _candidate_brand_ids(
+    brand_counts: dict[str, int], brand_lookup: Dict[str, int]
+) -> Dict[str, int]:
     candidate_ids: Dict[str, int] = {}
     for name in brand_counts:
         brand_id = _resolve_brand_id(name, brand_lookup)
@@ -291,7 +404,11 @@ def _top_brand(brand_counts: dict[str, int]) -> str:
 def _is_confident_brand(brand: str, brand_counts: dict[str, int]) -> bool:
     total = sum(brand_counts.values())
     top = brand_counts.get(brand, 0)
-    return bool(total) and top >= MIN_PROXIMITY_COUNT and top / total >= MIN_PROXIMITY_SHARE
+    return (
+        bool(total)
+        and top >= MIN_PROXIMITY_COUNT
+        and top / total >= MIN_PROXIMITY_SHARE
+    )
 
 
 def _apply_mapping(
@@ -321,7 +438,9 @@ def _apply_mapping(
     return {product.display_name: brand_name}
 
 
-def _mapping_confidence(source: str, brand_name: str, brand_counts: dict[str, int]) -> float:
+def _mapping_confidence(
+    source: str, brand_name: str, brand_counts: dict[str, int]
+) -> float:
     if source == "qwen":
         return QWEN_CONFIDENCE
     return _brand_confidence(brand_name, brand_counts)
@@ -361,13 +480,19 @@ def _upsert_mapping(
 def _existing_mapping(db, vertical_id: int, product_id: int):
     from models import ProductBrandMapping
 
-    return db.query(ProductBrandMapping).filter(
-        ProductBrandMapping.vertical_id == vertical_id,
-        ProductBrandMapping.product_id == product_id,
-    ).first()
+    return (
+        db.query(ProductBrandMapping)
+        .filter(
+            ProductBrandMapping.vertical_id == vertical_id,
+            ProductBrandMapping.product_id == product_id,
+        )
+        .first()
+    )
 
 
-def _new_mapping(vertical_id: int, product_id: int, brand_id: int, confidence: float, source: str):
+def _new_mapping(
+    vertical_id: int, product_id: int, brand_id: int, confidence: float, source: str
+):
     from models import ProductBrandMapping
 
     return ProductBrandMapping(
@@ -387,7 +512,9 @@ def _update_mapping(mapping, brand_id: int, confidence: float, source: str):
     return mapping
 
 
-async def _qwen_brand(product: str, candidates: List[str], answers: List[object], known: List[dict]) -> str:
+async def _qwen_brand(
+    product: str, candidates: List[str], answers: List[object], known: List[dict]
+) -> str:
     from services.ollama import OllamaService
 
     snippets = _evidence_snippets(product, answers)
@@ -436,7 +563,9 @@ def _positions(text_lower: str, names: List[str]) -> List[tuple[int, str]]:
     return positions
 
 
-def _match_brand(text_lower: str, product: str, brand_positions: List[tuple[int, str]]) -> str:
+def _match_brand(
+    text_lower: str, product: str, brand_positions: List[tuple[int, str]]
+) -> str:
     pos = text_lower.find(product.lower())
     if pos == -1:
         return ""
@@ -508,7 +637,12 @@ def _record_to_example(record) -> dict:
     if not product or not brand:
         return {}
     confidence = _record_confidence(record)
-    return {"product": product, "brand": brand, "confidence": confidence, "is_validated": record.is_validated}
+    return {
+        "product": product,
+        "brand": brand,
+        "confidence": confidence,
+        "is_validated": record.is_validated,
+    }
 
 
 def _record_product_name(record) -> str:
@@ -583,17 +717,21 @@ def _knowledge_mappings(
     knowledge_db,
     vertical_id: int,
 ) -> List[KnowledgeProductBrandMapping]:
-    return knowledge_db.query(KnowledgeProductBrandMapping).filter(
-        KnowledgeProductBrandMapping.vertical_id == vertical_id
-    ).all()
+    return (
+        knowledge_db.query(KnowledgeProductBrandMapping)
+        .filter(KnowledgeProductBrandMapping.vertical_id == vertical_id)
+        .all()
+    )
 
 
 def _legacy_mapping_examples(db, vertical_id: int) -> List[dict]:
     from models import ProductBrandMapping
 
-    records = db.query(ProductBrandMapping).filter(
-        ProductBrandMapping.vertical_id == vertical_id
-    ).all()
+    records = (
+        db.query(ProductBrandMapping)
+        .filter(ProductBrandMapping.vertical_id == vertical_id)
+        .all()
+    )
     examples = [_record_to_example(record) for record in records]
     return select_mapping_examples([example for example in examples if example])
 

@@ -6,12 +6,12 @@ from config import settings
 from ui.feedback_payload import build_feedback_payload
 
 ACTION_OPTIONS = ["", "valid", "wrong"]
-MAPPING_ACTIONS = ["", "wrong"]
+MAPPING_ACTIONS = ["", "valid", "wrong"]
 MISSING_MAPPING_ACTIONS = ["", "add"]
 ENTITY_OPTIONS = ["brand", "product"]
 LANG_OPTIONS = ["en"]
 
-STATE_RUN_ID = "feedback_run_id"
+STATE_CONTEXT_KEY = "feedback_context_key"
 STATE_BRANDS = "feedback_brands"
 STATE_PRODUCTS = "feedback_products"
 STATE_MAPPINGS = "feedback_mappings"
@@ -24,30 +24,32 @@ def show():
     context = _context()
     if not context:
         return
-    _ensure_state(context["run"]["id"], context["entities"])
+    _vertical_mapping_form(context)
+    _ensure_state(context)
     _render_form(context)
 
 
 def _context():
-    vertical_id = _vertical_context()
-    if not vertical_id:
+    vertical = _vertical_context()
+    if not vertical:
         return None
-    run = _run_context(vertical_id)
-    if not run:
+    candidates = _fetch_candidates(vertical["id"])
+    if not candidates:
         return None
-    entities = _run_entities(run["id"])
-    if not entities:
-        return None
-    return _context_dict(vertical_id, run, entities)
-
-
-def _context_dict(vertical_id, run, entities):
     return {
-        "vertical_id": vertical_id,
-        "run": run,
-        "entities": entities,
+        "vertical": vertical,
+        "latest_run_id": candidates.get("latest_completed_run_id"),
+        "candidates": candidates,
         "knowledge_verticals": _fetch_knowledge_verticals(),
+        "vertical_brands": _fetch_vertical_brands(vertical["id"]),
+        "state_key": _state_key(
+            vertical["id"], candidates.get("latest_completed_run_id")
+        ),
     }
+
+
+def _state_key(vertical_id: int, run_id: int | None) -> str:
+    return f"{vertical_id}:{run_id or 0}"
 
 
 def _vertical_context():
@@ -58,37 +60,44 @@ def _vertical_context():
     return _select_vertical(verticals)
 
 
-def _run_context(vertical_id):
-    models = _fetch_models(vertical_id)
-    if not models:
-        st.info("No completed runs for this vertical.")
-        return None
-    model = _select_model(models)
-    runs = _fetch_runs(vertical_id, model)
-    return _select_run(runs)
+def _select_vertical(verticals):
+    options = {v["name"]: v for v in verticals}
+    name = st.selectbox("Vertical", list(options.keys()))
+    return options.get(name)
 
 
 def _render_form(context):
-    _run_summary(context["run"], context["entities"])
+    _summary(context)
     form_state = _feedback_form(context)
     _handle_submit(context, form_state)
 
 
-def _run_summary(run, entities):
-    st.caption(f"Run {run['id']} | {run['model_name']} | {run['run_time']}")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Brands", len(entities.get("brands", [])))
-    col2.metric("Products", len(entities.get("products", [])))
-    col3.metric("Mappings", len(entities.get("mappings", [])))
+def _summary(context):
+    run_id = context.get("latest_run_id")
+    vertical_name = context["vertical"]["name"]
+    group_ids = context["candidates"].get("group_vertical_ids") or []
+    st.caption(
+        f"Vertical {vertical_name} | Group verticals {len(group_ids)} | Latest run {run_id or 'N/A'}"
+    )
+    candidates = context["candidates"]
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Brands", len(candidates.get("brands") or []))
+    col2.metric("Products", len(candidates.get("products") or []))
+    col3.metric("Mappings", len(candidates.get("mappings") or []))
+    col4.metric("Translations", len(candidates.get("translations") or []))
 
 
 def _feedback_form(context):
     with st.form("feedback_form"):
-        canonical = _canonical_vertical_input(context["knowledge_verticals"])
+        canonical = _canonical_vertical_input(
+            context["knowledge_verticals"],
+            default_name=context["candidates"].get("resolved_canonical_vertical_name"),
+            key_prefix="submit",
+        )
         _brands_section()
         _products_section()
         _mapping_section()
-        _missing_mapping_section(context["entities"])
+        _missing_mapping_section(context)
         _translation_section()
         submitted = st.form_submit_button("Submit Feedback")
     return {"submitted": submitted, "canonical": canonical}
@@ -101,26 +110,54 @@ def _handle_submit(context, form_state):
     if error:
         st.error(error)
         return
+    if not context.get("latest_run_id"):
+        st.error("No completed runs found for this vertical.")
+        return
     payload = _payload_from_state(context, form_state["canonical"])
     response = _post_json("/api/v1/feedback/submit", payload)
-    _submit_result(response)
+    if not response:
+        return
+    st.success("Feedback submitted.")
+    _reset_state()
+    st.rerun()
 
 
 def _payload_from_state(context, canonical):
     return build_feedback_payload(
-        context["run"]["id"], context["vertical_id"], canonical,
-        _rows(STATE_BRANDS), _rows(STATE_PRODUCTS), _rows(STATE_MAPPINGS),
-        _rows(STATE_MISSING), _rows(STATE_TRANSLATIONS),
+        context["latest_run_id"],
+        context["vertical"]["id"],
+        canonical,
+        _rows(STATE_BRANDS),
+        _rows(STATE_PRODUCTS),
+        _rows(STATE_MAPPINGS),
+        _rows(STATE_MISSING),
+        _rows(STATE_TRANSLATIONS),
     )
 
 
-def _canonical_vertical_input(knowledge_verticals):
+def _canonical_vertical_input(knowledge_verticals, default_name=None, key_prefix=""):
     options = _canonical_options(knowledge_verticals)
-    choice = st.selectbox("Canonical Vertical", options)
+    choice = st.selectbox(
+        "Canonical Vertical",
+        options,
+        index=_canonical_index(options, default_name),
+        key=f"{key_prefix}_canonical_choice",
+    )
     if choice == "Create new":
-        name = st.text_input("New Canonical Vertical")
+        name = st.text_input(
+            "New Canonical Vertical", key=f"{key_prefix}_canonical_new"
+        )
         return {"is_new": True, "name": name.strip()}
     return _canonical_existing(knowledge_verticals, choice)
+
+
+def _canonical_index(options, default_name):
+    if not default_name:
+        return 0
+    try:
+        return options.index(default_name)
+    except ValueError:
+        return 0
 
 
 def _canonical_options(verticals):
@@ -141,6 +178,35 @@ def _canonical_error(canonical):
     return ""
 
 
+def _vertical_mapping_form(context):
+    with st.form("vertical_mapping_form"):
+        st.subheader("Vertical Grouping")
+        canonical = _canonical_vertical_input(
+            context["knowledge_verticals"],
+            default_name=context["candidates"].get("resolved_canonical_vertical_name"),
+            key_prefix="mapping",
+        )
+        submitted = st.form_submit_button("Save Vertical Mapping")
+    if submitted:
+        _save_vertical_mapping(context, canonical)
+
+
+def _save_vertical_mapping(context, canonical):
+    error = _canonical_error(canonical)
+    if error:
+        st.error(error)
+        return
+    payload = {
+        "vertical_id": context["vertical"]["id"],
+        "canonical_vertical": canonical,
+    }
+    response = _post_json("/api/v1/feedback/vertical-alias", payload)
+    if response:
+        st.success("Vertical mapping saved.")
+        _reset_state()
+        st.rerun()
+
+
 def _brands_section():
     st.subheader("Brands")
     return _edit_table(STATE_BRANDS, _brand_columns())
@@ -156,19 +222,27 @@ def _mapping_section():
     return _edit_table(STATE_MAPPINGS, _mapping_columns())
 
 
-def _missing_mapping_section(entities):
+def _missing_mapping_section(context):
     st.subheader("Missing Mappings")
-    columns = _missing_mapping_columns(_product_options(entities), _brand_options(entities))
+    products = _product_options(context["candidates"])
+    brands = _brand_options(context["vertical_brands"])
+    columns = _missing_mapping_columns(products, brands)
     return _edit_table(STATE_MISSING, columns, num_rows="dynamic")
 
 
 def _translation_section():
-    st.subheader("Translation Overrides")
+    st.subheader("Translations")
     return _edit_table(STATE_TRANSLATIONS, _translation_columns(), num_rows="dynamic")
 
 
 def _edit_table(key, columns, **kwargs):
-    df = st.data_editor(st.session_state[key], column_config=columns, use_container_width=True, hide_index=True, **kwargs)
+    df = st.data_editor(
+        st.session_state[key],
+        column_config=columns,
+        use_container_width=True,
+        hide_index=True,
+        **kwargs,
+    )
     st.session_state[key] = df
     return df
 
@@ -209,97 +283,160 @@ def _mapping_columns():
 
 def _missing_mapping_columns(products, brands):
     return {
-        "product_name": st.column_config.SelectboxColumn("Product", options=_safe_options(products)),
-        "brand_name": st.column_config.SelectboxColumn("Brand", options=_safe_options(brands)),
-        "action": st.column_config.SelectboxColumn("Action", options=MISSING_MAPPING_ACTIONS),
+        "product_name": st.column_config.SelectboxColumn(
+            "Product", options=_safe_options(products)
+        ),
+        "brand_name": st.column_config.SelectboxColumn(
+            "Brand", options=_safe_options(brands)
+        ),
+        "action": st.column_config.SelectboxColumn(
+            "Action", options=MISSING_MAPPING_ACTIONS
+        ),
         "reason": st.column_config.TextColumn("Reason"),
     }
 
 
 def _translation_columns():
     return {
-        "entity_type": st.column_config.SelectboxColumn("Entity Type", options=ENTITY_OPTIONS),
+        "entity_type": st.column_config.SelectboxColumn(
+            "Entity Type", options=ENTITY_OPTIONS
+        ),
         "canonical_name": st.column_config.TextColumn("Canonical Name"),
         "language": st.column_config.SelectboxColumn("Language", options=LANG_OPTIONS),
+        "current_translation_en": st.column_config.TextColumn("Current", disabled=True),
+        "action": st.column_config.SelectboxColumn("Action", options=ACTION_OPTIONS),
         "override_text": st.column_config.TextColumn("Override"),
         "reason": st.column_config.TextColumn("Reason"),
     }
 
 
-def _ensure_state(run_id, entities):
-    if st.session_state.get(STATE_RUN_ID) == run_id:
+def _ensure_state(context):
+    if st.session_state.get(STATE_CONTEXT_KEY) == context["state_key"]:
         return
-    st.session_state[STATE_RUN_ID] = run_id
-    st.session_state[STATE_BRANDS] = _brand_df(entities)
-    st.session_state[STATE_PRODUCTS] = _product_df(entities)
-    st.session_state[STATE_MAPPINGS] = _mapping_df(entities)
-    st.session_state[STATE_MISSING] = _missing_mapping_df()
-    st.session_state[STATE_TRANSLATIONS] = _translation_df()
+    st.session_state[STATE_CONTEXT_KEY] = context["state_key"]
+    st.session_state[STATE_BRANDS] = _brand_df(context["candidates"])
+    st.session_state[STATE_PRODUCTS] = _product_df(context["candidates"])
+    st.session_state[STATE_MAPPINGS] = _mapping_df(context["candidates"])
+    st.session_state[STATE_MISSING] = _missing_mapping_df(context["candidates"])
+    st.session_state[STATE_TRANSLATIONS] = _translation_df(context["candidates"])
 
 
-def _brand_df(entities):
-    rows = [{
-        "name": b.get("original_name") or b.get("brand_name", ""),
-        "translated_name": b.get("translated_name") or "",
-        "mentions": b.get("mention_count", 0),
-        "action": "",
-        "correct_name": "",
-        "reason": "",
-    } for b in entities.get("brands", [])]
+def _reset_state():
+    for key in [
+        STATE_CONTEXT_KEY,
+        STATE_BRANDS,
+        STATE_PRODUCTS,
+        STATE_MAPPINGS,
+        STATE_MISSING,
+        STATE_TRANSLATIONS,
+    ]:
+        st.session_state.pop(key, None)
+
+
+def _brand_df(candidates):
+    rows = [
+        {
+            "name": item.get("name") or "",
+            "translated_name": item.get("translated_name") or "",
+            "mentions": item.get("mention_count", 0),
+            "action": "",
+            "correct_name": "",
+            "reason": "",
+        }
+        for item in candidates.get("brands") or []
+    ]
     return pd.DataFrame(rows)
 
 
-def _product_df(entities):
-    rows = [{
-        "name": p.get("original_name") or p.get("product_name", ""),
-        "translated_name": p.get("translated_name") or "",
-        "brand": p.get("brand_name") or "",
-        "mentions": p.get("mention_count", 0),
-        "action": "", "correct_name": "", "reason": "",
-    } for p in entities.get("products", [])]
+def _product_df(candidates):
+    rows = [
+        {
+            "name": item.get("name") or "",
+            "translated_name": item.get("translated_name") or "",
+            "brand": item.get("brand_name") or "",
+            "mentions": item.get("mention_count", 0),
+            "action": "",
+            "correct_name": "",
+            "reason": "",
+        }
+        for item in candidates.get("products") or []
+    ]
     return pd.DataFrame(rows)
 
 
-def _mapping_df(entities):
-    brands = _brand_lookup(entities)
-    products = _product_lookup(entities)
-    rows = [_mapping_row(m, products, brands) for m in entities.get("mappings", [])]
+def _mapping_df(candidates):
+    rows = [
+        {
+            "product_name": item.get("product_name") or "",
+            "brand_name": item.get("brand_name") or "",
+            "confidence": item.get("confidence", 0.0) or 0.0,
+            "source": item.get("source") or "",
+            "action": "",
+            "reason": "",
+        }
+        for item in candidates.get("mappings") or []
+    ]
     return pd.DataFrame(rows)
 
 
-def _mapping_row(mapping, products, brands):
-    return {
-        "product_name": products.get(mapping.get("product_id"), mapping.get("product_name", "")),
-        "brand_name": brands.get(mapping.get("brand_id"), mapping.get("brand_name", "")),
-        "confidence": mapping.get("confidence", 0.0),
-        "source": mapping.get("source") or "",
-        "action": "",
-        "reason": "",
-    }
+def _missing_mapping_df(candidates):
+    rows = [
+        {
+            "product_name": item.get("product_name") or "",
+            "brand_name": "",
+            "action": "add",
+            "reason": "",
+        }
+        for item in candidates.get("missing_mappings") or []
+    ]
+    return pd.DataFrame(
+        rows or [{"product_name": "", "brand_name": "", "action": "add", "reason": ""}]
+    )
 
 
-def _missing_mapping_df():
-    return pd.DataFrame([{"product_name": "", "brand_name": "", "action": "add", "reason": ""}])
+def _translation_df(candidates):
+    rows = [
+        {
+            "entity_type": item.get("entity_type") or "",
+            "canonical_name": item.get("canonical_name") or "",
+            "language": "en",
+            "current_translation_en": item.get("current_translation_en") or "",
+            "action": "",
+            "override_text": "",
+            "reason": "",
+        }
+        for item in candidates.get("translations") or []
+    ]
+    rows.append(
+        {
+            "entity_type": "",
+            "canonical_name": "",
+            "language": "en",
+            "current_translation_en": "",
+            "action": "",
+            "override_text": "",
+            "reason": "",
+        }
+    )
+    return pd.DataFrame(rows)
 
 
-def _translation_df():
-    return pd.DataFrame([{"entity_type": "", "canonical_name": "", "language": "", "override_text": "", "reason": ""}])
+def _product_options(candidates):
+    products = candidates.get("products") or []
+    missing = candidates.get("missing_mappings") or []
+    return _unique(
+        [p.get("name") for p in products] + [m.get("product_name") for m in missing]
+    )
 
 
-def _brand_lookup(entities):
-    return {b.get("brand_id"): b.get("original_name") or b.get("brand_name", "") for b in entities.get("brands", [])}
+def _brand_options(vertical_brands):
+    items = vertical_brands or []
+    names = [b.get("original_name") or b.get("display_name") for b in items]
+    return _unique(names)
 
 
-def _product_lookup(entities):
-    return {p.get("product_id"): p.get("original_name") or p.get("product_name", "") for p in entities.get("products", [])}
-
-
-def _product_options(entities):
-    return [p.get("original_name") or p.get("product_name", "") for p in entities.get("products", [])]
-
-
-def _brand_options(entities):
-    return [b.get("original_name") or b.get("brand_name", "") for b in entities.get("brands", [])]
+def _unique(values):
+    return sorted({(v or "").strip() for v in values if (v or "").strip()})
 
 
 def _safe_options(items):
@@ -311,57 +448,22 @@ def _rows(key):
     return df.to_dict(orient="records") if df is not None else []
 
 
-def _select_vertical(verticals):
-    options = {v["name"]: v["id"] for v in verticals}
-    name = st.selectbox("Vertical", list(options.keys()))
-    return options.get(name)
-
-
-def _select_model(models):
-    return st.selectbox("Model", ["All"] + models)
-
-
-def _select_run(runs):
-    if not runs:
-        return None
-    options = {_run_label(r): r for r in runs}
-    label = st.selectbox("Run", list(options.keys()))
-    return options.get(label)
-
-
-def _run_label(run):
-    return f'{run["id"]} | {run["model_name"]} | {run["run_time"]}'
-
-
 def _fetch_verticals():
     return _fetch_json("/api/v1/verticals") or []
+
+
+def _fetch_vertical_brands(vertical_id: int):
+    return _fetch_json(f"/api/v1/verticals/{vertical_id}/brands") or []
 
 
 def _fetch_knowledge_verticals():
     return _fetch_json("/api/v1/knowledge/verticals") or []
 
 
-def _fetch_models(vertical_id):
-    return _fetch_json(f"/api/v1/verticals/{vertical_id}/models") or []
-
-
-def _fetch_runs(vertical_id, model_name):
-    params = {"vertical_id": vertical_id}
-    if model_name != "All":
-        params["model_name"] = model_name
-    runs = _fetch_json("/api/v1/tracking/runs", params=params)
-    return _completed_runs(runs or [])
-
-
-def _completed_runs(runs):
-    completed = [run for run in runs if run.get("status") == "completed"]
-    if not completed:
-        st.info("No completed runs for this selection.")
-    return completed
-
-
-def _run_entities(run_id):
-    return _fetch_json(f"/api/v1/tracking/runs/{run_id}/entities")
+def _fetch_candidates(vertical_id: int):
+    return _fetch_json(
+        "/api/v1/feedback/candidates", params={"vertical_id": vertical_id}
+    )
 
 
 def _api_url(path):
@@ -386,10 +488,3 @@ def _post_json(path, payload):
     except httpx.HTTPError as exc:
         st.error(f"Submit failed: {exc}")
         return None
-
-
-def _submit_result(data):
-    if not data:
-        return
-    st.success("Feedback submitted.")
-    st.write(data.get("applied") or {})

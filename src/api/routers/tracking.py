@@ -371,7 +371,7 @@ async def reprocess_run(
     Trigger reprocessing of an existing run.
 
     This will:
-    1. Verify the run exists and is in pending status
+    1. Verify the run exists and is not in progress
     2. Enqueue a Celery task to reprocess the run
     3. The task will reuse existing LLM answers and re-run extraction
 
@@ -383,16 +383,22 @@ async def reprocess_run(
         Status message
 
     Raises:
-        HTTPException: If run not found or not in pending status
+        HTTPException: If run not found or status is in progress
     """
     run = db.query(Run).filter(Run.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
-    if run.status != RunStatus.PENDING:
+    if run.status == RunStatus.IN_PROGRESS:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Run {run_id} is in progress and cannot be reprocessed",
+        )
+
+    if run.status not in {RunStatus.PENDING, RunStatus.COMPLETED, RunStatus.FAILED}:
         raise HTTPException(
             status_code=400,
-            detail=f"Run {run_id} is not in pending status (current: {run.status.value})"
+            detail=f"Run {run_id} cannot be reprocessed (current: {run.status.value})",
         )
 
     vertical = db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
@@ -402,12 +408,22 @@ async def reprocess_run(
     if RUN_TASKS_INLINE:
         engine = db.get_bind()
         asyncio.create_task(_process_run_inline(run.id, vertical.id, engine))
+        if run.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
+            run.status = RunStatus.PENDING
+            run.error_message = None
+            run.completed_at = None
+            commit_with_retry(db)
         return {"message": f"Run {run_id} queued for inline reprocessing", "run_id": run_id}
 
     from workers.tasks import start_run
 
     try:
         start_run.delay(run.id, True)
+        if run.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
+            run.status = RunStatus.PENDING
+            run.error_message = None
+            run.completed_at = None
+            commit_with_retry(db)
         return {"message": f"Run {run_id} queued for reprocessing", "run_id": run_id}
     except Exception as exc:
         logger.warning("Failed to enqueue reprocessing for run %s: %s", run_id, exc)
