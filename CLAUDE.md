@@ -32,18 +32,9 @@ docker run -d -p 6379:6379 redis:alpine
 ```
 
 ### Running the Application
-
 ```bash
-# Terminal 1: Start FastAPI server
-poetry run python -m src
-# Or with hot reload for development:
-poetry run uvicorn api.app:app --reload --port 8000
-
-# Terminal 2: Start Celery worker
-poetry run celery -A src.workers.celery_app worker --loglevel=info
-
-# Terminal 3: Start Streamlit UI
-poetry run streamlit run src/ui/app.py --server.port 8501
+# run all relevant components
+make run
 
 # Access the application:
 # - Streamlit UI: http://localhost:8501
@@ -63,15 +54,6 @@ poetry run pytest --cov=src --cov-report=html
 # Run specific test file
 poetry run pytest tests/unit/test_config.py
 
-# Format code with Black
-poetry run black src/ tests/
-
-# Lint with Ruff
-poetry run ruff check src/ tests/
-
-# Type checking with MyPy
-poetry run mypy src/
-
 # Initialize/migrate database (creates tables)
 poetry run python scripts/init_db.py
 
@@ -80,7 +62,6 @@ poetry run python scripts/generate_swagger.py
 ```
 
 ### Project Structure
-
 ```
 src/
 ├── api/                  # FastAPI routers and app

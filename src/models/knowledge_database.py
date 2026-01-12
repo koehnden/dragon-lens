@@ -42,6 +42,7 @@ def _engine_args(url: str, auth_token: str | None = None) -> dict:
     }
     if auth_token:
         args["connect_args"]["auth_token"] = auth_token
+        args["pool_pre_ping"] = True
     if _is_memory_url(url):
         args["poolclass"] = StaticPool
     return args
