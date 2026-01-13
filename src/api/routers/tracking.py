@@ -34,12 +34,14 @@ from models.schemas import (
     RunEntityMapping,
     RunEntityProduct,
     RunDetailedResponse,
+    RunInspectorPromptExport,
     RunResponse,
     TrackingJobCreate,
     TrackingJobResponse,
 )
 from services.translater import format_entity_label
 from services.metrics_service import calculate_and_save_metrics
+from services.run_inspector_export import build_run_inspector_export
 
 logger = logging.getLogger(__name__)
 
@@ -512,6 +514,22 @@ async def get_run_details(
         error_message=run.error_message,
         answers=answers_data,
     )
+
+
+@router.get("/runs/{run_id}/inspector-export", response_model=List[RunInspectorPromptExport])
+async def export_run_inspector_data(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """
+    Export prompt answers and extracted entities for a run.
+
+    Returns one item per prompt answer with brands, products, snippets, and translations.
+    """
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    return build_run_inspector_export(db, run_id)
 
 
 @router.get("/runs/{run_id}/entities", response_model=RunEntitiesResponse)

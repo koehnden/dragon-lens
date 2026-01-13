@@ -1,3 +1,4 @@
+import json
 import logging
 
 import httpx
@@ -121,6 +122,24 @@ def _render_run_details(run_details: dict) -> None:
             _render_answer_details(answer, i)
 
 
+def _fetch_run_export(run_id: int) -> list[dict]:
+    response = httpx.get(
+        f"http://localhost:{settings.api_port}/api/v1/tracking/runs/{run_id}/inspector-export",
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _fetch_vertical_export(vertical_id: int) -> list[dict]:
+    response = httpx.get(
+        f"http://localhost:{settings.api_port}/api/v1/verticals/{vertical_id}/inspector-export",
+        timeout=60.0,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def show():
     st.title("Run Inspector")
     st.caption("View raw answers and extracted brand mentions from tracking runs")
@@ -144,6 +163,20 @@ def show():
     vertical_options = {v["name"]: v["id"] for v in verticals}
     selected_vertical_name = st.selectbox("Select Vertical", list(vertical_options.keys()))
     selected_vertical_id = vertical_options[selected_vertical_name]
+
+    if st.button("Export for Vertical"):
+        try:
+            with st.spinner("Building vertical export..."):
+                export_data = _fetch_vertical_export(selected_vertical_id)
+            export_json = json.dumps(export_data, ensure_ascii=False, indent=2)
+            st.download_button(
+                label="Download Vertical JSON",
+                data=export_json,
+                file_name=f"run_inspector_{selected_vertical_name}_vertical.json",
+                mime="application/json",
+            )
+        except httpx.HTTPError as e:
+            st.error(f"Error building vertical export: {e}")
 
     available_models = _fetch_available_models(selected_vertical_id)
 
@@ -175,6 +208,20 @@ def show():
         run_options = {format_run_option_label(r): r["id"] for r in runs}
         selected_run_label = st.selectbox("Select Run", list(run_options.keys()))
         selected_run_id = run_options[selected_run_label]
+
+        if st.button("Export JSON (selected run)"):
+            try:
+                with st.spinner("Building run export..."):
+                    export_data = _fetch_run_export(selected_run_id)
+                export_json = json.dumps(export_data, ensure_ascii=False, indent=2)
+                st.download_button(
+                    label="Download Run JSON",
+                    data=export_json,
+                    file_name=f"run_inspector_{selected_vertical_name}_{selected_model}_run_{selected_run_id}.json",
+                    mime="application/json",
+                )
+            except httpx.HTTPError as e:
+                st.error(f"Error building run export: {e}")
 
         with st.spinner("Loading run details..."):
             details_response = httpx.get(
