@@ -53,6 +53,7 @@ def _routers():
             tracking,
             verticals,
         )
+        from api.routers.ai_corrections import router as ai_corrections_router
     except ImportError:
         from src.api.routers import (
             api_keys,
@@ -63,7 +64,8 @@ def _routers():
             tracking,
             verticals,
         )
-    return api_keys, consolidation, feedback, knowledge, metrics, tracking, verticals
+        from src.api.routers.ai_corrections import router as ai_corrections_router
+    return api_keys, consolidation, feedback, knowledge, metrics, tracking, verticals, ai_corrections_router
 
 
 def _models():
@@ -73,6 +75,7 @@ def _models():
 
 
 def _knowledge_models():
+    import models.knowledge_domain
     from models.knowledge_database import (
         KnowledgeBase,
         get_knowledge_db,
@@ -146,7 +149,7 @@ def db(db_session: Session) -> Session:
 def test_app():
     Base, get_db = _models()
     KnowledgeBase, get_knowledge_db, get_knowledge_db_write, _ = _knowledge_models()
-    api_keys, consolidation, feedback, knowledge, metrics, tracking, verticals = (
+    api_keys, consolidation, feedback, knowledge, metrics, tracking, verticals, ai_corrections_router = (
         _routers()
     )
 
@@ -163,6 +166,7 @@ def test_app():
 
     app.include_router(verticals.router, prefix="/api/v1/verticals", tags=["verticals"])
     app.include_router(tracking.router, prefix="/api/v1/tracking", tags=["tracking"])
+    app.include_router(ai_corrections_router, prefix="/api/v1/tracking", tags=["tracking"])
     app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
     app.include_router(api_keys.router, prefix="/api/v1", tags=["api-keys"])
     app.include_router(

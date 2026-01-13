@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlalchemy import inspect, text
 
 from models.sqlite_config import (
     apply_sqlite_pragmas,
@@ -158,4 +159,33 @@ def get_knowledge_db_write() -> Generator[Session, None, None]:
 def init_knowledge_db() -> None:
     if _turso_enabled() and not settings.turso_auth_token:
         return
+    import models.knowledge_domain
     KnowledgeBase.metadata.create_all(bind=knowledge_write_engine)
+    _ensure_feedback_event_columns()
+
+
+def _ensure_feedback_event_columns() -> None:
+    with knowledge_write_engine.begin() as connection:
+        inspector = inspect(connection)
+        _ensure_feedback_columns(connection, inspector)
+        _ensure_ai_review_columns(connection, inspector)
+
+
+def _ensure_feedback_columns(connection, inspector) -> None:
+    if "knowledge_feedback_events" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("knowledge_feedback_events")}
+    _ensure_column(connection, columns, "reviewer", "ALTER TABLE knowledge_feedback_events ADD COLUMN reviewer VARCHAR(50)")
+    _ensure_column(connection, columns, "reviewer_model", "ALTER TABLE knowledge_feedback_events ADD COLUMN reviewer_model VARCHAR(255)")
+
+
+def _ensure_ai_review_columns(connection, inspector) -> None:
+    if "knowledge_ai_audit_review_items" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("knowledge_ai_audit_review_items")}
+    _ensure_column(connection, columns, "action", "ALTER TABLE knowledge_ai_audit_review_items ADD COLUMN action VARCHAR(50)")
+
+
+def _ensure_column(connection, columns: set[str], name: str, ddl: str) -> None:
+    if name not in columns:
+        connection.execute(text(ddl))

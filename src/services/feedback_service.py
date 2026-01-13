@@ -38,6 +38,8 @@ def submit_feedback(
     db: Session,
     knowledge_db: Session,
     payload: FeedbackSubmitRequest,
+    reviewer: str = "user",
+    reviewer_model: str | None = None,
 ) -> FeedbackSubmitResponse:
     _validate_payload(payload)
     _validate_run(db, payload.run_id, payload.vertical_id)
@@ -45,7 +47,7 @@ def submit_feedback(
     canonical = _resolve_canonical_vertical(knowledge_db, payload.canonical_vertical)
     _ensure_vertical_alias(knowledge_db, canonical.id, vertical.name)
     applied = _apply_feedback(knowledge_db, canonical.id, payload)
-    _store_feedback_event(knowledge_db, canonical.id, payload)
+    _store_feedback_event(knowledge_db, canonical.id, payload, reviewer, reviewer_model)
     knowledge_db.commit()
     return _response(payload.run_id, canonical.id, applied)
 
@@ -870,17 +872,23 @@ def _store_feedback_event(
     knowledge_db: Session,
     vertical_id: int,
     payload: FeedbackSubmitRequest,
+    reviewer: str,
+    reviewer_model: str | None,
 ) -> None:
-    knowledge_db.add(_new_feedback_event(vertical_id, payload))
+    knowledge_db.add(_new_feedback_event(vertical_id, payload, reviewer, reviewer_model))
 
 
 def _new_feedback_event(
     vertical_id: int,
     payload: FeedbackSubmitRequest,
+    reviewer: str,
+    reviewer_model: str | None,
 ) -> KnowledgeFeedbackEvent:
     return KnowledgeFeedbackEvent(
         vertical_id=vertical_id,
         run_id=payload.run_id,
+        reviewer=reviewer,
+        reviewer_model=reviewer_model,
         status=FeedbackStatus.RECEIVED,
         payload=payload.model_dump(),
     )

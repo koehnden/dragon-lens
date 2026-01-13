@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models.domain import EntityType
@@ -187,6 +187,8 @@ class KnowledgeFeedbackEvent(KnowledgeBase):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("knowledge_verticals.id"), nullable=False)
     run_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reviewer: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    reviewer_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     status: Mapped[FeedbackStatus] = mapped_column(Enum(FeedbackStatus), nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
@@ -194,3 +196,70 @@ class KnowledgeFeedbackEvent(KnowledgeBase):
     )
 
     vertical: Mapped["KnowledgeVertical"] = relationship(KnowledgeVertical)
+
+
+class KnowledgeAIAuditStatus(str, enum.Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class KnowledgeAIAuditRun(KnowledgeBase):
+    __tablename__ = "knowledge_ai_audit_runs"
+    __table_args__ = {"extend_existing": True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    vertical_id: Mapped[int] = mapped_column(ForeignKey("knowledge_verticals.id"), nullable=False, index=True)
+    requested_provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    requested_model: Mapped[str] = mapped_column(String(255), nullable=False)
+    resolved_provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    resolved_model: Mapped[str] = mapped_column(String(255), nullable=False)
+    resolved_route: Mapped[str] = mapped_column(String(50), nullable=False)
+    thresholds: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    min_confidence_levels: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[KnowledgeAIAuditStatus] = mapped_column(Enum(KnowledgeAIAuditStatus), nullable=False)
+    metrics: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    clusters: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    auto_applied: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    tokens_in: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tokens_out: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    cost_estimate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    vertical: Mapped["KnowledgeVertical"] = relationship(KnowledgeVertical)
+    review_items: Mapped[List["KnowledgeAIAuditReviewItem"]] = relationship(
+        "KnowledgeAIAuditReviewItem", back_populates="audit_run", cascade="all, delete-orphan"
+    )
+
+
+class KnowledgeAIAuditReviewStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPLIED = "applied"
+    DISMISSED = "dismissed"
+
+
+class KnowledgeAIAuditReviewItem(KnowledgeBase):
+    __tablename__ = "knowledge_ai_audit_review_items"
+    __table_args__ = {"extend_existing": True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    audit_run_id: Mapped[int] = mapped_column(ForeignKey("knowledge_ai_audit_runs.id"), nullable=False, index=True)
+    run_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    llm_answer_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(255), nullable=False)
+    action: Mapped[str] = mapped_column(String(50), nullable=False)
+    confidence_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_quote_zh: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    feedback_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    status: Mapped[KnowledgeAIAuditReviewStatus] = mapped_column(Enum(KnowledgeAIAuditReviewStatus), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    audit_run: Mapped["KnowledgeAIAuditRun"] = relationship(KnowledgeAIAuditRun, back_populates="review_items")
