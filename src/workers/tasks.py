@@ -46,6 +46,8 @@ from services.metrics_service import calculate_and_save_metrics
 from services.product_metrics_service import calculate_and_save_run_product_metrics
 from services.pricing import calculate_cost
 from services.remote_llms import LLMRouter
+from services.ai_corrections.execution import execute_ai_correction
+from services.knowledge_session import knowledge_session
 from workers.celery_app import celery_app
 from workers.llm_parallel import LLMRequest, LLMResult, fetch_llm_answers_parallel
 
@@ -604,12 +606,12 @@ def finalize_run(
         )
         run.completed_at = datetime.utcnow()
         commit_with_retry(self.db)
-        return {
-            "run_id": run_id,
-            "status": "failed",
-            "failed_count": len(failed_ids),
-            "failed_prompt_ids": failed_ids,
-        }
+    return {
+        "run_id": run_id,
+        "status": "failed",
+        "failed_count": len(failed_ids),
+        "failed_prompt_ids": failed_ids,
+    }
 
     _backfill_entity_english_names(self.db, run)
 
@@ -1119,6 +1121,7 @@ def run_vertical_analysis(
         calculate_and_save_metrics(self.db, run_id)
         logger.info(f"Metrics calculated and saved for run {run_id}")
 
+
         run.status = RunStatus.COMPLETED
         run.completed_at = datetime.utcnow()
         commit_with_retry(self.db)
@@ -1136,6 +1139,12 @@ def run_vertical_analysis(
             commit_with_retry(self.db)
 
         raise
+
+
+@celery_app.task(base=DatabaseTask, bind=True)
+def run_ai_correction(self: DatabaseTask, audit_id: int) -> dict:
+    with knowledge_session(write=True) as knowledge_db:
+        return execute_ai_correction(self.db, knowledge_db, audit_id)
 
 
 @celery_app.task

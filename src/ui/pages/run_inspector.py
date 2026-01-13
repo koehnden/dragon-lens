@@ -140,6 +140,43 @@ def _fetch_vertical_export(vertical_id: int) -> list[dict]:
     return response.json()
 
 
+def _start_ai_correction(run_id: int, provider: str, model_name: str, dry_run: bool) -> dict:
+    response = httpx.post(
+        f"http://localhost:{settings.api_port}/api/v1/tracking/runs/{run_id}/ai-corrections",
+        json={"provider": provider, "model_name": model_name, "dry_run": dry_run},
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _fetch_latest_ai_correction(run_id: int) -> dict | None:
+    response = httpx.get(
+        f"http://localhost:{settings.api_port}/api/v1/tracking/runs/{run_id}/ai-corrections",
+        timeout=10.0,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _fetch_ai_correction_report(run_id: int, audit_id: int) -> dict:
+    response = httpx.get(
+        f"http://localhost:{settings.api_port}/api/v1/tracking/runs/{run_id}/ai-corrections/{audit_id}/report",
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _apply_ai_review_item(run_id: int, audit_id: int, item_id: int) -> dict:
+    response = httpx.post(
+        f"http://localhost:{settings.api_port}/api/v1/tracking/runs/{run_id}/ai-corrections/{audit_id}/review-items/{item_id}/apply",
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def show():
     st.title("Run Inspector")
     st.caption("View raw answers and extracted brand mentions from tracking runs")
@@ -222,6 +259,105 @@ def show():
                 )
             except httpx.HTTPError as e:
                 st.error(f"Error building run export: {e}")
+
+        st.markdown("---")
+        st.subheader("AI Corrections")
+
+        provider = st.selectbox(
+            "AI Model Provider",
+            ["deepseek", "kimi", "openrouter"],
+            index=0,
+        )
+        if provider == "deepseek":
+            model_name = st.selectbox("AI Model", ["deepseek-reasoner", "deepseek-chat"], index=0)
+        elif provider == "kimi":
+            model_name = st.text_input("AI Model", value="moonshot-v1-8k")
+        else:
+            model_name = st.text_input("AI Model", value="openrouter/auto")
+
+        dry_run = st.checkbox("Dry run (no auto-apply)", value=False)
+
+        audit_state_key = f"ai_corrections_audit_{selected_run_id}"
+        if audit_state_key not in st.session_state:
+            st.session_state[audit_state_key] = None
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Correct with AI"):
+                try:
+                    with st.spinner("Starting AI correction..."):
+                        audit = _start_ai_correction(selected_run_id, provider, model_name, dry_run)
+                    st.session_state[audit_state_key] = audit
+                except httpx.HTTPError as e:
+                    st.error(f"Error starting AI correction: {e}")
+
+        with col2:
+            if st.button("Refresh AI correction status"):
+                try:
+                    audit = _fetch_latest_ai_correction(selected_run_id)
+                    st.session_state[audit_state_key] = audit
+                except httpx.HTTPError as e:
+                    st.error(f"Error fetching AI correction status: {e}")
+
+        audit = st.session_state.get(audit_state_key)
+        if audit:
+            st.write(
+                f"Status: `{audit.get('status')}` | Resolved: `{audit.get('resolved_provider')}:{audit.get('resolved_model')}`"
+            )
+            if audit.get("status") == "completed":
+                report = _fetch_ai_correction_report(selected_run_id, int(audit.get("audit_id") or 0))
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    st.metric("Brands Precision", report["brands"]["precision"])
+                    st.metric("Brands Recall", report["brands"]["recall"])
+                with m2:
+                    st.metric("Products Precision", report["products"]["precision"])
+                    st.metric("Products Recall", report["products"]["recall"])
+                with m3:
+                    st.metric("Mappings Precision", report["mappings"]["precision"])
+                    st.metric("Mappings Recall", report["mappings"]["recall"])
+
+                st.markdown("#### Common Mistakes")
+                if report.get("clusters"):
+                    run_export = _fetch_run_export(selected_run_id)
+                    export_by_answer = {int(i.get("llm_answer_id") or 0): i for i in run_export}
+                    for cluster in report["clusters"]:
+                        with st.expander(f"{cluster['category']} ({cluster['count']})"):
+                            for example in cluster.get("examples") or []:
+                                answer = export_by_answer.get(int(example) if str(example).isdigit() else 0)
+                                if not answer:
+                                    st.write(f"Example llm_answer_id: {example}")
+                                    continue
+                                st.write(answer.get("prompt_zh") or "")
+                                st.write(answer.get("prompt_response_zh") or "")
+                else:
+                    st.info("No clusters available for this audit run.")
+
+                st.markdown("#### Needs Human Review")
+                pending = report.get("pending_review_items") or []
+                if not pending:
+                    st.success("No pending review items.")
+                for item in pending:
+                    st.markdown(
+                        f"**{item.get('category')}** | `{item.get('action')}` | "
+                        f"{item.get('confidence_level')} ({item.get('confidence_score')})"
+                    )
+                    st.write(item.get("reason") or "")
+                    if item.get("evidence_quote_zh"):
+                        st.caption(f"Evidence: {item.get('evidence_quote_zh')}")
+                    with st.expander("Feedback payload"):
+                        st.json(item.get("feedback_payload") or {})
+                    if st.button("Apply", key=f"apply_ai_review_item_{audit.get('audit_id')}_{item['id']}"):
+                        try:
+                            _apply_ai_review_item(selected_run_id, int(audit.get("audit_id") or 0), int(item["id"]))
+                            st.success("Applied feedback.")
+                            st.session_state[audit_state_key] = _fetch_latest_ai_correction(selected_run_id)
+                        except httpx.HTTPError as e:
+                            st.error(f"Error applying review item: {e}")
+            elif audit.get("status") == "failed":
+                st.error("AI correction failed. Check API logs for details.")
+            else:
+                st.info("AI correction is running. Refresh status to see results.")
 
         with st.spinner("Loading run details..."):
             details_response = httpx.get(
