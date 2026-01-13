@@ -3313,6 +3313,11 @@ components:
           - type: string
           - type: 'null'
           title: Vertical Description
+        canonical_vertical:
+          anyOf:
+          - $ref: '#/components/schemas/FeedbackCanonicalVertical'
+          - type: 'null'
+          title: Canonical Vertical
         brands:
           items:
             $ref: '#/components/schemas/BrandCreate'
