@@ -306,7 +306,7 @@ start-api: check-deps start-db ## Start FastAPI server
 		echo "$(YELLOW)  Stop the process using port $(API_PORT) or change API_PORT in .env$(NC)"; \
 		exit 1; \
 	fi
-	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run uvicorn api.app:app --host 0.0.0.0 --port $(API_PORT) > $(API_LOG) 2>&1 & echo $$! > .api.pid
+	@PYTHONUNBUFFERED=1 PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run uvicorn api.app:app --host 0.0.0.0 --port $(API_PORT) > $(API_LOG) 2>&1 & echo $$! > .api.pid
 	@set -e; \
 	i=0; \
 	while [ $$i -lt $(API_STARTUP_TIMEOUT) ]; do \

@@ -159,6 +159,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/verticals/{vertical_id}/inspector-export:
+    get:
+      tags:
+      - verticals
+      summary: Export Vertical Inspector Data
+      description: Export run inspector prompt/answer data for all completed runs in this vertical.
+      operationId: export_vertical_inspector_data_api_v1_verticals__vertical_id__inspector_export_get
+      parameters:
+      - name: vertical_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Vertical Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RunInspectorPromptExport'
+                title: Response Export Vertical Inspector Data Api V1 Verticals  Vertical Id  Inspector Export Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/verticals/{vertical_id}/brands:
     get:
       tags:
@@ -456,6 +486,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RunDetailedResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tracking/runs/{run_id}/inspector-export:
+    get:
+      tags:
+      - tracking
+      summary: Export Run Inspector Data
+      description: Export run inspector prompt/answer data for a single run.
+      operationId: export_run_inspector_data_api_v1_tracking_runs__run_id__inspector_export_get
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Run Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RunInspectorPromptExport'
+                title: Response Export Run Inspector Data Api V1 Tracking Runs  Run Id  Inspector Export Get
         '422':
           description: Validation Error
           content:
@@ -2495,6 +2555,102 @@ components:
       - error_message
       - answers
       title: RunDetailedResponse
+    RunInspectorBrandExtract:
+      properties:
+        brand_zh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brand Zh
+        brand_en:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brand En
+        text_snippet_zh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text Snippet Zh
+        text_snippet_en:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text Snippet En
+        rank:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rank
+        products_zh:
+          items:
+            type: string
+          type: array
+          title: Products Zh
+        products_en:
+          items:
+            type: string
+          type: array
+          title: Products En
+      type: object
+      required:
+      - brand_zh
+      - brand_en
+      - text_snippet_zh
+      - text_snippet_en
+      - rank
+      - products_zh
+      - products_en
+      title: RunInspectorBrandExtract
+    RunInspectorPromptExport:
+      properties:
+        run_id:
+          type: integer
+          title: Run Id
+        llm_answer_id:
+          type: integer
+          title: Llm Answer Id
+        vertical_name:
+          type: string
+          title: Vertical Name
+        model:
+          type: string
+          title: Model
+        prompt_zh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt Zh
+        prompt_eng:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt Eng
+        prompt_response_zh:
+          type: string
+          title: Prompt Response Zh
+        prompt_response_en:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt Response En
+        brands_extracted:
+          items:
+            $ref: '#/components/schemas/RunInspectorBrandExtract'
+          type: array
+          title: Brands Extracted
+      type: object
+      required:
+      - run_id
+      - llm_answer_id
+      - vertical_name
+      - model
+      - prompt_zh
+      - prompt_eng
+      - prompt_response_zh
+      - prompt_response_en
+      - brands_extracted
+      title: RunInspectorPromptExport
     RunEntitiesResponse:
       properties:
         run_id:

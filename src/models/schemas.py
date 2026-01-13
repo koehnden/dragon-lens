@@ -218,6 +218,28 @@ class RunDetailedResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RunInspectorBrandExtract(BaseModel):
+    brand_zh: Optional[str]
+    brand_en: Optional[str]
+    text_snippet_zh: Optional[str]
+    text_snippet_en: Optional[str]
+    rank: Optional[int]
+    products_zh: List[str]
+    products_en: List[str]
+
+
+class RunInspectorPromptExport(BaseModel):
+    run_id: int
+    llm_answer_id: int
+    vertical_name: str
+    model: str
+    prompt_zh: Optional[str]
+    prompt_eng: Optional[str]
+    prompt_response_zh: str
+    prompt_response_en: Optional[str]
+    brands_extracted: List[RunInspectorBrandExtract]
+
+
 class RunEntityBrand(BaseModel):
     brand_id: int
     brand_name: str

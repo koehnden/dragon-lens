@@ -6,7 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from models import Brand, DailyMetrics, Run, RunMetrics, RunStatus, Vertical, get_db
-from models.schemas import BrandResponse, DeleteVerticalResponse, VerticalCreate, VerticalResponse
+from models.schemas import (
+    BrandResponse,
+    DeleteVerticalResponse,
+    RunInspectorPromptExport,
+    VerticalCreate,
+    VerticalResponse,
+)
+from services.run_inspector_export import build_vertical_inspector_export
 
 router = APIRouter()
 
@@ -107,6 +114,20 @@ async def get_vertical_models(
     )
 
     return sorted([m[0] for m in models])
+
+
+@router.get("/{vertical_id}/inspector-export", response_model=List[RunInspectorPromptExport])
+async def export_vertical_inspector_data(
+    vertical_id: int,
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """
+    Export run inspector prompt/answer data for all completed runs in this vertical.
+    """
+    vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+    if not vertical:
+        raise HTTPException(status_code=404, detail=f"Vertical {vertical_id} not found")
+    return build_vertical_inspector_export(db, vertical_id)
 
 
 @router.get("/{vertical_id}/brands", response_model=List[BrandResponse])
