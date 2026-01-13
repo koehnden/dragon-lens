@@ -255,3 +255,113 @@ def render_metrics_comparison_bar(df: pd.DataFrame, name_col: str) -> None:
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+
+def render_feature_spider_chart(
+    data: dict,
+    selected_entities: list[str] = None,
+    max_entities: int = 5,
+) -> None:
+    if not data or not data.get("entities"):
+        st.info("No feature data available for comparison.")
+        return
+
+    feature_axes = data.get("top_features", [])
+    entities_data = data.get("entities", [])
+
+    if not feature_axes:
+        st.info("No features found for comparison.")
+        return
+
+    if selected_entities:
+        entities_data = [e for e in entities_data if e["entity_name"] in selected_entities]
+
+    entities_data = entities_data[:max_entities]
+
+    if not entities_data:
+        st.info("No entities selected for comparison.")
+        return
+
+    max_scores = {}
+    for entity in entities_data:
+        for feature in entity.get("features", []):
+            name = feature["feature_name_zh"]
+            score = feature["combined_score"]
+            max_scores[name] = max(max_scores.get(name, 0), score)
+
+    fig = go.Figure()
+
+    colors = px.colors.qualitative.Set2
+
+    for idx, entity in enumerate(entities_data):
+        feature_map = {f["feature_name_zh"]: f for f in entity.get("features", [])}
+
+        values = []
+        for feature_name in feature_axes:
+            feature = feature_map.get(feature_name, {})
+            score = feature.get("combined_score", 0)
+            max_val = max_scores.get(feature_name, 1)
+            normalized = score / max_val if max_val > 0 else 0
+            values.append(normalized)
+
+        values.append(values[0])
+        theta = feature_axes + [feature_axes[0]]
+
+        fig.add_trace(go.Scatterpolar(
+            r=values,
+            theta=theta,
+            fill="toself",
+            name=entity["entity_name"],
+            line_color=colors[idx % len(colors)],
+            fillcolor=colors[idx % len(colors)],
+            opacity=0.6,
+        ))
+
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 1],
+                tickformat=".0%",
+            ),
+        ),
+        title="Feature Comparison Spider Chart",
+        showlegend=True,
+        height=500,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.2,
+            xanchor="center",
+            x=0.5,
+        ),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_feature_table(data: dict) -> None:
+    if not data or not data.get("entities"):
+        return
+
+    entities_data = data.get("entities", [])
+    feature_axes = data.get("top_features", [])
+
+    if not entities_data or not feature_axes:
+        return
+
+    rows = []
+    for entity in entities_data:
+        row = {"Entity": entity["entity_name"]}
+        feature_map = {f["feature_name_zh"]: f for f in entity.get("features", [])}
+
+        for feature_name in feature_axes:
+            feature = feature_map.get(feature_name, {})
+            score = feature.get("combined_score", 0)
+            freq = feature.get("frequency", 0)
+            row[feature_name] = f"{score:.1f} ({freq})"
+
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True, hide_index=True)

@@ -917,3 +917,87 @@ def _characteristic_summaries(outcomes: list[dict]) -> list[ComparisonCharacteri
         ties=v["tie"],
         unknown=v["unknown"],
     ) for k, v in out.items() if k]
+
+
+@router.get("/run/{run_id}/features")
+async def get_run_feature_metrics(
+    run_id: int,
+    entity_type: str = Query("brand", pattern="^(brand|product)$"),
+    entity_ids: Optional[str] = Query(None, description="Comma-separated entity IDs"),
+    top_features: int = Query(6, ge=1, le=20),
+    db: Session = Depends(get_db),
+):
+    from models.schemas import (
+        EntityFeatureDataSchema,
+        FeatureScoreSchema,
+        RunFeatureMetricsResponse,
+    )
+    from services.feature_metrics_service import get_spider_chart_data
+
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+    entity_type_enum = EntityType.BRAND if entity_type == "brand" else EntityType.PRODUCT
+
+    if entity_ids:
+        ids = [int(i.strip()) for i in entity_ids.split(",") if i.strip().isdigit()]
+    else:
+        if entity_type_enum == EntityType.BRAND:
+            brands = db.query(Brand).filter(Brand.vertical_id == run.vertical_id).all()
+            ids = [b.id for b in brands]
+        else:
+            products = db.query(Product).filter(Product.vertical_id == run.vertical_id).all()
+            ids = [p.id for p in products]
+
+    if not ids:
+        return RunFeatureMetricsResponse(
+            run_id=run_id,
+            vertical_id=run.vertical_id,
+            vertical_name="",
+            top_features=[],
+            entities=[],
+        )
+
+    chart_data = get_spider_chart_data(db, run_id, ids, entity_type_enum, top_features)
+
+    if not chart_data:
+        return RunFeatureMetricsResponse(
+            run_id=run_id,
+            vertical_id=run.vertical_id,
+            vertical_name="",
+            top_features=[],
+            entities=[],
+        )
+
+    entities_response = []
+    for entity in chart_data.entities:
+        features_response = [
+            FeatureScoreSchema(
+                feature_id=f.feature_id,
+                feature_name_zh=f.feature_name_zh,
+                feature_name_en=f.feature_name_en,
+                frequency=f.frequency,
+                positive_count=f.positive_count,
+                neutral_count=f.neutral_count,
+                negative_count=f.negative_count,
+                combined_score=f.combined_score,
+            )
+            for f in entity.features
+        ]
+        entities_response.append(
+            EntityFeatureDataSchema(
+                entity_id=entity.entity_id,
+                entity_name=entity.entity_name,
+                entity_type=entity.entity_type,
+                features=features_response,
+            )
+        )
+
+    return RunFeatureMetricsResponse(
+        run_id=chart_data.run_id,
+        vertical_id=chart_data.vertical_id,
+        vertical_name=chart_data.vertical_name,
+        top_features=chart_data.top_features,
+        entities=entities_response,
+    )

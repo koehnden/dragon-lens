@@ -559,6 +559,20 @@ def ensure_extraction(
             )
         flush_with_retry(self.db)
 
+        _extract_and_save_features(
+            self.db,
+            run_id,
+            run.vertical_id,
+            llm_answer_id,
+            brand_mentions,
+            product_mentions,
+            all_brands,
+            discovered_products,
+            ollama_service,
+            translated,
+            snippet_map,
+        )
+
         commit_with_retry(self.db)
         return _extraction_payload(payload, True, "extraction", None)
     except Exception as exc:
@@ -582,6 +596,224 @@ def _has_mentions(db: Session, llm_answer_id: int) -> bool:
         .first()
         is not None
     )
+
+
+def _extract_and_save_features(
+    db: Session,
+    run_id: int,
+    vertical_id: int,
+    llm_answer_id: int,
+    brand_mentions: list[dict],
+    product_mentions: list[dict],
+    all_brands: list,
+    discovered_products: list,
+    ollama_service,
+    translated: list[str],
+    snippet_map: dict,
+) -> None:
+    from models import EntityType, Feature, FeatureMention, RunFeatureMetrics
+    from services.feature_consolidation import consolidate_feature_list
+    from services.feature_extraction import extract_features_from_snippet
+    from services.feature_metrics_service import calculate_combined_score
+
+    feature_data: list[dict] = []
+
+    for mention_data in brand_mentions:
+        if not mention_data["mentioned"]:
+            continue
+        brand = all_brands[mention_data["brand_index"]]
+        for snippet_zh in mention_data.get("snippets", []):
+            features = _run_async(extract_features_from_snippet(
+                snippet_zh, ollama_service, brand_name=brand.display_name
+            ))
+            en_idx = snippet_map.get(("brand", mention_data["brand_index"], snippet_zh))
+            snippet_en = translated[en_idx] if en_idx is not None and en_idx < len(translated) else None
+            for feat in features:
+                feature_data.append({
+                    "feature_zh": feat["feature_zh"],
+                    "feature_en": feat.get("feature_en"),
+                    "sentiment": feat.get("sentiment", "neutral"),
+                    "snippet_zh": snippet_zh,
+                    "snippet_en": snippet_en,
+                    "entity_type": "brand",
+                    "entity_id": brand.id,
+                })
+
+    for mention_data in product_mentions:
+        if not mention_data["mentioned"] or mention_data["rank"] is None:
+            continue
+        product = discovered_products[mention_data["product_index"]]
+        for snippet_zh in mention_data.get("snippets", []):
+            features = _run_async(extract_features_from_snippet(
+                snippet_zh, ollama_service, product_name=product.display_name
+            ))
+            en_idx = snippet_map.get(("product", mention_data["product_index"], snippet_zh))
+            snippet_en = translated[en_idx] if en_idx is not None and en_idx < len(translated) else None
+            for feat in features:
+                feature_data.append({
+                    "feature_zh": feat["feature_zh"],
+                    "feature_en": feat.get("feature_en"),
+                    "sentiment": feat.get("sentiment", "neutral"),
+                    "snippet_zh": snippet_zh,
+                    "snippet_en": snippet_en,
+                    "entity_type": "product",
+                    "entity_id": product.id,
+                })
+
+    if not feature_data:
+        logger.info(f"No features extracted for answer {llm_answer_id}")
+        return
+
+    feature_names = list({f["feature_zh"] for f in feature_data})
+    canonical_map = consolidate_feature_list(feature_names)
+    feature_cache: dict[str, Feature] = {}
+
+    brand_mention_ids = {
+        m.brand_id: m.id for m in db.query(BrandMention).filter(
+            BrandMention.llm_answer_id == llm_answer_id
+        ).all()
+    }
+    product_mention_ids = {
+        m.product_id: m.id for m in db.query(ProductMention).filter(
+            ProductMention.llm_answer_id == llm_answer_id
+        ).all()
+    }
+
+    for fd in feature_data:
+        canonical_name = canonical_map.get(fd["feature_zh"], fd["feature_zh"])
+        feature = _get_or_create_feature_cached(
+            db, vertical_id, canonical_name, fd.get("feature_en"), feature_cache
+        )
+        sentiment = _map_sentiment(fd["sentiment"])
+        brand_mention_id = brand_mention_ids.get(fd["entity_id"]) if fd["entity_type"] == "brand" else None
+        product_mention_id = product_mention_ids.get(fd["entity_id"]) if fd["entity_type"] == "product" else None
+
+        db.add(FeatureMention(
+            feature_id=feature.id,
+            brand_mention_id=brand_mention_id,
+            product_mention_id=product_mention_id,
+            snippet_zh=fd["snippet_zh"],
+            snippet_en=fd["snippet_en"],
+            sentiment=sentiment,
+        ))
+
+    flush_with_retry(db)
+
+    _save_feature_metrics_for_answer(
+        db, run_id, vertical_id, feature_data, canonical_map, feature_cache
+    )
+
+    logger.info(f"Extracted {len(feature_data)} features for answer {llm_answer_id}")
+
+
+def _get_or_create_feature_cached(
+    db: Session,
+    vertical_id: int,
+    canonical_name: str,
+    feature_name_en: str | None,
+    cache: dict,
+) -> "Feature":
+    from models import Feature
+
+    cache_key = f"{vertical_id}:{canonical_name}"
+    if cache_key in cache:
+        cache[cache_key].mention_count += 1
+        return cache[cache_key]
+
+    feature = db.query(Feature).filter(
+        Feature.vertical_id == vertical_id,
+        Feature.canonical_name == canonical_name,
+    ).first()
+
+    if not feature:
+        feature = Feature(
+            vertical_id=vertical_id,
+            canonical_name=canonical_name,
+            display_name_zh=canonical_name,
+            display_name_en=feature_name_en,
+            mention_count=1,
+        )
+        db.add(feature)
+        flush_with_retry(db)
+    else:
+        feature.mention_count += 1
+
+    cache[cache_key] = feature
+    return feature
+
+
+def _save_feature_metrics_for_answer(
+    db: Session,
+    run_id: int,
+    vertical_id: int,
+    feature_data: list[dict],
+    canonical_map: dict[str, str],
+    feature_cache: dict,
+) -> None:
+    from collections import defaultdict
+    from models import EntityType, RunFeatureMetrics
+    from services.feature_metrics_service import calculate_combined_score
+
+    entity_features: dict[tuple[str, int], dict[str, dict]] = defaultdict(
+        lambda: defaultdict(lambda: {"frequency": 0, "positive": 0, "neutral": 0, "negative": 0})
+    )
+
+    for fd in feature_data:
+        canonical_name = canonical_map.get(fd["feature_zh"], fd["feature_zh"])
+        key = (fd["entity_type"], fd["entity_id"])
+        stats = entity_features[key][canonical_name]
+        stats["frequency"] += 1
+        sentiment = fd.get("sentiment", "neutral")
+        if sentiment == "positive":
+            stats["positive"] += 1
+        elif sentiment == "negative":
+            stats["negative"] += 1
+        else:
+            stats["neutral"] += 1
+
+    for (entity_type, entity_id), features in entity_features.items():
+        for feature_name, stats in features.items():
+            cache_key = f"{vertical_id}:{feature_name}"
+            feature = feature_cache.get(cache_key)
+            if not feature:
+                continue
+
+            existing = db.query(RunFeatureMetrics).filter(
+                RunFeatureMetrics.run_id == run_id,
+                RunFeatureMetrics.entity_type == (EntityType.BRAND if entity_type == "brand" else EntityType.PRODUCT),
+                RunFeatureMetrics.entity_id == entity_id,
+                RunFeatureMetrics.feature_id == feature.id,
+            ).first()
+
+            if existing:
+                existing.frequency += stats["frequency"]
+                existing.positive_count += stats["positive"]
+                existing.neutral_count += stats["neutral"]
+                existing.negative_count += stats["negative"]
+                existing.combined_score = calculate_combined_score(
+                    existing.frequency,
+                    existing.positive_count,
+                    existing.neutral_count,
+                    existing.negative_count,
+                )
+            else:
+                combined_score = calculate_combined_score(
+                    stats["frequency"],
+                    stats["positive"],
+                    stats["neutral"],
+                    stats["negative"],
+                )
+                db.add(RunFeatureMetrics(
+                    run_id=run_id,
+                    entity_type=EntityType.BRAND if entity_type == "brand" else EntityType.PRODUCT,
+                    entity_id=entity_id,
+                    feature_id=feature.id,
+                    frequency=stats["frequency"],
+                    positive_count=stats["positive"],
+                    neutral_count=stats["neutral"],
+                    negative_count=stats["negative"],
+                    combined_score=combined_score,
+                ))
 
 
 @celery_app.task(base=DatabaseTask, bind=True)

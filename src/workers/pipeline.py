@@ -74,6 +74,17 @@ class ProductMentionData:
 
 
 @dataclass
+class FeatureMentionData:
+    feature_name_zh: str
+    feature_name_en: Optional[str]
+    sentiment: Sentiment
+    snippet_zh: str
+    snippet_en: Optional[str]
+    entity_type: str
+    entity_id: int
+
+
+@dataclass
 class ExtractionResult:
     query_result: LLMQueryResult
     llm_answer: Optional[LLMAnswer] = None
@@ -81,6 +92,7 @@ class ExtractionResult:
     discovered_products: list[Product] = field(default_factory=list)
     brand_mentions: list[MentionData] = field(default_factory=list)
     product_mentions: list[ProductMentionData] = field(default_factory=list)
+    feature_mentions: list[FeatureMentionData] = field(default_factory=list)
     debug_info: Optional[dict] = None
     error: Optional[str] = None
 
@@ -506,6 +518,234 @@ def batch_save_mentions(db: Session, extraction_results: list[ExtractionResult])
     logger.info(f"Saved mentions for {len(extraction_results)} answers")
 
 
+async def extract_features_from_mentions(
+    extraction_results: list[ExtractionResult],
+    ollama_service,
+    translator,
+) -> list[FeatureMentionData]:
+    from services.feature_extraction import extract_features_from_snippet
+
+    all_features: list[FeatureMentionData] = []
+
+    for ext in extraction_results:
+        if ext.error:
+            continue
+
+        for mention in ext.brand_mentions:
+            features = await _extract_features_for_entity(
+                mention.zh_snippets,
+                mention.en_snippets,
+                "brand",
+                mention.brand.id,
+                mention.brand.display_name,
+                ollama_service,
+                translator,
+            )
+            all_features.extend(features)
+
+        for mention in ext.product_mentions:
+            features = await _extract_features_for_entity(
+                mention.zh_snippets,
+                mention.en_snippets,
+                "product",
+                mention.product.id,
+                mention.product.display_name,
+                ollama_service,
+                translator,
+            )
+            all_features.extend(features)
+
+    logger.info(f"Extracted {len(all_features)} feature mentions")
+    return all_features
+
+
+async def _extract_features_for_entity(
+    zh_snippets: list[str],
+    en_snippets: list[str],
+    entity_type: str,
+    entity_id: int,
+    entity_name: str,
+    ollama_service,
+    translator,
+) -> list[FeatureMentionData]:
+    from services.feature_extraction import extract_features_from_snippet
+
+    features: list[FeatureMentionData] = []
+
+    for i, snippet_zh in enumerate(zh_snippets):
+        if not snippet_zh or not snippet_zh.strip():
+            continue
+
+        snippet_en = en_snippets[i] if i < len(en_snippets) else None
+
+        try:
+            async with _get_ollama_semaphore():
+                extracted = await extract_features_from_snippet(
+                    snippet_zh,
+                    ollama_service,
+                    brand_name=entity_name if entity_type == "brand" else None,
+                    product_name=entity_name if entity_type == "product" else None,
+                )
+
+            for feat in extracted:
+                sentiment = _map_sentiment(feat.get("sentiment", "neutral"))
+                features.append(FeatureMentionData(
+                    feature_name_zh=feat["feature_zh"],
+                    feature_name_en=feat.get("feature_en"),
+                    sentiment=sentiment,
+                    snippet_zh=snippet_zh,
+                    snippet_en=snippet_en,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                ))
+        except Exception as e:
+            logger.warning(f"Error extracting features for {entity_type} {entity_id}: {e}")
+
+    return features
+
+
+def batch_save_feature_mentions(
+    db: Session,
+    run_id: int,
+    vertical_id: int,
+    feature_mentions: list[FeatureMentionData],
+    brand_mentions_by_entity: dict,
+    product_mentions_by_entity: dict,
+) -> None:
+    from models import EntityType, Feature, FeatureMention, RunFeatureMetrics
+    from services.feature_consolidation import consolidate_feature_list
+    from services.feature_metrics_service import calculate_combined_score
+
+    if not feature_mentions:
+        logger.info("No feature mentions to save")
+        return
+
+    feature_names = list({f.feature_name_zh for f in feature_mentions})
+    canonical_map = consolidate_feature_list(feature_names)
+
+    feature_cache: dict[str, Feature] = {}
+
+    for fm in feature_mentions:
+        canonical_name = canonical_map.get(fm.feature_name_zh, fm.feature_name_zh)
+        feature = _get_or_create_feature(db, vertical_id, canonical_name, fm.feature_name_en, feature_cache)
+
+        brand_mention_id = None
+        product_mention_id = None
+
+        if fm.entity_type == "brand":
+            brand_mention_id = brand_mentions_by_entity.get(fm.entity_id)
+        else:
+            product_mention_id = product_mentions_by_entity.get(fm.entity_id)
+
+        db_fm = FeatureMention(
+            feature_id=feature.id,
+            brand_mention_id=brand_mention_id,
+            product_mention_id=product_mention_id,
+            snippet_zh=fm.snippet_zh,
+            snippet_en=fm.snippet_en,
+            sentiment=fm.sentiment,
+        )
+        db.add(db_fm)
+
+    flush_with_retry(db)
+
+    _calculate_and_save_feature_metrics(db, run_id, vertical_id, feature_mentions, canonical_map, feature_cache)
+
+    commit_with_retry(db)
+    logger.info(f"Saved {len(feature_mentions)} feature mentions")
+
+
+def _get_or_create_feature(
+    db: Session,
+    vertical_id: int,
+    canonical_name: str,
+    feature_name_en: Optional[str],
+    cache: dict,
+) -> "Feature":
+    from models import Feature
+
+    cache_key = f"{vertical_id}:{canonical_name}"
+    if cache_key in cache:
+        return cache[cache_key]
+
+    feature = db.query(Feature).filter(
+        Feature.vertical_id == vertical_id,
+        Feature.canonical_name == canonical_name,
+    ).first()
+
+    if not feature:
+        feature = Feature(
+            vertical_id=vertical_id,
+            canonical_name=canonical_name,
+            display_name_zh=canonical_name,
+            display_name_en=feature_name_en,
+            mention_count=0,
+        )
+        db.add(feature)
+        flush_with_retry(db)
+
+    feature.mention_count += 1
+    cache[cache_key] = feature
+    return feature
+
+
+def _calculate_and_save_feature_metrics(
+    db: Session,
+    run_id: int,
+    vertical_id: int,
+    feature_mentions: list[FeatureMentionData],
+    canonical_map: dict[str, str],
+    feature_cache: dict,
+) -> None:
+    from collections import defaultdict
+    from models import EntityType, RunFeatureMetrics
+    from services.feature_metrics_service import calculate_combined_score
+
+    entity_features: dict[tuple[str, int], dict[str, dict]] = defaultdict(lambda: defaultdict(lambda: {
+        "frequency": 0, "positive": 0, "neutral": 0, "negative": 0
+    }))
+
+    for fm in feature_mentions:
+        canonical_name = canonical_map.get(fm.feature_name_zh, fm.feature_name_zh)
+        key = (fm.entity_type, fm.entity_id)
+        stats = entity_features[key][canonical_name]
+        stats["frequency"] += 1
+
+        if fm.sentiment == Sentiment.POSITIVE:
+            stats["positive"] += 1
+        elif fm.sentiment == Sentiment.NEGATIVE:
+            stats["negative"] += 1
+        else:
+            stats["neutral"] += 1
+
+    for (entity_type, entity_id), features in entity_features.items():
+        for feature_name, stats in features.items():
+            cache_key = f"{vertical_id}:{feature_name}"
+            feature = feature_cache.get(cache_key)
+            if not feature:
+                continue
+
+            combined_score = calculate_combined_score(
+                stats["frequency"],
+                stats["positive"],
+                stats["neutral"],
+                stats["negative"],
+            )
+
+            metric = RunFeatureMetrics(
+                run_id=run_id,
+                entity_type=EntityType.BRAND if entity_type == "brand" else EntityType.PRODUCT,
+                entity_id=entity_id,
+                feature_id=feature.id,
+                frequency=stats["frequency"],
+                positive_count=stats["positive"],
+                neutral_count=stats["neutral"],
+                negative_count=stats["negative"],
+                combined_score=combined_score,
+            )
+            db.add(metric)
+
+
 async def run_parallel_pipeline(
     db: Session,
     run: Run,
@@ -538,5 +778,39 @@ async def run_parallel_pipeline(
 
     batch_save_mentions(db, extraction_results)
 
+    feature_mentions = await extract_features_from_mentions(
+        extraction_results, ollama_service, translator
+    )
+
+    mention_maps = _build_mention_id_maps(db, extraction_results)
+    batch_save_feature_mentions(
+        db, run.id, run.vertical_id, feature_mentions,
+        mention_maps["brand"], mention_maps["product"]
+    )
+
     logger.info(f"Parallel pipeline complete for {len(prompts)} prompts")
     return extraction_results
+
+
+def _build_mention_id_maps(
+    db: Session,
+    extraction_results: list[ExtractionResult],
+) -> dict[str, dict[int, int]]:
+    brand_map: dict[int, int] = {}
+    product_map: dict[int, int] = {}
+
+    for ext in extraction_results:
+        if ext.error or not ext.llm_answer:
+            continue
+
+        for mention in db.query(BrandMention).filter(
+            BrandMention.llm_answer_id == ext.llm_answer.id
+        ).all():
+            brand_map[mention.brand_id] = mention.id
+
+        for mention in db.query(ProductMention).filter(
+            ProductMention.llm_answer_id == ext.llm_answer.id
+        ).all():
+            product_map[mention.product_id] = mention.id
+
+    return {"brand": brand_map, "product": product_map}
