@@ -28,6 +28,12 @@ class KnowledgeVerticalResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FeedbackCanonicalVertical(BaseModel):
+    id: Optional[int] = None
+    name: Optional[str] = None
+    is_new: bool
+
+
 class BrandCreate(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=255)
     aliases: Dict[str, List[str]] = Field(
@@ -69,6 +75,7 @@ class PromptResponse(BaseModel):
 class TrackingJobCreate(BaseModel):
     vertical_name: str = Field(..., min_length=1)
     vertical_description: Optional[str] = None
+    canonical_vertical: Optional[FeedbackCanonicalVertical] = None
     brands: List[BrandCreate] = Field(default_factory=list)
     prompts: List[PromptCreate]
     provider: str = Field(
@@ -608,12 +615,6 @@ class FeedbackEntityType(str, enum.Enum):
 class FeedbackLanguage(str, enum.Enum):
     ZH = "zh"
     EN = "en"
-
-
-class FeedbackCanonicalVertical(BaseModel):
-    id: Optional[int] = None
-    name: Optional[str] = None
-    is_new: bool
 
 
 class FeedbackBrandFeedbackItem(BaseModel):
