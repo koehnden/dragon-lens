@@ -619,3 +619,88 @@ class RunProductMetrics(Base):
     )
 
     product: Mapped["Product"] = relationship(Product)
+
+
+class Feature(Base):
+    __tablename__ = "features"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vertical_id: Mapped[int] = mapped_column(ForeignKey("verticals.id"), nullable=False)
+    canonical_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name_zh: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name_en: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    mention_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    vertical: Mapped["Vertical"] = relationship(Vertical)
+    aliases: Mapped[List["FeatureAlias"]] = relationship(
+        "FeatureAlias", back_populates="feature", cascade="all, delete-orphan"
+    )
+    mentions: Mapped[List["FeatureMention"]] = relationship(
+        "FeatureMention", back_populates="feature", cascade="all, delete-orphan"
+    )
+
+
+class FeatureAlias(Base):
+    __tablename__ = "feature_aliases"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    feature_id: Mapped[int] = mapped_column(ForeignKey("features.id"), nullable=False)
+    alias: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    feature: Mapped["Feature"] = relationship(Feature, back_populates="aliases")
+
+
+class FeatureMention(Base):
+    __tablename__ = "feature_mentions"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    feature_id: Mapped[int] = mapped_column(ForeignKey("features.id"), nullable=False)
+    brand_mention_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("brand_mentions.id"), nullable=True
+    )
+    product_mention_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("product_mentions.id"), nullable=True
+    )
+    snippet_zh: Mapped[str] = mapped_column(Text, nullable=False)
+    snippet_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sentiment: Mapped[Sentiment] = mapped_column(
+        Enum(Sentiment), nullable=False, default=Sentiment.NEUTRAL
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    feature: Mapped["Feature"] = relationship(Feature, back_populates="mentions")
+    brand_mention: Mapped[Optional["BrandMention"]] = relationship(BrandMention)
+    product_mention: Mapped[Optional["ProductMention"]] = relationship(ProductMention)
+
+
+class RunFeatureMetrics(Base):
+    __tablename__ = "run_feature_metrics"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), nullable=False)
+    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType), nullable=False)
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    feature_id: Mapped[int] = mapped_column(ForeignKey("features.id"), nullable=False)
+    frequency: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    positive_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    neutral_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    negative_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    combined_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    run: Mapped["Run"] = relationship(Run)
+    feature: Mapped["Feature"] = relationship(Feature)

@@ -4,6 +4,8 @@ import streamlit as st
 
 from config import settings
 from ui.components.charts import (
+    render_feature_spider_chart,
+    render_feature_table,
     render_metrics_comparison_bar,
     render_positioning_matrix,
     render_radar_chart,
@@ -130,6 +132,31 @@ def _fetch_user_brands(vertical_id: int) -> list[str]:
         return [b["display_name"] for b in brands]
     except httpx.HTTPError:
         return []
+
+
+def _fetch_feature_metrics(
+    run_id: int,
+    entity_type: str,
+    entity_ids: list[int] | None = None,
+    top_features: int = 6,
+) -> dict | None:
+    try:
+        params = {
+            "entity_type": entity_type,
+            "top_features": top_features,
+        }
+        if entity_ids:
+            params["entity_ids"] = ",".join(str(i) for i in entity_ids)
+
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}/features",
+            params=params,
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError:
+        return None
 
 
 def _get_sentiment_label(sentiment_index: float) -> str:
@@ -380,6 +407,71 @@ def _render_data_tab(df: pd.DataFrame, name_col: str) -> None:
     )
 
 
+def _render_feature_comparison_tab(
+    run_id: int | None,
+    entity_type: str,
+    df: pd.DataFrame,
+    name_col: str,
+    user_entity: str | None = None,
+) -> None:
+    st.markdown("### Feature Comparison")
+
+    if run_id is None:
+        st.info("Feature comparison requires a specific run. Select a model to view.")
+        return
+
+    id_col = "brand_id" if entity_type == "brand" else "product_id"
+    entity_label = "Brand" if entity_type == "brand" else "Product"
+
+    if id_col not in df.columns:
+        st.warning(f"Missing {id_col} column in data.")
+        return
+
+    entity_options = df[name_col].tolist()
+    default_selection = _get_default_feature_selection(entity_options, user_entity)
+
+    selected_entities = st.multiselect(
+        f"Select {entity_label}s to Compare (2-5)",
+        options=entity_options,
+        default=default_selection,
+        max_selections=5,
+        key=f"feature_compare_{entity_type}_{run_id}",
+    )
+
+    if len(selected_entities) < 2:
+        st.info(f"Select at least 2 {entity_label.lower()}s to compare features.")
+        return
+
+    selected_ids = df[df[name_col].isin(selected_entities)][id_col].tolist()
+
+    with st.spinner("Loading feature data..."):
+        feature_data = _fetch_feature_metrics(run_id, entity_type, selected_ids, top_features=6)
+
+    if not feature_data or not feature_data.get("entities"):
+        st.info("No feature data available for the selected entities.")
+        return
+
+    if not feature_data.get("top_features"):
+        st.info("No features have been extracted for this run yet.")
+        return
+
+    render_feature_spider_chart(feature_data, selected_entities, max_entities=5)
+
+    with st.expander("Feature Details", expanded=False):
+        render_feature_table(feature_data)
+
+
+def _get_default_feature_selection(options: list[str], user_entity: str | None) -> list[str]:
+    if not options:
+        return []
+
+    if user_entity and user_entity in options:
+        others = [o for o in options if o != user_entity][:2]
+        return [user_entity] + others
+
+    return options[:3]
+
+
 def _render_brand_view(
     metrics: dict,
     user_brands: list[str],
@@ -401,6 +493,7 @@ def _render_brand_view(
     labels = [
         "Competitive Landscape",
         "Performance Analysis",
+        "Feature Comparison",
         "Opportunities",
         "Detailed Data",
     ]
@@ -417,9 +510,12 @@ def _render_brand_view(
         _render_performance_tab(df, "brand_name", user_brand)
 
     with tabs[2]:
-        _render_opportunities_tab(df, "brand_name", user_brand)
+        _render_feature_comparison_tab(run_id, "brand", df, "brand_name", user_brand)
 
     with tabs[3]:
+        _render_opportunities_tab(df, "brand_name", user_brand)
+
+    with tabs[4]:
         _render_data_tab(df, "brand_name")
 
     if comparison_summary:
@@ -457,6 +553,7 @@ def _render_product_view(
     labels = [
         "Competitive Landscape",
         "Performance Analysis",
+        "Feature Comparison",
         "Opportunities",
         "Detailed Data",
     ]
@@ -473,9 +570,12 @@ def _render_product_view(
         _render_performance_tab(df, "product_name", user_product)
 
     with tabs[2]:
-        _render_opportunities_tab(df, "product_name", user_product)
+        _render_feature_comparison_tab(run_id, "product", df, "product_name", user_product)
 
     with tabs[3]:
+        _render_opportunities_tab(df, "product_name", user_product)
+
+    with tabs[4]:
         _render_data_tab(df, "product_name")
 
     if comparison_summary:

@@ -33,6 +33,7 @@ psycopg = {extras = ["binary"], version = "^3.3.2"}
 plotly = "^6.5.1"
 sqlalchemy-libsql = "^0.2.0"
 libsql-experimental = "^0.0.55"
+sentence-transformers = "^5.2.0"
 
 
 [tool.poetry.group.dev.dependencies]
