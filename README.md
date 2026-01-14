@@ -1,257 +1,164 @@
-# DragonLens 🐉
+# DragonLens
 
-**Track how Chinese LLMs talk about your brand**
+![Python](https://img.shields.io/badge/Python-3.11+-blue)
+![Status](https://img.shields.io/badge/Status-Active%20Development-yellow)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-DragonLens is a brand visibility tracking system for Chinese LLMs. It helps you understand how AI models like Qwen, DeepSeek, and Kimi mention and rank your brand compared to competitors.
+**Brand visibility intelligence for Chinese LLMs**
 
-## Features
+> **Sabbatical Project** — This is an active work-in-progress (v0.1) being built during my travels.
+> The backend architecture, LLM integrations, and metrics pipeline are fully functional.
+> UI polish and scheduling features are still in progress.
 
-- 🤖 **Multi-LLM Support**: Track across Qwen (local), DeepSeek, Kimi, and OpenRouter
-- 📊 **Visibility Metrics**: Mention rates, rankings, sentiment analysis
-- 🌐 **Bilingual**: Works with English and Chinese prompts
-- 🎨 **Easy UI**: Streamlit-based interface for setup and visualization
-- 🔄 **Background Processing**: Celery-powered async task execution
-- 💾 **Persistent Storage**: SQLite (or PostgreSQL) for all data
+![DragonLens Results Dashboard](result-page-screenshot.png)
 
-## Metrics
+## The Problem
 
-- **Mention rate**: Mentions per brand divided by the number of prompts in the set.
-- **Share of Voice (SoV)**: Ranking-weighted presence relative to competitors using a DCG discount `1 / log2(rank + 1)`.
-- **Top-spot share**: Portion of prompts where the brand is ranked first.
-- **Sentiment index**: Positive mentions divided by all mentions for the brand.
-- **Dragon Lens Visibility score**: Weighted blend `0.6 * SoV + 0.2 * Top-spot share + 0.2 * Sentiment index`.
+Western brands have zero visibility into how Chinese AI assistants discuss their products. Unlike traditional SEO, there are no tools to monitor or optimize for "LLM visibility" — the emerging battleground where AI recommends products to millions of users.
+
+DragonLens fills this gap: it queries Chinese LLMs with natural prompts, extracts brand mentions and rankings, analyzes sentiment, and tracks visibility metrics over time.
+
+## Key Features
+
+- **Multi-LLM Tracking** — Query Qwen (local), DeepSeek, Kimi, and 100+ models via OpenRouter
+- **Automated NER Pipeline** — Extract brands and products from Chinese responses with multi-stage validation
+- **Visibility Metrics** — Share of Voice, mention rates, ranking positions, sentiment analysis
+- **Bilingual Processing** — Automatic EN/ZH translation for prompts and responses
+- **Competitive Intelligence** — Side-by-side brand comparison with positioning matrix
+- **Background Processing** — Celery-powered async execution with Redis queuing
+
+## Tech Stack
+
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Celery](https://img.shields.io/badge/Celery-37814A?logo=celery&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-000000?logo=ollama&logoColor=white)
+
+| Layer | Technology |
+|-------|------------|
+| API | FastAPI with OpenAPI/Swagger docs |
+| Task Queue | Celery + Redis |
+| Database | PostgreSQL (SQLite for local dev) |
+| ORM | SQLAlchemy + Alembic migrations |
+| UI | Streamlit |
+| Local LLMs | Ollama (Qwen 2.5) |
+| Remote LLMs | DeepSeek, Kimi/Moonshot, OpenRouter |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Frontend
+        UI[Streamlit UI]
+    end
+
+    subgraph Backend
+        API[FastAPI]
+        Workers[Celery Workers]
+        Queue[(Redis)]
+        DB[(PostgreSQL)]
+    end
+
+    subgraph LLM Providers
+        Qwen[Ollama/Qwen]
+        DS[DeepSeek API]
+        Kimi[Kimi API]
+        OR[OpenRouter]
+    end
+
+    UI --> API
+    API --> Workers
+    Workers --> Queue
+    Workers --> DB
+    API --> DB
+    Workers --> Qwen
+    Workers --> DS
+    Workers --> Kimi
+    Workers --> OR
+```
+
+## Metrics Methodology
+
+DragonLens computes visibility metrics designed for LLM response analysis:
+
+| Metric | Formula | Description |
+|--------|---------|-------------|
+| **Share of Voice** | DCG-weighted: `1/log2(rank+1)` | Position-weighted presence relative to competitors |
+| **Mention Rate** | `mentions / prompts` | Percentage of prompts where brand appears |
+| **Top-Spot Share** | `#rank1 / prompts` | How often the brand is recommended first |
+| **Sentiment Index** | `positive / total` | Ratio of positive mentions |
+| **Dragon Visibility Score** | `0.6×SoV + 0.2×TopSpot + 0.2×Sentiment` | Composite 0-100 score |
 
 ## Quick Start
 
-### Prerequisites
-
-- **Docker** (for Redis)
-- **macOS** (for automatic Ollama installation via Homebrew)
-- Python 3.11+ will be managed by Poetry
-
-### One-Command Setup
+**Prerequisites:** Docker, Python 3.11+, macOS (for Ollama auto-install)
 
 ```bash
-# Install everything (Poetry, Ollama, Qwen model, dependencies)
+# One-command setup (installs Poetry, Ollama, Qwen model, dependencies)
 make setup
-```
 
-This will:
-- Install Poetry if not present
-- Install Ollama if not present (macOS only)
-- Install Python dependencies
-- Pull Qwen 2.5:7b model
-- Set up the environment
-
-### Configuration
-
-```bash
-# Copy environment template and configure (optional)
-cp .env.example .env
-# Edit .env if you need to use remote LLMs (DeepSeek, Kimi, OpenRouter)
-```
-
-### Database Migration (Existing DB)
-
-DragonLens uses PostgreSQL for `DATABASE_URL` by default and applies schema changes via Alembic on API startup.
-
-### Running All Services
-
-```bash
-# Start Redis, Ollama, FastAPI, and Celery in background
+# Start all services (PostgreSQL, Redis, Ollama, API, Celery, Streamlit)
 make run
 ```
 
-This will start:
-- **PostgreSQL**: Docker container on port 5432
-- **Redis**: Docker container on port 6379
-- **Ollama**: Local LLM service
-- **FastAPI**: REST API on http://localhost:8000
-- **Celery**: Background task worker
-
 Access the application:
-- **API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
+- **UI:** http://localhost:8501
+- **API Docs:** http://localhost:8000/docs
 
-### Stopping Services
+For remote LLMs (DeepSeek, Kimi), add your API keys in the UI under "API Keys".
 
-```bash
-# Stop all services
-make stop
-```
+## Project Status
 
-### Development Mode (with auto-reload)
+### Implemented
+- [x] Multi-LLM support (Qwen, DeepSeek, Kimi, OpenRouter)
+- [x] End-to-end tracking pipeline
+- [x] Brand/product NER extraction
+- [x] Sentiment analysis (Erlangshen + Qwen fallback)
+- [x] Ranking detection and scoring
+- [x] Visibility metrics calculation
+- [x] PostgreSQL + SQLite support
+- [x] Streamlit UI with 6 pages
+- [x] API key management (encrypted storage)
+- [x] Entity consolidation and feedback system
+- [x] WikiData integration for validation
 
-```bash
-# Start services with FastAPI auto-reload
-make dev
-```
-
-This starts Redis and Ollama, then runs FastAPI with auto-reload enabled. Keep this running and start Celery in another terminal if needed.
-
-## Usage
-
-1. **Setup**: Go to "Setup & Start" page
-   - Enter your vertical (e.g., "SUV Cars")
-   - Add brands with Chinese/English aliases
-   - Add prompts to ask LLMs
-   - Select model (Qwen, DeepSeek, Kimi, OpenRouter)
-   - Click "Start Tracking"
-
-2. **API Keys (for remote models)**: Go to "API Keys" page
-   - Choose provider (DeepSeek, Kimi, OpenRouter)
-   - Paste your API key and save
-   - For DeepSeek/Kimi, a vendor key is always used first if present
-   - Use OpenRouter when no vendor key is configured or when provider is set to OpenRouter
-
-3. **View Results**: Go to "View Results" page
-   - Select vertical and model
-   - View mention rates, rankings, sentiment
-   - Analyze brand visibility metrics
-
-4. **Track History**: Go to "Runs History" page
-   - See all tracking runs
-   - Monitor job status
-   - View run details
-
-## Supported Models
-
-- **Local (Ollama / Qwen)**: `qwen2.5:7b-instruct-q4_0`, `qwen2.5:14b-instruct-q4_0`, `qwen2.5:32b-instruct-q4_0`
-- **DeepSeek (vendor API)**: `deepseek-chat`, `deepseek-reasoner`
-- **Kimi (Moonshot vendor API)**: `moonshot-v1-8k`, `moonshot-v1-32k`, `moonshot-v1-128k`
-- **OpenRouter**: Any model ID, e.g. `baidu/ernie-4.5-300b-a47b`, `bytedance-seed/seed-1.6-flash`
+### Planned
+- [ ] Scheduled tracking jobs (Celery Beat)
+- [ ] Web search integration for Kimi
+- [ ] Multi-tenant user accounts
+- [ ] Cloud deployment configs (AWS/GCP)
 
 ## Project Structure
 
 ```
 src/
-├── api/          # FastAPI REST API
-├── models/       # Database models (SQLAlchemy)
-├── services/     # LLM clients (Ollama, DeepSeek, Kimi)
-├── workers/      # Celery background tasks
-├── ui/           # Streamlit interface
-└── config.py     # Configuration management
+├── api/           # FastAPI REST endpoints
+├── models/        # SQLAlchemy ORM models
+├── services/      # LLM clients, NER, translation
+├── workers/       # Celery background tasks
+├── ui/            # Streamlit pages
+└── prompts/       # LLM prompt templates
 
 tests/
-├── unit/         # Unit tests
-└── integration/  # Integration tests
+├── unit/          # Unit tests (27)
+├── integration/   # Integration tests (25)
+└── smoke/         # End-to-end tests (3)
 ```
 
 ## Development
 
-### Testing
-
 ```bash
-# Run all tests (unit + integration + smoke)
-make test
-
-# Run specific test suites
-make test-unit          # Unit tests only
-make test-integration   # Integration tests only
-make test-smoke         # Smoke tests only
-
-# Run tests with coverage report
-make test-coverage
+make test          # Run all tests
+make test-coverage # Tests with coverage report
+make status        # Check service status
+make logs          # Tail all service logs
+make stop          # Stop all services
 ```
 
-### Code Quality
-
-```bash
-# Format code
-poetry run black src/ tests/
-
-# Lint
-poetry run ruff check src/
-
-# Type check
-poetry run mypy src/
-```
-
-### Service Management
-
-```bash
-# Check status of all services
-make status
-
-# Watch live service status and recent logs (refreshes every 2s)
-make watch
-
-# View all logs (API + Celery + Redis)
-make logs
-
-# View individual service logs
-make logs-api      # FastAPI logs only
-make logs-celery   # Celery worker logs only
-make logs-redis    # Redis logs only
-
-# Clean up temporary files and logs
-make clean
-```
-
-## Available Make Commands
-
-| Command | Description |
-|---------|-------------|
-| `make help` | Show all available commands |
-| `make setup` | Complete setup - install all dependencies and models |
-| `make check-deps` | Check if all dependencies are installed |
-| `make install-poetry` | Install Poetry if not already installed |
-| `make install-ollama` | Install Ollama if not already installed (macOS only) |
-| `make install-deps` | Install Python dependencies with Poetry |
-| `make pull-qwen` | Pull Qwen model for Ollama |
-| `make run` | Start all services (Redis, Ollama, API, Celery) |
-| `make dev` | Start services in development mode (with auto-reload) |
-| `make stop` | Stop all services |
-| `make start-redis` | Start Redis using Docker Compose |
-| `make stop-redis` | Stop Redis |
-| `make start-ollama` | Start Ollama service |
-| `make start-api` | Start FastAPI server |
-| `make start-celery` | Start Celery worker |
-| `make test` | Run all tests (unit + integration + smoke) |
-| `make test-unit` | Run unit tests only |
-| `make test-integration` | Run integration tests only |
-| `make test-smoke` | Run smoke tests only |
-| `make test-coverage` | Run tests with coverage report |
-| `make status` | Show status of all services |
-| `make watch` | Watch live service status and recent logs |
-| `make logs` | Tail all logs (API + Celery + Redis) |
-| `make logs-api` | Tail FastAPI logs only |
-| `make logs-celery` | Tail Celery worker logs only |
-| `make logs-redis` | Tail Redis logs only |
-| `make clean` | Clean up temporary files and logs |
-
-## Architecture
-
-- **Backend**: FastAPI for REST API
-- **Task Queue**: Celery + Redis (via Docker Compose) for async processing
-- **Database**: SQLAlchemy (SQLite default, Postgres ready)
-- **Frontend**: Streamlit for UI
-- **LLMs**: Ollama (local Qwen) + Remote APIs (DeepSeek, Kimi, OpenRouter)
-- **Orchestration**: Make for build automation, Docker Compose for Redis
-
-## Roadmap
-
-### V1 (Current)
-- ✅ Local Qwen via Ollama
-- ✅ Basic tracking pipeline
-- ✅ Streamlit UI
-- ✅ SQLite storage
-- ⏳ Brand mention extraction
-- ⏳ Sentiment analysis
-- ⏳ Ranking detection
-
-### V2 (Future)
-- ⬜ DeepSeek integration
-- ⬜ Kimi integration with web search
-- ⬜ Scheduled tracking jobs
-- ⬜ Advanced metrics (DVS, ASoV)
-- ⬜ PostgreSQL support
-- ⬜ Multi-tenant support
+See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
 
 ## License
 
-MIT
-
-## Contributing
-
-See [CLAUDE.md](CLAUDE.md) for development guidelines and architecture details.
+[MIT](LICENSE)
