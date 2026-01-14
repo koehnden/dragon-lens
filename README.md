@@ -8,7 +8,7 @@
 
 > **Sabbatical Project** — This is an active work-in-progress (v0.1) being built during my travels.
 > The backend architecture, LLM integrations, and metrics pipeline are fully functional.
-> UI polish and scheduling features are still in progress.
+> Brand and Product extraction still need fine-tuning and UI is still in progress.
 
 ![DragonLens Results Dashboard](result-page-screenshot.png)
 
@@ -124,9 +124,14 @@ For remote LLMs (DeepSeek, Kimi), add your API keys in the UI under "API Keys".
 - [x] Entity consolidation and feedback system
 - [x] WikiData integration for validation
 
-### Planned
+### v1 Roadmap
+- [ ] Feedback and self-learning system for brand/product extraction
+- [ ] Extraction of product characteristics
+- [ ] Auto-generate prompts by vertical and persona(s)
+- [ ] Web search integration for relevant Chinese consumer web
+
+### Future (v2+)
 - [ ] Scheduled tracking jobs (Celery Beat)
-- [ ] Web search integration for Kimi
 - [ ] Multi-tenant user accounts
 - [ ] Cloud deployment configs (AWS/GCP)
 
