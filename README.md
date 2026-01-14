@@ -186,7 +186,43 @@ Access the application:
 - **UI:** http://localhost:8501
 - **API Docs:** http://localhost:8000/docs
 
-For remote LLMs (DeepSeek, Kimi), add your API keys in the UI under "API Keys".
+## LLM Configuration
+
+Out of the box, DragonLens uses **Qwen 2.5 7B via Ollama** for tracking—no API keys required. To use remote LLMs (DeepSeek, Kimi, or OpenRouter models), you need to add API keys.
+
+### Option 1: Via UI (Recommended)
+
+1. Start the application with `make run`
+2. Open the UI at http://localhost:8501
+3. Navigate to **API Keys** in the sidebar
+4. Select a provider and paste your API key
+5. Keys are encrypted and stored in the database
+
+### Option 2: Via Environment Variables
+
+Add keys to your `.env` file in the project root:
+
+```bash
+# DeepSeek
+DEEPSEEK_API_KEY=sk-your-deepseek-key
+
+# Kimi (Moonshot)
+KIMI_API_KEY=sk-your-kimi-key
+
+# OpenRouter (access to 100+ models)
+OPENROUTER_API_KEY=sk-or-v1-your-openrouter-key
+```
+
+Environment variables take precedence over UI-configured keys.
+
+### Supported Providers
+
+| Provider | Models | Get API Key |
+|----------|--------|-------------|
+| **Ollama** (local) | Qwen 2.5 7B | No key needed |
+| **DeepSeek** | DeepSeek-V3, DeepSeek-R1 | [platform.deepseek.com](https://platform.deepseek.com) |
+| **Kimi** | Moonshot-v1 | [platform.moonshot.cn](https://platform.moonshot.cn) |
+| **OpenRouter** | Claude, GPT-4, Llama, etc. | [openrouter.ai](https://openrouter.ai) |
 
 ## Project Status
 
