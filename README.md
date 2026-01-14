@@ -91,6 +91,75 @@ DragonLens computes visibility metrics designed for LLM response analysis:
 | **Sentiment Index** | `positive / total` | Ratio of positive mentions |
 | **Dragon Visibility Score** | `0.6×SoV + 0.2×TopSpot + 0.2×Sentiment` | Composite 0-100 score |
 
+## Extraction Pipeline
+
+The system uses a two-stage extraction approach to identify brands and products from Chinese LLM responses:
+
+```mermaid
+flowchart TB
+    subgraph Input
+        P[Prompt EN/ZH]
+    end
+
+    subgraph Translation
+        P --> T1[Translate to Chinese]
+        T1 --> ZH[Chinese Prompt]
+    end
+
+    subgraph LLM Query
+        ZH --> LLM[Chinese LLM]
+        LLM --> A[Chinese Answer]
+        A --> T2[Translate to English]
+    end
+
+    subgraph Stage 1: Per-Prompt Extraction
+        A --> NER[Qwen NER]
+        NER --> BD[Brand Discovery]
+        NER --> PD[Product Discovery]
+        BD --> PM[Position Matching]
+        PD --> PM
+        PM --> SN[Snippet Extraction]
+        SN --> RK[Rank Detection]
+    end
+
+    subgraph Stage 2: Run Consolidation
+        RK --> AGG[Aggregate Entities]
+        AGG --> NORM[Normalize via Qwen]
+        NORM --> VAL[Validate via WikiData]
+        VAL --> MAP[Map Products → Brands]
+    end
+
+    subgraph Analysis
+        MAP --> SENT[Sentiment Analysis]
+        SENT --> MET[Metrics Calculation]
+    end
+
+    subgraph Output
+        MET --> DVS[Dragon Visibility Score]
+        T2 --> OUT[Bilingual Results]
+        DVS --> OUT
+    end
+```
+
+### How It Works
+
+| Stage | Process | Method |
+|-------|---------|--------|
+| **Translation** | Convert EN prompts to ZH, translate LLM answers back | Qwen 2.5 via Ollama |
+| **Brand/Product NER** | Extract entity names from Chinese text | Qwen zero-shot extraction |
+| **Position Matching** | Locate mentions and extract surrounding context | Substring matching with 50-char snippets |
+| **Rank Detection** | Identify if answer is a ranked list; extract positions | Heuristic (numbered lists, bullets) |
+| **Consolidation** | Normalize variants, validate entities, map relationships | Qwen normalization + WikiData lookup |
+| **Sentiment** | Classify each mention as positive/neutral/negative | Erlangshen-RoBERTa-110M (HuggingFace) |
+
+### Current Limitations
+
+- **NER accuracy** — Relies on Qwen zero-shot extraction; may miss uncommon brand spellings or novel products
+- **Snippet context** — Fixed 50-character window can truncate important context in long answers
+- **Sentiment scope** — Analyzes isolated snippets, not full answer context
+- **Alias matching** — Requires explicit alias definitions or WikiData validation; dynamic variants may be missed
+- **Single-model extraction** — No ensemble verification; extraction errors propagate to metrics
+
 ## Requirements
 
 | Component | Minimum | Recommended |
