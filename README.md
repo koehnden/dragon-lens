@@ -15,11 +15,12 @@
 ## The Problem
 
 Western brands have zero visibility into how Chinese AI assistants discuss their products. Almost all LLM tracking tools exclusively focus on western LLMs like ChatGPT, Gemini, PerplexityAI etc, but those tools are blocked in China and thus not used by its nearly 900 million consumers.
-DragonLens fills this gap. It's a vibility tool specifically build for the Chinese Market. It queries Chinese LLMs with natural prompts, extracts brand mentions and rankings, analyzes sentiment, and calculates visibility metrics.
+DragonLens fills this gap. It's a visibility tool specifically build for the Chinese Market. It queries Chinese LLMs with natural prompts, extracts brand mentions and rankings, analyzes sentiment, and calculates visibility metrics.
 
 ## Key Features
 
 - **Multi-LLM Tracking** — DeepSeek, Kimi, Qwen, Bytedance's seed-1.6, Baiu's ERNIE, MinMax2.1 and possibly more models via OpenRouter
+- **Local-First** — Runs entirely on your machine with Qwen 2.5 7B via Ollama; no API keys required to get started
 - **Automated NER Pipeline** — Extract brands and products from Chinese responses with multi-stage validation
 - **Visibility Metrics** — Share of Voice, mention rates, ranking positions, sentiment analysis
 - **Bilingual Processing** — Automatic EN/ZH translation for prompts and responses
@@ -90,9 +91,19 @@ DragonLens computes visibility metrics designed for LLM response analysis:
 | **Sentiment Index** | `positive / total` | Ratio of positive mentions |
 | **Dragon Visibility Score** | `0.6×SoV + 0.2×TopSpot + 0.2×Sentiment` | Composite 0-100 score |
 
-## Quick Start
+## Requirements
 
-**Prerequisites:** Docker, Python 3.11+, macOS (for Ollama auto-install)
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| RAM | 16 GB | 32 GB |
+| Storage | 20 GB free | 50 GB free |
+| OS | macOS 12+ / Linux | macOS (Apple Silicon) |
+| Python | 3.11+ | 3.11+ |
+| Docker | Required | Required |
+
+The local Qwen 2.5 7B model requires ~8 GB RAM. Apple Silicon Macs with unified memory run inference efficiently.
+
+## Quick Start
 
 ```bash
 # One-command setup (installs Poetry, Ollama, Qwen model, dependencies)
@@ -161,7 +172,7 @@ make logs          # Tail all service logs
 make stop          # Stop all services
 ```
 
-See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
+Run `make help` for all available commands.
 
 ## License
 
