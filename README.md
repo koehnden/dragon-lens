@@ -143,22 +143,22 @@ flowchart TB
 
 ### How It Works
 
-| Stage | Process | Method |
-|-------|---------|--------|
-| **Translation** | Convert EN prompts to ZH, translate LLM answers back | Qwen 2.5 via Ollama |
-| **Brand/Product NER** | Extract entity names from Chinese text | Qwen zero-shot extraction |
-| **Position Matching** | Locate mentions and extract surrounding context | Substring matching with 50-char snippets |
-| **Rank Detection** | Identify if answer is a ranked list; extract positions | Heuristic (numbered lists, bullets) |
-| **Consolidation** | Normalize variants, validate entities, map relationships | Qwen normalization + WikiData lookup |
-| **Sentiment** | Classify each mention as positive/neutral/negative | Erlangshen-RoBERTa-110M (HuggingFace) |
+| Stage | Process | Method                                                     |
+|-------|---------|------------------------------------------------------------|
+| **Translation** | Convert EN prompts to ZH, translate LLM answers back | Qwen 2.5 via Ollama                                        |
+| **Brand/Product NER** | Extract entity names from Chinese text | Qwen zero-shot extraction (adding automated Few-shots WIP) |
+| **Position Matching** | Locate mentions and extract surrounding context | Substring matching with 50-char snippets                   |
+| **Rank Detection** | Identify if answer is a ranked list; extract positions | Heuristic (numbered lists, bullets)                        |
+| **Consolidation** | Normalize variants, validate entities, map relationships | Qwen normalization + WikiData lookup                       |
+| **Sentiment** | Classify each mention as positive/neutral/negative | Erlangshen-RoBERTa-110M (HuggingFace)                      |
 
 ### Current Limitations
 
-- **NER accuracy** — Relies on Qwen zero-shot extraction; may miss uncommon brand spellings or novel products
+- **NER accuracy** — Relies on Qwen zero-shot extraction; may miss uncommon brand spellings or novel products -> WID: adding automatic few-shot examples
 - **Snippet context** — Fixed 50-character window can truncate important context in long answers
 - **Sentiment scope** — Analyzes isolated snippets, not full answer context
 - **Alias matching** — Requires explicit alias definitions or WikiData validation; dynamic variants may be missed
-- **Single-model extraction** — No ensemble verification; extraction errors propagate to metrics
+- **Single-model extraction** — No ensemble verification; extraction errors propagate to metrics -> WIP: use a more capable model (e.g. deepseek) as correction model
 
 ## Requirements
 
