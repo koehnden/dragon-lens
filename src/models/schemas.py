@@ -645,3 +645,29 @@ class FeedbackVerticalAliasResponse(BaseModel):
     canonical_vertical_id: int
     canonical_vertical_name: str
     alias_created: bool
+
+
+class FeatureScoreSchema(BaseModel):
+    feature_id: int
+    feature_name_zh: str
+    feature_name_en: Optional[str]
+    frequency: int
+    positive_count: int
+    neutral_count: int
+    negative_count: int
+    combined_score: float
+
+
+class EntityFeatureDataSchema(BaseModel):
+    entity_id: int
+    entity_name: str
+    entity_type: str
+    features: List[FeatureScoreSchema] = Field(default_factory=list)
+
+
+class RunFeatureMetricsResponse(BaseModel):
+    run_id: int
+    vertical_id: int
+    vertical_name: str
+    top_features: List[str] = Field(default_factory=list)
+    entities: List[EntityFeatureDataSchema] = Field(default_factory=list)
