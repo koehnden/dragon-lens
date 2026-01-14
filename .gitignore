@@ -216,3 +216,4 @@ AGENTS.md
 prompt.md
 .claude/
 .clinerules/
+.idea*
