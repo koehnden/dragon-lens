@@ -14,13 +14,12 @@
 
 ## The Problem
 
-Western brands have zero visibility into how Chinese AI assistants discuss their products. Unlike traditional SEO, there are no tools to monitor or optimize for "LLM visibility" — the emerging battleground where AI recommends products to millions of users.
-
-DragonLens fills this gap: it queries Chinese LLMs with natural prompts, extracts brand mentions and rankings, analyzes sentiment, and tracks visibility metrics over time.
+Western brands have zero visibility into how Chinese AI assistants discuss their products. Almost all LLM tracking tools exclusively focus on western LLMs like ChatGPT, Gemini, PerplexityAI etc, but those tools are blocked in China and thus not used by its nearly 900 million consumers.
+DragonLens fills this gap. It's a vibility tool specifically build for the Chinese Market. It queries Chinese LLMs with natural prompts, extracts brand mentions and rankings, analyzes sentiment, and calculates visibility metrics.
 
 ## Key Features
 
-- **Multi-LLM Tracking** — Query Qwen (local), DeepSeek, Kimi, and 100+ models via OpenRouter
+- **Multi-LLM Tracking** — DeepSeek, Kimi, Qwen, Bytedance's seed-1.6, Baiu's ERNIE, MinMax2.1 and possibly more models via OpenRouter
 - **Automated NER Pipeline** — Extract brands and products from Chinese responses with multi-stage validation
 - **Visibility Metrics** — Share of Voice, mention rates, ranking positions, sentiment analysis
 - **Bilingual Processing** — Automatic EN/ZH translation for prompts and responses

@@ -133,7 +133,7 @@ celerybeat.pid
 
 # DragonLens runtime files
 *.pid
-dragonlens.db
+dragonlens.db*
 
 # SageMath parsed files
 *.sage.py
@@ -214,3 +214,5 @@ __marimo__/
 CLAUDE.md
 AGENTS.md
 prompt.md
+.claude/
+.clinerules/
