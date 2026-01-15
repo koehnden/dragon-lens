@@ -109,6 +109,7 @@ def test_ai_corrections_flow_creates_report_and_review_items(client, db_session,
     assert body["run_id"] == run.id
     assert body["brands"]["precision"] == pytest.approx(1.0)
     assert len(body["pending_review_items"]) == 1
+    assert body["pending_review_items"][0]["run_id"] == run.id
 
     item_id = body["pending_review_items"][0]["id"]
     apply_resp = client.post(

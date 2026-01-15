@@ -18,7 +18,7 @@ from services.ai_corrections.runner import run_audit_batches
 from services.ai_corrections.service import auto_feedback_payload, build_report
 from services.feedback_service import submit_feedback
 from services.remote_llms import LLMRouter
-from services.run_inspector_export import build_run_inspector_export
+from services.run_inspector_export import build_run_inspector_export, build_vertical_inspector_export
 from models.schemas import FeedbackSubmitRequest
 
 
@@ -47,31 +47,27 @@ async def execute_ai_correction_async(db: Session, knowledge_db: Session, audit_
 
 
 def _run_sync(db: Session, knowledge_db: Session, audit) -> dict:
-    run = _run_row(db, audit.run_id)
-    vertical = _vertical_row(db, run.vertical_id)
-    export = build_run_inspector_export(db, run.id)
+    run, vertical, export, run_id, tracking_vertical_id = _audit_context(db, audit)
     thresholds = merge_thresholds(audit.thresholds)
     min_levels = merge_min_levels(audit.min_confidence_levels)
     items, tokens_in, tokens_out = _run_coroutine(_audit_items(db, audit, vertical.name, export))
-    report = build_report(export, items, thresholds, min_levels, run.id, audit.vertical_id, run.vertical_id)
-    applied = _apply_feedback(db, knowledge_db, run, audit, report)
+    report = build_report(export, items, thresholds, min_levels, run_id, audit.vertical_id, tracking_vertical_id)
+    applied = _apply_feedback(db, knowledge_db, run, audit, report) if run else {}
     save_audit_results(knowledge_db, audit, report["metrics"], report["clusters"], applied, tokens_in, tokens_out, None)
-    add_review_items(knowledge_db, audit.id, audit.run_id, report["review_suggestions"])
+    add_review_items(knowledge_db, audit.id, report["review_suggestions"])
     set_audit_completed(knowledge_db, audit)
     return {"audit_id": audit.id, "status": audit.status.value}
 
 
 async def _run_async(db: Session, knowledge_db: Session, audit) -> dict:
-    run = _run_row(db, audit.run_id)
-    vertical = _vertical_row(db, run.vertical_id)
-    export = build_run_inspector_export(db, run.id)
+    run, vertical, export, run_id, tracking_vertical_id = _audit_context(db, audit)
     thresholds = merge_thresholds(audit.thresholds)
     min_levels = merge_min_levels(audit.min_confidence_levels)
     items, tokens_in, tokens_out = await _audit_items(db, audit, vertical.name, export)
-    report = build_report(export, items, thresholds, min_levels, run.id, audit.vertical_id, run.vertical_id)
-    applied = _apply_feedback(db, knowledge_db, run, audit, report)
+    report = build_report(export, items, thresholds, min_levels, run_id, audit.vertical_id, tracking_vertical_id)
+    applied = _apply_feedback(db, knowledge_db, run, audit, report) if run else {}
     save_audit_results(knowledge_db, audit, report["metrics"], report["clusters"], applied, tokens_in, tokens_out, None)
-    add_review_items(knowledge_db, audit.id, audit.run_id, report["review_suggestions"])
+    add_review_items(knowledge_db, audit.id, report["review_suggestions"])
     set_audit_completed(knowledge_db, audit)
     return {"audit_id": audit.id, "status": audit.status.value}
 
@@ -111,6 +107,18 @@ def _vertical_row(db: Session, vertical_id: int) -> Vertical:
     if not vertical:
         raise ValueError(f"Vertical {vertical_id} not found")
     return vertical
+
+
+def _audit_context(db: Session, audit) -> tuple[Run | None, Vertical, list[dict], int, int]:
+    if str(getattr(audit, "scope", "run")) == "vertical":
+        tracking_vertical_id = int(getattr(audit, "tracking_vertical_id", 0) or 0)
+        vertical = _vertical_row(db, tracking_vertical_id)
+        export = build_vertical_inspector_export(db, tracking_vertical_id)
+        return None, vertical, export, 0, tracking_vertical_id
+    run = _run_row(db, int(audit.run_id))
+    vertical = _vertical_row(db, int(run.vertical_id))
+    export = build_run_inspector_export(db, int(run.id))
+    return run, vertical, export, int(run.id), int(run.vertical_id)
 
 
 def _run_coroutine(coro):

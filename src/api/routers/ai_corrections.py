@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 
 from models import Run, RunStatus, Vertical, get_db
 from models.knowledge_database import get_knowledge_db, get_knowledge_db_write
-from models.knowledge_domain import KnowledgeAIAuditReviewItem, KnowledgeAIAuditReviewStatus
+from models.knowledge_domain import (
+    KnowledgeAIAuditReviewItem,
+    KnowledgeAIAuditReviewStatus,
+    KnowledgeVertical,
+)
 from models.schemas import (
     AICorrectionCreateRequest,
     AICorrectionReportResponse,
@@ -26,6 +30,7 @@ from services.feedback_service import submit_feedback
 from services.knowledge_verticals import ensure_vertical_alias, get_or_create_vertical
 from services.ai_corrections.execution import execute_ai_correction_async
 from workers.tasks import run_ai_correction
+from services.knowledge_verticals import resolve_knowledge_vertical_id
 
 router = APIRouter()
 
@@ -48,11 +53,11 @@ async def start_ai_correction(
     thresholds = merge_thresholds((payload.thresholds.model_dump(by_alias=True) if payload and payload.thresholds else None))
     min_levels = merge_min_levels((payload.min_confidence_levels.model_dump(by_alias=True) if payload and payload.min_confidence_levels else None))
     dry_run = bool(payload.dry_run) if payload and payload.dry_run is not None else False
-    knowledge_vertical = get_or_create_vertical(knowledge_db, vertical.name)
-    ensure_vertical_alias(knowledge_db, knowledge_vertical.id, vertical.name)
+    knowledge_vertical = _canonical_vertical(knowledge_db, vertical.name)
     audit = create_audit_run(
         knowledge_db,
         run.id,
+        run.vertical_id,
         knowledge_vertical.id,
         resolved.requested_provider,
         resolved.requested_model,
@@ -197,6 +202,7 @@ def _cluster(item: dict) -> dict:
 def _review_item_response(item) -> dict:
     return {
         "id": int(item.id),
+        "run_id": int(item.run_id),
         "llm_answer_id": int(item.llm_answer_id),
         "category": item.category,
         "action": item.action,
@@ -206,3 +212,14 @@ def _review_item_response(item) -> dict:
         "evidence_quote_zh": item.evidence_quote_zh,
         "feedback_payload": item.feedback_payload or {},
     }
+
+
+def _canonical_vertical(knowledge_db: Session, vertical_name: str) -> KnowledgeVertical:
+    resolved_id = resolve_knowledge_vertical_id(knowledge_db, vertical_name)
+    if resolved_id:
+        row = knowledge_db.query(KnowledgeVertical).filter(KnowledgeVertical.id == int(resolved_id)).first()
+        if row:
+            return row
+    row = get_or_create_vertical(knowledge_db, vertical_name)
+    ensure_vertical_alias(knowledge_db, row.id, vertical_name)
+    return row
