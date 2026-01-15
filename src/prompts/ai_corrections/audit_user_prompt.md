@@ -9,7 +9,7 @@ You are auditing an entity extraction system that extracts brands and products f
 
 You will receive a JSON array of up to 5 items. Each item contains:
 - prompt_zh / prompt_eng -> prompt to the llm in Chinese / English
-- prompt_response_zh / prompt_response_en -> prompt response from the llm in Chinese / English, This is the text entity extraction system extracted brands/products from
+- prompt_response_zh / prompt_response_en -> prompt response from the llm in Chinese / English, This is the text entity extraction system extracted brands/products from. From here you need to extract the ground truth!
 - brands_extracted[] with brand_zh/brand_en -> extracted brands, text_snippet_zh/text_snippet_en -> text snippet from the prompt response the llm found the brand/product, rank -> position of the brand/product in the prompt (brands that occured first get rank=1), products_zh/products_en -> products extracted
 The input JSON always looks like this:
 {
@@ -41,11 +41,11 @@ Task:
 
 Rules:
 - Only use information from the provided responses. Do not invent entities.
-- Evidence must be a short exact quote from prompt_response_zh.
 - Provide both confidence_level and confidence_score_0_1.
 - confidence_level must be one of: LOW, MEDIUM, HIGH, VERY_HIGH.
 - confidence_score_0_1 must be a number between 0 and 1.
-- if the extraction system made a mistake provide a reason, e.g. "brand not relevant for the vertical" or "product has wrong brand" etc.
+- Evidence must be a short exact quote from prompt_response_zh.
+- if the extraction system made a mistake provide a reason, e.g. "brand not relevant for the vertical" or "product has wrong brand" etc along with the Evidence
 
 Return ONLY valid JSON with this shape:
 {
