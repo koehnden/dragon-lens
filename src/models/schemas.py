@@ -312,6 +312,7 @@ class AICorrectionCluster(BaseModel):
 
 class AICorrectionReviewItem(BaseModel):
     id: int
+    run_id: int
     llm_answer_id: int
     category: str
     action: str

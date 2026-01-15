@@ -189,6 +189,140 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/verticals/{vertical_id}/ai-corrections:
+    post:
+      tags:
+      - verticals
+      summary: Start Vertical AI Correction
+      description: Start an AI-powered correction run for all completed tracking runs in this vertical (dry-run only).
+      operationId: start_vertical_ai_correction_api_v1_verticals__vertical_id__ai_corrections_post
+      parameters:
+      - name: vertical_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Vertical Id
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AICorrectionCreateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AICorrectionRunResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - verticals
+      summary: Get Latest Vertical AI Correction
+      description: Get the latest AI correction run metadata for this vertical.
+      operationId: get_latest_vertical_ai_correction_api_v1_verticals__vertical_id__ai_corrections_get
+      parameters:
+      - name: vertical_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Vertical Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                anyOf:
+                - $ref: '#/components/schemas/AICorrectionRunResponse'
+                - type: 'null'
+                title: Response Get Latest Vertical AI Correction Api V1 Verticals  Vertical Id  Ai Corrections Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/verticals/{vertical_id}/ai-corrections/{audit_id}/report:
+    get:
+      tags:
+      - verticals
+      summary: Get Vertical AI Correction Report
+      description: Get metrics, clusters, and pending review items for a vertical AI correction run.
+      operationId: get_vertical_ai_correction_report_api_v1_verticals__vertical_id__ai_corrections__audit_id__report_get
+      parameters:
+      - name: vertical_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Vertical Id
+      - name: audit_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Audit Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AICorrectionReportResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/verticals/{vertical_id}/ai-corrections/{audit_id}/review-items/{item_id}/apply:
+    post:
+      tags:
+      - verticals
+      summary: Apply Vertical AI Review Item
+      description: Apply a low-confidence AI suggestion after human review (stored as user feedback in the knowledge database).
+      operationId: apply_vertical_ai_review_item_api_v1_verticals__vertical_id__ai_corrections__audit_id__review_items__item_id__apply_post
+      parameters:
+      - name: vertical_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Vertical Id
+      - name: audit_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Audit Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Item Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackSubmitResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/verticals/{vertical_id}/brands:
     get:
       tags:
@@ -2953,6 +3087,9 @@ components:
         id:
           type: integer
           title: Id
+        run_id:
+          type: integer
+          title: Run Id
         llm_answer_id:
           type: integer
           title: Llm Answer Id
@@ -2983,6 +3120,7 @@ components:
       type: object
       required:
       - id
+      - run_id
       - llm_answer_id
       - category
       - action

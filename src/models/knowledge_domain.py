@@ -210,7 +210,9 @@ class KnowledgeAIAuditRun(KnowledgeBase):
     __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default="run", index=True)
     run_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    tracking_vertical_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("knowledge_verticals.id"), nullable=False, index=True)
     requested_provider: Mapped[str] = mapped_column(String(50), nullable=False)
     requested_model: Mapped[str] = mapped_column(String(255), nullable=False)

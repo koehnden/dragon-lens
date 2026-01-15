@@ -144,8 +144,10 @@ def _review_items(suggestions: list[dict[str, Any]], run_id: int, vertical_id: i
 
 
 def _review_item(suggestion: dict[str, Any], run_id: int, vertical_id: int, canonical_vertical_id: int) -> dict[str, Any]:
-    payload = feedback_payload(run_id, vertical_id, canonical_vertical_id, [suggestion])
+    suggestion_run_id = int(suggestion.get("run_id") or run_id or 0)
+    payload = feedback_payload(suggestion_run_id, vertical_id, canonical_vertical_id, [suggestion])
     return {
+        "run_id": suggestion_run_id,
         "llm_answer_id": int(suggestion.get("llm_answer_id") or 0),
         "category": suggestion.get("category") or "",
         "action": suggestion.get("action") or "",

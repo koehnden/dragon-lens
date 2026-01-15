@@ -16,6 +16,7 @@ from models.knowledge_domain import (
 def create_audit_run(
     knowledge_db: Session,
     run_id: int,
+    tracking_vertical_id: int,
     vertical_id: int,
     requested_provider: str,
     requested_model: str,
@@ -25,9 +26,12 @@ def create_audit_run(
     thresholds: dict[str, Any],
     min_confidence_levels: dict[str, Any],
     dry_run: bool,
+    scope: str = "run",
 ) -> KnowledgeAIAuditRun:
     row = KnowledgeAIAuditRun(
+        scope=scope,
         run_id=run_id,
+        tracking_vertical_id=tracking_vertical_id,
         vertical_id=vertical_id,
         requested_provider=requested_provider,
         requested_model=requested_model,
@@ -50,7 +54,19 @@ def create_audit_run(
 def latest_audit_run(knowledge_db: Session, run_id: int) -> KnowledgeAIAuditRun | None:
     return (
         knowledge_db.query(KnowledgeAIAuditRun)
-        .filter(KnowledgeAIAuditRun.run_id == run_id)
+        .filter(KnowledgeAIAuditRun.run_id == run_id, KnowledgeAIAuditRun.scope == "run")
+        .order_by(KnowledgeAIAuditRun.id.desc())
+        .first()
+    )
+
+
+def latest_vertical_audit_run(knowledge_db: Session, tracking_vertical_id: int) -> KnowledgeAIAuditRun | None:
+    return (
+        knowledge_db.query(KnowledgeAIAuditRun)
+        .filter(
+            KnowledgeAIAuditRun.tracking_vertical_id == tracking_vertical_id,
+            KnowledgeAIAuditRun.scope == "vertical",
+        )
         .order_by(KnowledgeAIAuditRun.id.desc())
         .first()
     )
@@ -96,19 +112,18 @@ def save_audit_results(
 def add_review_items(
     knowledge_db: Session,
     audit_id: int,
-    run_id: int,
     review_items: list[dict[str, Any]],
 ) -> list[KnowledgeAIAuditReviewItem]:
-    rows = [_review_row(audit_id, run_id, item) for item in review_items]
+    rows = [_review_row(audit_id, item) for item in review_items]
     knowledge_db.add_all(rows)
     knowledge_db.flush()
     return rows
 
 
-def _review_row(audit_id: int, run_id: int, item: dict[str, Any]) -> KnowledgeAIAuditReviewItem:
+def _review_row(audit_id: int, item: dict[str, Any]) -> KnowledgeAIAuditReviewItem:
     return KnowledgeAIAuditReviewItem(
         audit_run_id=audit_id,
-        run_id=run_id,
+        run_id=int(item.get("run_id") or 0),
         llm_answer_id=int(item.get("llm_answer_id") or 0),
         category=str(item.get("category") or ""),
         action=str(item.get("action") or ""),

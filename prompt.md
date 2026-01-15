@@ -18,6 +18,89 @@ Update the plan! Do not code yet!
 On the API, make sure that the llm model we use for `ai-correct` is a parameter and we can use all models that are available in `src/services/remote_llms.py`. deepseek-reasoner should be the default model for now.
 Update the plan! Do not code yet!
 
-If openrouter key is available we can use it as a backup!
+I want to be able to do the AI correction for the whole vertical. Can we remove "Select Run" dropdown and enable 
+correction for the whole vertical if "LLM Model" is select as "All". 
+Here is a plan to do this:
 
-Auto-apply should be there for all actions. Threshold for replace/add/validate actions should be higher than for reject. We probably need to experiment thresholds. How do you plan the create the thresholds? 
+ Plan: Vertical-Level AI Corrections
+
+ Goal
+
+ Enable AI corrections for an entire vertical (all completed runs) when "LLM Model" is set to "All", instead of requiring a specific run to be selected.
+
+ Current State
+
+ - AI corrections work at the run level only (POST /runs/{run_id}/ai-corrections)
+ - KnowledgeAIAuditRun.run_id is NOT NULL (single run)
+ - Vertical export already exists: build_vertical_inspector_export(db, vertical_id)
+ - The audit pipeline is generic and can process any list of export items
+
+ Approach
+
+ 1. Database Schema Change
+
+ Add new fields to KnowledgeAIAuditRun model to support vertical-level audits:
+
+ File: src/models/knowledge_domain.py
+ - Make run_id nullable (or add a sentinel value like 0 for vertical audits)
+ - Add is_vertical_audit: Boolean flag to distinguish audit type
+
+ 2. New API Endpoint
+
+ Create vertical-level AI correction endpoint:
+
+ File: src/api/routers/ai_corrections.py
+ - Add: POST /verticals/{vertical_id}/ai-corrections
+ - Reuse existing AICorrectionCreateRequest schema
+ - Return same AICorrectionRunResponse
+
+ 3. Execution Logic Update
+
+ Modify execution to support both run and vertical modes:
+
+ File: src/services/ai_corrections/execution.py
+ - Check audit.is_vertical_audit flag
+ - If true: use build_vertical_inspector_export(db, vertical_id)
+ - If false: use existing build_run_inspector_export(db, run_id)
+ - Rest of pipeline stays the same (batching, report, feedback)
+
+ 4. Persistence Layer Update
+
+ File: src/services/ai_corrections/persistence.py
+ - Modify create_audit_run() to accept optional run_id and is_vertical_audit flag
+ - Update queries for latest_audit_run() to work with vertical audits
+
+ 5. UI Changes
+
+ File: src/ui/pages/run_inspector.py
+ - When "LLM Model" = "All": Hide run dropdown, show "Correct Vertical with AI" button
+ - When specific model selected: Show run dropdown and existing "Correct with AI" button
+ - Add new API call function _start_vertical_ai_correction(vertical_id, provider, model_name, dry_run)
+
+ Files to Modify
+
+ 1. src/models/knowledge_domain.py - Add is_vertical_audit field
+ 2. src/api/routers/ai_corrections.py - Add vertical endpoint
+ 3. src/services/ai_corrections/execution.py - Add vertical execution path
+ 4. src/services/ai_corrections/persistence.py - Update create/query functions
+ 5. src/ui/pages/run_inspector.py - UI changes for vertical mode
+
+ Design Decision
+
+ - Scope: When "All" is selected, analyze ALL completed runs in the vertical regardless of model
+ - No model filtering in vertical mode (simplifies implementation, gives most comprehensive data)
+
+ Verification
+
+ 1. Restart API and Streamlit
+ 2. Go to Run Inspector, select a vertical
+ 3. Set "LLM Model" to "All"
+ 4. Click "Correct Vertical with AI"
+ 5. Verify metrics show aggregate precision/recall across all runs
+ 6. Verify review items show items from multiple runs (different run_ids)
+
+Can you check if the plan make sense and update it if needed! Do not code yet! Discuss the plan with me!
+
+
+We need to ensure that improvement are also used for similar verticals where same brands likely appear, e.g. "Car", "SUV", "Family Car", "Electric Vehicles" should all have the same corrections and improvements applied to them!
+Update the plan accordingly!
