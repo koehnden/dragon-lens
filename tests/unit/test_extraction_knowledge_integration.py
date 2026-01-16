@@ -62,6 +62,20 @@ def test_apply_knowledge_adds_missing_brand_from_validated_mapping():
     assert out_relationships == {"Song Plus": "BYD"}
 
 
+def test_apply_knowledge_brand_suffix_stripping_falls_back_to_canonical():
+    context = KnowledgeExtractionContext(
+        canonical_vertical_id=1,
+        brand_lookup={"byd": "BYD"},
+        product_lookup={},
+        rejected_brands=set(),
+        rejected_products=set(),
+        validated_product_brand={},
+    )
+    out_brands, _, _ = apply_knowledge_to_extraction(["BYD Auto"], [], {}, context)
+    assert "BYD" in out_brands
+    assert out_brands["BYD"] == ["BYD Auto"]
+
+
 def test_context_resolves_alias_vertical_to_canonical(knowledge_db_session):
     from models.knowledge_domain import (
         KnowledgeBrand,

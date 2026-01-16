@@ -46,6 +46,8 @@ Rules:
 - confidence_score_0_1 must be a number between 0 and 1.
 - Evidence must be a short exact quote from prompt_response_zh.
 - if the extraction system made a mistake provide a reason, e.g. "brand not relevant for the vertical" or "product has wrong brand" etc along with the Evidence
+- Use replace_brand/replace_product only when wrong_name is a true alias/synonym/normalization variant of correct_name (e.g. spacing, punctuation, language variant, or company suffix like "BYD Auto" -> "BYD").
+- If the extracted entity is wrong (not a synonym), prefer reject_* for the wrong entity and validate_* for the correct entity instead of replace_*.
 
 Return ONLY valid JSON with this shape:
 {
@@ -82,4 +84,3 @@ Allowed actions:
 
 Input JSON array:
 {{ items_json }}
-

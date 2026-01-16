@@ -44,7 +44,7 @@ def apply_knowledge_to_extraction(
     relationships: dict[str, str],
     context: KnowledgeExtractionContext,
 ) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, str]]:
-    brand_clusters = _clusters(brands, context.brand_lookup, context.rejected_brands)
+    brand_clusters = _brand_clusters(brands, context.brand_lookup, context.rejected_brands)
     product_clusters = _clusters(products, context.product_lookup, context.rejected_products)
     resolved = _relationships(relationships, context, product_clusters, brand_clusters)
     return brand_clusters, product_clusters, resolved
@@ -154,6 +154,51 @@ def _canonical(name: str, lookup: dict[str, str]) -> str:
     return lookup.get(name.casefold()) or lookup.get(normalize_entity_key(name)) or name
 
 
+def _brand_clusters(entities: list[str], lookup: dict[str, str], rejected: set[str]) -> dict[str, list[str]]:
+    clusters: dict[str, list[str]] = {}
+    rejected_keys = _rejected_keys(rejected)
+    for surface in entities:
+        value = str(surface or "").strip()
+        if not value or _is_rejected(value, rejected_keys):
+            continue
+        canonical = _canonical_brand(value, lookup)
+        _append_surface(clusters, canonical, value)
+    return clusters
+
+
+def _canonical_brand(name: str, lookup: dict[str, str]) -> str:
+    resolved = _canonical(name, lookup)
+    if resolved != name:
+        return resolved
+    stripped = _strip_brand_suffix(name)
+    return _canonical(stripped, lookup) if stripped and stripped != name else name
+
+
+def _strip_brand_suffix(name: str) -> str:
+    value = (name or "").strip()
+    if not value:
+        return ""
+    shortened = _strip_brand_suffix_chinese(value)
+    return _strip_brand_suffix_english(shortened)
+
+
+def _strip_brand_suffix_chinese(value: str) -> str:
+    suffixes = ("有限责任公司", "有限公司", "集团", "公司", "汽车", "控股")
+    lowered = value.casefold()
+    for suffix in suffixes:
+        if lowered.endswith(suffix.casefold()):
+            return value[: -len(suffix)].strip()
+    return value
+
+
+def _strip_brand_suffix_english(value: str) -> str:
+    parts = [p for p in (value or "").replace(".", " ").split() if p]
+    suffixes = {"auto", "automotive", "group", "inc", "ltd", "co", "company", "corp", "holdings", "limited"}
+    while parts and parts[-1].casefold() in suffixes:
+        parts.pop()
+    return " ".join(parts).strip()
+
+
 def _rejected_keys(values: set[str]) -> set[str]:
     keys: set[str] = set()
     for value in values:
@@ -179,7 +224,7 @@ def _relationships(
     product_keys = set(products.keys())
     for raw_product, raw_brand in (relationships or {}).items():
         product = _canonical(str(raw_product or ""), context.product_lookup).strip()
-        brand = _canonical(str(raw_brand or ""), context.brand_lookup).strip()
+        brand = _canonical_brand(str(raw_brand or ""), context.brand_lookup).strip()
         if not product or not brand:
             continue
         if product not in product_keys:
@@ -194,4 +239,3 @@ def _relationships(
             if brand not in brands:
                 brands[brand] = []
     return resolved
-
