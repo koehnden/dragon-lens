@@ -144,6 +144,8 @@ class KnowledgeProductBrandMapping(KnowledgeBase):
     vertical_id: Mapped[int] = mapped_column(ForeignKey("knowledge_verticals.id"), nullable=False)
     product_id: Mapped[int] = mapped_column(ForeignKey("knowledge_products.id"), nullable=False)
     brand_id: Mapped[int] = mapped_column(ForeignKey("knowledge_brands.id"), nullable=False)
+    support_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     is_validated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

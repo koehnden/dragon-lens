@@ -1,6 +1,6 @@
 from typing import Dict, Optional
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from models.knowledge_domain import (
@@ -80,17 +80,32 @@ def _find_mapping_for_product(
     vertical_id: int,
     product_id: int,
 ) -> Optional[KnowledgeProductBrandMapping]:
-    return db.query(KnowledgeProductBrandMapping).filter(
-        KnowledgeProductBrandMapping.vertical_id == vertical_id,
-        KnowledgeProductBrandMapping.product_id == product_id,
-    ).first()
+    return (
+        db.query(KnowledgeProductBrandMapping)
+        .filter(
+            KnowledgeProductBrandMapping.vertical_id == vertical_id,
+            KnowledgeProductBrandMapping.product_id == product_id,
+            KnowledgeProductBrandMapping.is_validated.is_(True),
+        )
+        .order_by(
+            case((KnowledgeProductBrandMapping.source == "feedback", 1), else_=0).desc(),
+            KnowledgeProductBrandMapping.support_count.desc(),
+            KnowledgeProductBrandMapping.confidence.desc(),
+            KnowledgeProductBrandMapping.updated_at.desc(),
+        )
+        .first()
+    )
 
 
 def _build_cache_for_vertical(db: Session, vertical_id: int) -> Dict[str, str]:
     cache: Dict[str, str] = {}
     mappings = _load_all_mappings(db, vertical_id)
+    seen: set[int] = set()
 
     for mapping in mappings:
+        if mapping.product_id in seen:
+            continue
+        seen.add(mapping.product_id)
         brand_name = mapping.brand.display_name if mapping.brand else None
         if not brand_name:
             continue
@@ -106,9 +121,21 @@ def _load_all_mappings(
     db: Session,
     vertical_id: int,
 ) -> list[KnowledgeProductBrandMapping]:
-    return db.query(KnowledgeProductBrandMapping).filter(
-        KnowledgeProductBrandMapping.vertical_id == vertical_id,
-    ).all()
+    return (
+        db.query(KnowledgeProductBrandMapping)
+        .filter(
+            KnowledgeProductBrandMapping.vertical_id == vertical_id,
+            KnowledgeProductBrandMapping.is_validated.is_(True),
+        )
+        .order_by(
+            KnowledgeProductBrandMapping.product_id.asc(),
+            case((KnowledgeProductBrandMapping.source == "feedback", 1), else_=0).desc(),
+            KnowledgeProductBrandMapping.support_count.desc(),
+            KnowledgeProductBrandMapping.confidence.desc(),
+            KnowledgeProductBrandMapping.updated_at.desc(),
+        )
+        .all()
+    )
 
 
 def _add_product_to_cache(

@@ -171,6 +171,7 @@ def _ensure_feedback_event_columns() -> None:
         _ensure_feedback_columns(connection, inspector)
         _ensure_ai_review_columns(connection, inspector)
         _ensure_ai_audit_run_columns(connection, inspector)
+        _ensure_mapping_columns(connection, inspector)
 
 
 def _ensure_feedback_columns(connection, inspector) -> None:
@@ -203,6 +204,24 @@ def _ensure_ai_audit_run_columns(connection, inspector) -> None:
         columns,
         "tracking_vertical_id",
         "ALTER TABLE knowledge_ai_audit_runs ADD COLUMN tracking_vertical_id INTEGER NOT NULL DEFAULT 0",
+    )
+
+
+def _ensure_mapping_columns(connection, inspector) -> None:
+    if "knowledge_product_brand_mappings" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("knowledge_product_brand_mappings")}
+    _ensure_column(
+        connection,
+        columns,
+        "support_count",
+        "ALTER TABLE knowledge_product_brand_mappings ADD COLUMN support_count INTEGER NOT NULL DEFAULT 0",
+    )
+    _ensure_column(
+        connection,
+        columns,
+        "confidence",
+        "ALTER TABLE knowledge_product_brand_mappings ADD COLUMN confidence FLOAT NOT NULL DEFAULT 0",
     )
 
 

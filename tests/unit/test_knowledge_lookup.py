@@ -42,7 +42,7 @@ def test_add_product_to_cache_includes_aliases():
 
 def test_build_cache_for_vertical_empty_when_no_mappings():
     db = MagicMock()
-    db.query.return_value.filter.return_value.all.return_value = []
+    db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
 
     cache = _build_cache_for_vertical(db, 1)
 
@@ -63,8 +63,11 @@ def test_build_cache_for_vertical_includes_mappings():
     mapping = MagicMock()
     mapping.brand = brand
     mapping.product = product
+    mapping.product_id = 1
 
-    db.query.return_value.filter.return_value.all.return_value = [mapping]
+    db.query.return_value.filter.return_value.order_by.return_value.all.return_value = [
+        mapping
+    ]
 
     cache = _build_cache_for_vertical(db, 1)
 
