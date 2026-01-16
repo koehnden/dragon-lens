@@ -3,7 +3,7 @@ import logging
 import os
 from typing import Dict, List, Optional
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 
 from services.canonicalization_metrics import normalize_entity_key
 from services.brand_recognition.list_processor import (
@@ -33,6 +33,9 @@ QWEN_CONFIDENCE = float(os.getenv("MAPPING_QWEN_CONFIDENCE", "0.7"))
 KNOWLEDGE_PERSIST_THRESHOLD = settings.knowledge_persist_threshold
 KNOWLEDGE_PERSIST_ENABLED = settings.knowledge_persist_enabled
 MAX_EXAMPLES = 20
+AUTO_VALIDATE_SUPPORT_COUNT = int(os.getenv("MAPPING_AUTO_VALIDATE_SUPPORT_COUNT", "10"))
+AUTO_VALIDATE_CONFIDENCE = float(os.getenv("MAPPING_AUTO_VALIDATE_CONFIDENCE", "0.9"))
+AUTO_VALIDATE_RUNNER_UP_MIN = int(os.getenv("MAPPING_AUTO_VALIDATE_RUNNER_UP_MIN", "2"))
 
 
 def map_products_to_brands(answers: List) -> Dict[str, str]:
@@ -133,9 +136,11 @@ async def _map_products_for_input(db, input_data) -> Dict[str, str]:
     counts = map_product_brand_counts(input_data.answer_entities)
     known = load_mapping_examples(db, input_data.vertical_id)
     knowledge_cache = _load_knowledge_cache(db, input_data.vertical_id)
-    return await _map_products(
+    results = await _map_products(
         db, input_data, counts, brand_lookup, product_lookup, known, knowledge_cache
     )
+    _persist_mapping_evidence(db, input_data.vertical_id, counts, brand_lookup, product_lookup)
+    return results
 
 
 async def _map_products(
@@ -251,6 +256,12 @@ def _knowledge_validated_mapping(knowledge_db, vertical_id: int, product_id: int
             KnowledgeProductBrandMapping.vertical_id == vertical_id,
             KnowledgeProductBrandMapping.product_id == product_id,
             KnowledgeProductBrandMapping.is_validated.is_(True),
+        )
+        .order_by(
+            case((KnowledgeProductBrandMapping.source == "feedback", 1), else_=0).desc(),
+            KnowledgeProductBrandMapping.support_count.desc(),
+            KnowledgeProductBrandMapping.confidence.desc(),
+            KnowledgeProductBrandMapping.updated_at.desc(),
         )
         .first()
     )
@@ -427,13 +438,6 @@ def _apply_mapping(
     _upsert_mapping(db, vertical_id, product.id, brand_id, confidence, source)
     if _should_update_product(product, brand_id, confidence):
         product.brand_id = brand_id
-
-    if KNOWLEDGE_PERSIST_ENABLED and confidence >= KNOWLEDGE_PERSIST_THRESHOLD:
-        vertical_name = _vertical_name(db, vertical_id)
-        if vertical_name:
-            _persist_to_knowledge_base(
-                vertical_name, product.display_name, brand_name, confidence, source
-            )
 
     return {product.display_name: brand_name}
 
@@ -719,7 +723,16 @@ def _knowledge_mappings(
 ) -> List[KnowledgeProductBrandMapping]:
     return (
         knowledge_db.query(KnowledgeProductBrandMapping)
-        .filter(KnowledgeProductBrandMapping.vertical_id == vertical_id)
+        .filter(
+            KnowledgeProductBrandMapping.vertical_id == vertical_id,
+            KnowledgeProductBrandMapping.is_validated.is_(True),
+        )
+        .order_by(
+            case((KnowledgeProductBrandMapping.source == "feedback", 1), else_=0).desc(),
+            KnowledgeProductBrandMapping.support_count.desc(),
+            KnowledgeProductBrandMapping.confidence.desc(),
+            KnowledgeProductBrandMapping.updated_at.desc(),
+        )
         .all()
     )
 
@@ -745,12 +758,14 @@ def _persist_to_knowledge_base(
 ) -> None:
     try:
         with knowledge_session(write=True) as knowledge_db:
-            vertical = get_or_create_vertical(knowledge_db, vertical_name)
-            brand = _get_or_create_knowledge_brand(knowledge_db, vertical.id, brand_name)
-            product = _get_or_create_knowledge_product(knowledge_db, vertical.id, product_name)
+            vertical_id = _get_or_create_knowledge_vertical_id(knowledge_db, vertical_name)
+            brand = _get_or_create_knowledge_brand(knowledge_db, vertical_id, brand_name)
+            product = _get_or_create_knowledge_product(knowledge_db, vertical_id, product_name)
             _upsert_knowledge_mapping(
-                knowledge_db, vertical.id, product.id, brand.id, f"auto_{source}"
+                knowledge_db, vertical_id, product.id, brand.id, f"auto_{source}", 1
             )
+            _recompute_mapping_confidence(knowledge_db, vertical_id, product.id)
+            _apply_auto_validation_policy(knowledge_db, vertical_id, product.id)
             logger.debug(
                 f"[KnowledgePersist] Stored mapping: {product_name} -> {brand_name} "
                 f"(confidence={confidence:.2f}, source={source})"
@@ -815,28 +830,234 @@ def _upsert_knowledge_mapping(
     product_id: int,
     brand_id: int,
     source: str,
+    support_increment: int = 0,
 ) -> KnowledgeProductBrandMapping:
     existing = db.query(KnowledgeProductBrandMapping).filter(
         KnowledgeProductBrandMapping.vertical_id == vertical_id,
         KnowledgeProductBrandMapping.product_id == product_id,
+        KnowledgeProductBrandMapping.brand_id == brand_id,
     ).first()
 
     if existing:
-        if existing.source in ("feedback", "user_reject"):
-            return existing
-        if existing.is_validated:
-            return existing
-        existing.brand_id = brand_id
-        existing.source = source
+        existing.support_count = (existing.support_count or 0) + max(support_increment, 0)
+        if _should_update_knowledge_source(existing.source, source):
+            existing.source = source
         return existing
 
     mapping = KnowledgeProductBrandMapping(
         vertical_id=vertical_id,
         product_id=product_id,
         brand_id=brand_id,
+        support_count=max(support_increment, 0),
+        confidence=0.0,
         is_validated=False,
         source=source,
     )
     db.add(mapping)
     db.flush()
     return mapping
+
+
+def _persist_mapping_evidence(
+    db,
+    vertical_id: int,
+    counts: Dict[str, dict[str, int]],
+    brand_lookup: Dict[str, int],
+    product_lookup: Dict[str, object],
+) -> None:
+    if not KNOWLEDGE_PERSIST_ENABLED:
+        return
+    vertical_name = _vertical_name(db, vertical_id)
+    if not vertical_name or not counts:
+        return
+    brand_names = _brand_display_names(db, vertical_id)
+    _persist_counts_to_knowledge(vertical_name, counts, brand_lookup, product_lookup, brand_names)
+
+
+def _persist_counts_to_knowledge(
+    vertical_name: str,
+    counts: Dict[str, dict[str, int]],
+    brand_lookup: Dict[str, int],
+    product_lookup: Dict[str, object],
+    brand_names: Dict[int, str],
+) -> None:
+    try:
+        with knowledge_session(write=True) as knowledge_db:
+            _persist_counts_in_session(
+                knowledge_db, vertical_name, counts, brand_lookup, product_lookup, brand_names
+            )
+    except Exception as e:
+        logger.warning(f"[KnowledgePersist] Failed to persist evidence: {e}")
+
+
+def _persist_counts_in_session(
+    knowledge_db,
+    vertical_name: str,
+    counts: Dict[str, dict[str, int]],
+    brand_lookup: Dict[str, int],
+    product_lookup: Dict[str, object],
+    brand_names: Dict[int, str],
+) -> None:
+    vertical_id = _get_or_create_knowledge_vertical_id(knowledge_db, vertical_name)
+    for product_name, brand_counts in counts.items():
+        _persist_product_evidence(
+            knowledge_db,
+            vertical_id,
+            _resolved_product_name(product_name, product_lookup),
+            _support_by_brand_id(brand_counts, brand_lookup),
+            brand_names,
+        )
+
+
+def _persist_product_evidence(
+    knowledge_db,
+    vertical_id: int,
+    product_name: str,
+    support: Dict[int, int],
+    brand_names: Dict[int, str],
+) -> None:
+    if not product_name or not support:
+        return
+    product = _get_or_create_knowledge_product(knowledge_db, vertical_id, product_name)
+    _persist_product_support(knowledge_db, vertical_id, product.id, support, brand_names)
+    _recompute_mapping_confidence(knowledge_db, vertical_id, product.id)
+    _apply_auto_validation_policy(knowledge_db, vertical_id, product.id)
+
+
+def _persist_product_support(
+    knowledge_db,
+    vertical_id: int,
+    product_id: int,
+    support: Dict[int, int],
+    brand_names: Dict[int, str],
+) -> None:
+    for brand_id, increment in support.items():
+        _persist_mapping_edge(knowledge_db, vertical_id, product_id, brand_id, increment, brand_names)
+
+
+def _persist_mapping_edge(
+    knowledge_db,
+    vertical_id: int,
+    product_id: int,
+    brand_id: int,
+    increment: int,
+    brand_names: Dict[int, str],
+) -> None:
+    brand_name = brand_names.get(brand_id, "")
+    if not brand_name or increment <= 0:
+        return
+    brand = _get_or_create_knowledge_brand(knowledge_db, vertical_id, brand_name)
+    _upsert_knowledge_mapping(
+        knowledge_db, vertical_id, product_id, brand.id, "auto_list_evidence", increment
+    )
+
+
+def _recompute_mapping_confidence(knowledge_db, vertical_id: int, product_id: int) -> None:
+    mappings = _product_mappings(knowledge_db, vertical_id, product_id)
+    total = sum((m.support_count or 0) for m in mappings)
+    for mapping in mappings:
+        mapping.confidence = (mapping.support_count or 0) / total if total else 0.0
+
+
+def _apply_auto_validation_policy(knowledge_db, vertical_id: int, product_id: int) -> None:
+    mappings = _product_mappings(knowledge_db, vertical_id, product_id)
+    if not mappings:
+        return
+    decision = _auto_validation_decision(mappings)
+    if decision is None:
+        _revoke_auto_support(mappings)
+        return
+    _set_single_auto_support(mappings, decision)
+
+
+def _auto_validation_decision(
+    mappings: list[KnowledgeProductBrandMapping],
+) -> KnowledgeProductBrandMapping | None:
+    if _has_feedback_validated(mappings):
+        return None
+    top, runner_up = _top_two_support(mappings)
+    if runner_up >= AUTO_VALIDATE_RUNNER_UP_MIN:
+        return None
+    return top if _meets_auto_validation_threshold(top) else None
+
+
+def _top_two_support(mappings: list[KnowledgeProductBrandMapping]) -> tuple[KnowledgeProductBrandMapping, int]:
+    ordered = sorted(mappings, key=lambda m: (m.support_count or 0, m.id), reverse=True)
+    runner = ordered[1].support_count or 0 if len(ordered) > 1 else 0
+    return ordered[0], runner
+
+
+def _meets_auto_validation_threshold(mapping: KnowledgeProductBrandMapping) -> bool:
+    if (mapping.source or "") == "user_reject":
+        return False
+    return (
+        (mapping.support_count or 0) >= AUTO_VALIDATE_SUPPORT_COUNT
+        and (mapping.confidence or 0.0) >= AUTO_VALIDATE_CONFIDENCE
+    )
+
+
+def _set_single_auto_support(
+    mappings: list[KnowledgeProductBrandMapping],
+    winner: KnowledgeProductBrandMapping,
+) -> None:
+    _revoke_auto_support(mappings)
+    if winner.is_validated and winner.source == "feedback":
+        return
+    winner.is_validated = True
+    winner.source = "auto_support"
+
+
+def _revoke_auto_support(mappings: list[KnowledgeProductBrandMapping]) -> None:
+    for mapping in mappings:
+        if mapping.is_validated and (mapping.source or "") == "auto_support":
+            mapping.is_validated = False
+
+
+def _has_feedback_validated(mappings: list[KnowledgeProductBrandMapping]) -> bool:
+    return any(m.is_validated and (m.source or "") == "feedback" for m in mappings)
+
+
+def _product_mappings(
+    knowledge_db,
+    vertical_id: int,
+    product_id: int,
+) -> list[KnowledgeProductBrandMapping]:
+    return knowledge_db.query(KnowledgeProductBrandMapping).filter(
+        KnowledgeProductBrandMapping.vertical_id == vertical_id,
+        KnowledgeProductBrandMapping.product_id == product_id,
+    ).all()
+
+
+def _should_update_knowledge_source(existing: str | None, incoming: str) -> bool:
+    return (existing or "") not in ("feedback", "user_reject", "auto_support") and bool(incoming)
+
+
+def _get_or_create_knowledge_vertical_id(knowledge_db, vertical_name: str) -> int:
+    resolved = resolve_knowledge_vertical_id(knowledge_db, vertical_name)
+    if resolved:
+        return resolved
+    return get_or_create_vertical(knowledge_db, vertical_name).id
+
+
+def _resolved_product_name(name: str, product_lookup: Dict[str, object]) -> str:
+    product = _resolve_product(name, product_lookup)
+    return product.display_name if product else name
+
+
+def _support_by_brand_id(
+    brand_counts: dict[str, int],
+    brand_lookup: Dict[str, int],
+) -> Dict[int, int]:
+    support: Dict[int, int] = {}
+    for brand_name, count in (brand_counts or {}).items():
+        brand_id = _resolve_brand_id(brand_name, brand_lookup)
+        if brand_id and count:
+            support[brand_id] = support.get(brand_id, 0) + count
+    return support
+
+
+def _brand_display_names(db, vertical_id: int) -> Dict[int, str]:
+    from models import Brand
+
+    rows = db.query(Brand.id, Brand.display_name).filter(Brand.vertical_id == vertical_id).all()
+    return {brand_id: name for brand_id, name in rows if brand_id and name}
