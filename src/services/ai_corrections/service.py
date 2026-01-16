@@ -138,6 +138,14 @@ def _clusters(suggestions: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def auto_feedback_payload(run_id: int, vertical_id: int, canonical_vertical_id: int, suggestions: list[dict[str, Any]]) -> dict:
     return feedback_payload(run_id, vertical_id, canonical_vertical_id, suggestions)
 
+def review_items_payloads(
+    suggestions: list[dict[str, Any]],
+    run_id: int,
+    vertical_id: int,
+    canonical_vertical_id: int,
+) -> list[dict[str, Any]]:
+    return _review_items(suggestions, run_id, vertical_id, canonical_vertical_id)
+
 
 def _review_items(suggestions: list[dict[str, Any]], run_id: int, vertical_id: int, canonical_vertical_id: int) -> list[dict[str, Any]]:
     return [_review_item(s, run_id, vertical_id, canonical_vertical_id) for s in suggestions]

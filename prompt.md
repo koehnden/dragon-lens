@@ -104,3 +104,18 @@ Can you check if the plan make sense and update it if needed! Do not code yet! D
 
 We need to ensure that improvement are also used for similar verticals where same brands likely appear, e.g. "Car", "SUV", "Family Car", "Electric Vehicles" should all have the same corrections and improvements applied to them!
 Update the plan accordingly!
+
+Before we start, review what the ai correction from the `/api/v1/verticals/{vertical_id}/ai-corrections` endpoint actually does
+and how it store in Turso to make sure we can use the correction as few shot and that they are in the format you expect!
+Refine the plan after researching this! Do not code yet!
+
+
+
+ the plan! Anything else we need to discuss before we start coding?
+ 
+I do not get why you suggest Option A? Why would we ever exclude HIGH and VERY_HIGH, allow LOW/MEDIUM
+Shouldn't it be the exact opposite, i.e. only include HIGH and VERY_HIGH and exclude LOW/MEDIUM or do I miss something here
+Do not code yet! Answer the question!
+
+Only use HIGH/VERY_HIGH with a priority of VERY HIGH. If less then 5 example exist just pass the example that exists.
+If no example exists then pass nothing! Do not use MEDIUM!

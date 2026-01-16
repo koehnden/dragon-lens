@@ -8,6 +8,7 @@ from models import Run, Vertical
 from services.ai_corrections.config import merge_min_levels, merge_thresholds
 from services.ai_corrections.persistence import (
     add_review_items,
+    add_applied_items,
     audit_run_or_none,
     save_audit_results,
     set_audit_completed,
@@ -15,7 +16,7 @@ from services.ai_corrections.persistence import (
     set_audit_in_progress,
 )
 from services.ai_corrections.runner import run_audit_batches
-from services.ai_corrections.service import auto_feedback_payload, build_report
+from services.ai_corrections.service import auto_feedback_payload, build_report, review_items_payloads
 from services.feedback_service import submit_feedback
 from services.remote_llms import LLMRouter
 from services.run_inspector_export import build_run_inspector_export, build_vertical_inspector_export
@@ -84,6 +85,11 @@ def _apply_feedback(db: Session, knowledge_db: Session, run: Run, audit, report:
     payload = auto_feedback_payload(run.id, run.vertical_id, audit.vertical_id, suggestions)
     request = FeedbackSubmitRequest(**payload)
     submit_feedback(db, knowledge_db, request, reviewer=audit.resolved_model, reviewer_model=f"{audit.resolved_provider}:{audit.resolved_model}")
+    add_applied_items(
+        knowledge_db,
+        audit.id,
+        review_items_payloads(suggestions, run.id, run.vertical_id, audit.vertical_id),
+    )
     return _counts(suggestions)
 
 

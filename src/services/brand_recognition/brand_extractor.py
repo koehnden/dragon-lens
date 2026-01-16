@@ -318,6 +318,7 @@ def _build_extraction_system_prompt(
         validated_products=context.get("validated_products", []),
         rejected_brands=context.get("rejected_brands", []),
         rejected_products=context.get("rejected_products", []),
+        correction_examples=context.get("correction_examples", []),
     )
 
 

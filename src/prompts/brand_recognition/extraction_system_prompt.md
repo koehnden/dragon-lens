@@ -10,6 +10,7 @@ requires:
   - validated_products
   - rejected_brands
   - rejected_products
+  - correction_examples
 ---
 You are an expert entity extractor for the {{ vertical or 'general' }} industry in the Chinese market.
 
@@ -87,6 +88,16 @@ DO NOT EXTRACT THESE AS BRANDS (common mistakes from previous runs):
 DO NOT EXTRACT THESE AS PRODUCTS (common mistakes from previous runs):
 {% for entity in rejected_products %}
 - {{ entity.name }}{% if entity.reason %} ({{ entity.reason }}){% endif %}{% if entity.same_vertical is defined and not entity.same_vertical %} (different vertical: {{ entity.vertical_name }}){% endif %}
+{% endfor %}
+{% endif %}
+
+{% if correction_examples %}
+HUMAN/AI-APPROVED CORRECTION EXAMPLES (follow these rules exactly when you see the trigger):
+{% for example in correction_examples %}
+TRIGGER: "{{ example.trigger }}"
+{% for rule in example.rules %}
+- {{ rule }}
+{% endfor %}
 {% endfor %}
 {% endif %}
 
