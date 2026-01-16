@@ -69,6 +69,26 @@ def test_extraction_prompt_includes_rejected_brands():
     assert "BadBrand" in prompt
 
 
+def test_extraction_prompt_includes_correction_examples():
+    from services.brand_recognition import _build_extraction_system_prompt
+
+    context = {
+        "correction_examples": [
+            {
+                "trigger": "…与宝马…",
+                "rules": [
+                    'MUST NOT extract brand "与宝马".',
+                    'If the text contains "宝马" as a standalone entity, extract brand "宝马".',
+                ],
+            }
+        ]
+    }
+    prompt = _build_extraction_system_prompt("Cars", "", context)
+
+    assert "HUMAN/AI-APPROVED CORRECTION EXAMPLES" in prompt
+    assert "与宝马" in prompt
+
+
 def test_build_extraction_prompt_truncates_long_text():
     from services.brand_recognition import _build_extraction_prompt
 

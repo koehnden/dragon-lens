@@ -114,13 +114,30 @@ def add_review_items(
     audit_id: int,
     review_items: list[dict[str, Any]],
 ) -> list[KnowledgeAIAuditReviewItem]:
-    rows = [_review_row(audit_id, item) for item in review_items]
+    rows = [_review_row(audit_id, item, KnowledgeAIAuditReviewStatus.PENDING, None) for item in review_items]
     knowledge_db.add_all(rows)
     knowledge_db.flush()
     return rows
 
 
-def _review_row(audit_id: int, item: dict[str, Any]) -> KnowledgeAIAuditReviewItem:
+def add_applied_items(
+    knowledge_db: Session,
+    audit_id: int,
+    review_items: list[dict[str, Any]],
+) -> list[KnowledgeAIAuditReviewItem]:
+    now = datetime.utcnow()
+    rows = [_review_row(audit_id, item, KnowledgeAIAuditReviewStatus.APPLIED, now) for item in review_items]
+    knowledge_db.add_all(rows)
+    knowledge_db.flush()
+    return rows
+
+
+def _review_row(
+    audit_id: int,
+    item: dict[str, Any],
+    status: KnowledgeAIAuditReviewStatus,
+    applied_at: datetime | None,
+) -> KnowledgeAIAuditReviewItem:
     return KnowledgeAIAuditReviewItem(
         audit_run_id=audit_id,
         run_id=int(item.get("run_id") or 0),
@@ -132,7 +149,8 @@ def _review_row(audit_id: int, item: dict[str, Any]) -> KnowledgeAIAuditReviewIt
         reason=str(item.get("reason") or ""),
         evidence_quote_zh=item.get("evidence_quote_zh"),
         feedback_payload=item.get("feedback_payload") or {},
-        status=KnowledgeAIAuditReviewStatus.PENDING,
+        status=status,
+        applied_at=applied_at,
     )
 
 
