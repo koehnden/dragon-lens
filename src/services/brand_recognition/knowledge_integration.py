@@ -222,12 +222,16 @@ def _relationships(
 ) -> dict[str, str]:
     resolved: dict[str, str] = {}
     product_keys = set(products.keys())
+    rejected_brand_keys = _rejected_keys(context.rejected_brands)
     for raw_product, raw_brand in (relationships or {}).items():
         product = _canonical(str(raw_product or ""), context.product_lookup).strip()
-        brand = _canonical_brand(str(raw_brand or ""), context.brand_lookup).strip()
+        brand_surface = str(raw_brand or "").strip()
+        brand = _canonical_brand(brand_surface, context.brand_lookup).strip()
         if not product or not brand:
             continue
         if product not in product_keys:
+            continue
+        if _is_rejected(brand_surface, rejected_brand_keys) or _is_rejected(brand, rejected_brand_keys):
             continue
         resolved[product] = brand
         if brand and brand not in brands:
@@ -235,6 +239,8 @@ def _relationships(
     for product in product_keys:
         if product in context.validated_product_brand:
             brand = context.validated_product_brand[product]
+            if _is_rejected(brand, rejected_brand_keys):
+                continue
             resolved[product] = brand
             if brand not in brands:
                 brands[brand] = []
