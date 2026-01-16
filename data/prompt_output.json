@@ -1,0 +1,21 @@
+{
+  "vertical_name": <vertical name>
+  "model": <llm model>
+  "prompt_zh": <original, prompt in Chinese>,
+  "prompt_eng": <translated prompt in english>,
+  "prompt_response_zh": <original prompt response>,
+  "prompt_response_en": <translated prompt response in english>,
+  "brands_extracted": [
+    {
+      "brand_zh": <brand name extracted in chinese>,
+      "brand_en": <brand name extracted in english>,
+      "text_snippet_zh": <text snippet from which brand got extracted in chinese>,
+      "text_snippet_en": <text snippet from which brand got extracted translated in en>,
+      "rank": <int of the rank>,
+      "products_zh": [<product of the brand extracted in original from the prompt>],
+      "products_en": [<product of the brand extracted in original from the prompt>]
+    }, ..
+    # all brands from the prompt
+  ], # all other prompts
+}
+

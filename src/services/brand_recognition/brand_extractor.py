@@ -111,17 +111,30 @@ async def _extract_entities_with_qwen(
 
         brand_clusters = {b: [b] for b in filtered_brands}
         product_clusters = {p: [p] for p in filtered_products}
+        filtered_relationships = _filter_relationships(
+            raw_relationships, set(filtered_products), set(filtered_brands)
+        )
+
+        if db is not None and vertical_id is not None and vertical:
+            from services.brand_recognition.knowledge_integration import (
+                apply_knowledge_to_extraction,
+                build_knowledge_extraction_context,
+            )
+            from services.knowledge_session import knowledge_session
+
+            with knowledge_session() as knowledge_db:
+                context = build_knowledge_extraction_context(knowledge_db, vertical)
+            if context:
+                brand_clusters, product_clusters, filtered_relationships = apply_knowledge_to_extraction(
+                    filtered_brands, filtered_products, raw_relationships, context
+                )
 
         debug_info = ExtractionDebugInfo(
             raw_brands=raw_brands,
             raw_products=raw_products,
             rejected_at_light_filter=rejected_at_light_filter,
-            final_brands=filtered_brands,
-            final_products=filtered_products,
-        )
-
-        filtered_relationships = _filter_relationships(
-            raw_relationships, set(filtered_products), set(filtered_brands)
+            final_brands=list(brand_clusters.keys()),
+            final_products=list(product_clusters.keys()),
         )
 
         logger.info(
@@ -305,6 +318,7 @@ def _build_extraction_system_prompt(
         validated_products=context.get("validated_products", []),
         rejected_brands=context.get("rejected_brands", []),
         rejected_products=context.get("rejected_products", []),
+        correction_examples=context.get("correction_examples", []),
     )
 
 

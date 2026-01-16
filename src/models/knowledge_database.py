@@ -1,10 +1,12 @@
 from pathlib import Path
 from typing import Generator
 from urllib.parse import urlencode
+import importlib
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlalchemy import inspect, text
 
 from models.sqlite_config import (
     apply_sqlite_pragmas,
@@ -158,4 +160,71 @@ def get_knowledge_db_write() -> Generator[Session, None, None]:
 def init_knowledge_db() -> None:
     if _turso_enabled() and not settings.turso_auth_token:
         return
+    importlib.import_module("models.knowledge_domain")
     KnowledgeBase.metadata.create_all(bind=knowledge_write_engine)
+    _ensure_feedback_event_columns()
+
+
+def _ensure_feedback_event_columns() -> None:
+    with knowledge_write_engine.begin() as connection:
+        inspector = inspect(connection)
+        _ensure_feedback_columns(connection, inspector)
+        _ensure_ai_review_columns(connection, inspector)
+        _ensure_ai_audit_run_columns(connection, inspector)
+        _ensure_mapping_columns(connection, inspector)
+
+
+def _ensure_feedback_columns(connection, inspector) -> None:
+    if "knowledge_feedback_events" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("knowledge_feedback_events")}
+    _ensure_column(connection, columns, "reviewer", "ALTER TABLE knowledge_feedback_events ADD COLUMN reviewer VARCHAR(50)")
+    _ensure_column(connection, columns, "reviewer_model", "ALTER TABLE knowledge_feedback_events ADD COLUMN reviewer_model VARCHAR(255)")
+
+
+def _ensure_ai_review_columns(connection, inspector) -> None:
+    if "knowledge_ai_audit_review_items" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("knowledge_ai_audit_review_items")}
+    _ensure_column(connection, columns, "action", "ALTER TABLE knowledge_ai_audit_review_items ADD COLUMN action VARCHAR(50)")
+
+
+def _ensure_ai_audit_run_columns(connection, inspector) -> None:
+    if "knowledge_ai_audit_runs" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("knowledge_ai_audit_runs")}
+    _ensure_column(
+        connection,
+        columns,
+        "scope",
+        "ALTER TABLE knowledge_ai_audit_runs ADD COLUMN scope VARCHAR(20) NOT NULL DEFAULT 'run'",
+    )
+    _ensure_column(
+        connection,
+        columns,
+        "tracking_vertical_id",
+        "ALTER TABLE knowledge_ai_audit_runs ADD COLUMN tracking_vertical_id INTEGER NOT NULL DEFAULT 0",
+    )
+
+
+def _ensure_mapping_columns(connection, inspector) -> None:
+    if "knowledge_product_brand_mappings" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("knowledge_product_brand_mappings")}
+    _ensure_column(
+        connection,
+        columns,
+        "support_count",
+        "ALTER TABLE knowledge_product_brand_mappings ADD COLUMN support_count INTEGER NOT NULL DEFAULT 0",
+    )
+    _ensure_column(
+        connection,
+        columns,
+        "confidence",
+        "ALTER TABLE knowledge_product_brand_mappings ADD COLUMN confidence FLOAT NOT NULL DEFAULT 0",
+    )
+
+
+def _ensure_column(connection, columns: set[str], name: str, ddl: str) -> None:
+    if name not in columns:
+        connection.execute(text(ddl))

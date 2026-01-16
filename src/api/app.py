@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import api_keys, consolidation, feedback, knowledge, metrics, tracking, verticals
+from api.routers.ai_corrections import router as ai_corrections_router
 from config import settings
 from models.knowledge_database import init_knowledge_db
 from models.migrations import upgrade_db
@@ -40,6 +41,7 @@ app.add_middleware(
 
 app.include_router(verticals.router, prefix="/api/v1/verticals", tags=["verticals"])
 app.include_router(tracking.router, prefix="/api/v1/tracking", tags=["tracking"])
+app.include_router(ai_corrections_router, prefix="/api/v1/tracking", tags=["tracking"])
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
 app.include_router(api_keys.router, prefix="/api/v1", tags=["api-keys"])
 app.include_router(consolidation.router, prefix="/api/v1/consolidation", tags=["consolidation"])

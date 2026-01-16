@@ -6,10 +6,13 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from models import Run, RunStatus, Vertical
+from models.domain import EntityType
 from models.knowledge_domain import (
     KnowledgeBrand,
+    KnowledgeBrandAlias,
     KnowledgeFeedbackEvent,
     KnowledgeProduct,
+    KnowledgeProductAlias,
     KnowledgeProductBrandMapping,
     KnowledgeRejectedEntity,
     KnowledgeTranslationOverride,
@@ -171,3 +174,106 @@ def test_feedback_submit_does_not_run_sanity_checks_for_invalid_requests(
         assert response.status_code == 404
     finally:
         settings.feedback_sanity_checks_enabled = original
+
+
+def test_feedback_replace_creates_alias_for_brand_suffix_variant(
+    client: TestClient,
+    db_session: Session,
+    knowledge_db_session: Session,
+):
+    vertical = Vertical(name="Cars", description="Cars")
+    db_session.add(vertical)
+    db_session.commit()
+
+    run = Run(vertical_id=vertical.id, model_name="qwen", status=RunStatus.COMPLETED)
+    db_session.add(run)
+    db_session.commit()
+
+    payload = {
+        "run_id": run.id,
+        "vertical_id": vertical.id,
+        "canonical_vertical": {"is_new": True, "name": "Cars"},
+        "brand_feedback": [
+            {
+                "action": "replace",
+                "wrong_name": "BYD Auto",
+                "correct_name": "BYD",
+                "reason": "suffix variant",
+            }
+        ],
+    }
+
+    response = client.post("/api/v1/feedback/submit", json=payload)
+    assert response.status_code == 200
+
+    vertical_row = knowledge_db_session.query(KnowledgeVertical).filter(
+        KnowledgeVertical.name == "Cars"
+    ).first()
+    assert vertical_row is not None
+
+    brand = knowledge_db_session.query(KnowledgeBrand).filter(
+        KnowledgeBrand.vertical_id == vertical_row.id,
+        KnowledgeBrand.canonical_name == "BYD",
+    ).first()
+    assert brand is not None
+
+    alias = knowledge_db_session.query(KnowledgeBrandAlias).filter(
+        KnowledgeBrandAlias.brand_id == brand.id,
+        KnowledgeBrandAlias.alias == "BYD Auto",
+    ).first()
+    assert alias is not None
+
+    rejected = knowledge_db_session.query(KnowledgeRejectedEntity).filter(
+        KnowledgeRejectedEntity.vertical_id == vertical_row.id,
+        KnowledgeRejectedEntity.entity_type == EntityType.BRAND,
+        KnowledgeRejectedEntity.name == "BYD Auto",
+    ).first()
+    assert rejected is None
+
+
+def test_feedback_replace_creates_alias_for_product_normalization_variant(
+    client: TestClient,
+    db_session: Session,
+    knowledge_db_session: Session,
+):
+    vertical = Vertical(name="Cars2", description="Cars")
+    db_session.add(vertical)
+    db_session.commit()
+
+    run = Run(vertical_id=vertical.id, model_name="qwen", status=RunStatus.COMPLETED)
+    db_session.add(run)
+    db_session.commit()
+
+    payload = {
+        "run_id": run.id,
+        "vertical_id": vertical.id,
+        "canonical_vertical": {"is_new": True, "name": "Cars2"},
+        "product_feedback": [
+            {
+                "action": "replace",
+                "wrong_name": "宋 PLUS",
+                "correct_name": "宋PLUS",
+                "reason": "spacing",
+            }
+        ],
+    }
+
+    response = client.post("/api/v1/feedback/submit", json=payload)
+    assert response.status_code == 200
+
+    vertical_row = knowledge_db_session.query(KnowledgeVertical).filter(
+        KnowledgeVertical.name == "Cars2"
+    ).first()
+    assert vertical_row is not None
+
+    product = knowledge_db_session.query(KnowledgeProduct).filter(
+        KnowledgeProduct.vertical_id == vertical_row.id,
+        KnowledgeProduct.canonical_name == "宋PLUS",
+    ).first()
+    assert product is not None
+
+    alias = knowledge_db_session.query(KnowledgeProductAlias).filter(
+        KnowledgeProductAlias.product_id == product.id,
+        KnowledgeProductAlias.alias == "宋 PLUS",
+    ).first()
+    assert alias is not None

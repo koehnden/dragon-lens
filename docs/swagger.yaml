@@ -189,6 +189,140 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/verticals/{vertical_id}/ai-corrections:
+    post:
+      tags:
+      - verticals
+      summary: Start Vertical AI Correction
+      description: Start an AI-powered correction run for all completed tracking runs in this vertical (dry-run only).
+      operationId: start_vertical_ai_correction_api_v1_verticals__vertical_id__ai_corrections_post
+      parameters:
+      - name: vertical_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Vertical Id
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AICorrectionCreateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AICorrectionRunResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - verticals
+      summary: Get Latest Vertical AI Correction
+      description: Get the latest AI correction run metadata for this vertical.
+      operationId: get_latest_vertical_ai_correction_api_v1_verticals__vertical_id__ai_corrections_get
+      parameters:
+      - name: vertical_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Vertical Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                anyOf:
+                - $ref: '#/components/schemas/AICorrectionRunResponse'
+                - type: 'null'
+                title: Response Get Latest Vertical AI Correction Api V1 Verticals  Vertical Id  Ai Corrections Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/verticals/{vertical_id}/ai-corrections/{audit_id}/report:
+    get:
+      tags:
+      - verticals
+      summary: Get Vertical AI Correction Report
+      description: Get metrics, clusters, and pending review items for a vertical AI correction run.
+      operationId: get_vertical_ai_correction_report_api_v1_verticals__vertical_id__ai_corrections__audit_id__report_get
+      parameters:
+      - name: vertical_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Vertical Id
+      - name: audit_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Audit Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AICorrectionReportResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/verticals/{vertical_id}/ai-corrections/{audit_id}/review-items/{item_id}/apply:
+    post:
+      tags:
+      - verticals
+      summary: Apply Vertical AI Review Item
+      description: Apply a low-confidence AI suggestion after human review (stored as user feedback in the knowledge database).
+      operationId: apply_vertical_ai_review_item_api_v1_verticals__vertical_id__ai_corrections__audit_id__review_items__item_id__apply_post
+      parameters:
+      - name: vertical_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Vertical Id
+      - name: audit_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Audit Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Item Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackSubmitResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/verticals/{vertical_id}/brands:
     get:
       tags:
@@ -516,6 +650,140 @@ paths:
                 items:
                   $ref: '#/components/schemas/RunInspectorPromptExport'
                 title: Response Export Run Inspector Data Api V1 Tracking Runs  Run Id  Inspector Export Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tracking/runs/{run_id}/ai-corrections:
+    post:
+      tags:
+      - tracking
+      summary: Start AI Correction
+      description: Start an AI-powered correction run for a completed tracking run (brands, products, mappings) with optional OpenRouter fallback.
+      operationId: start_ai_correction_api_v1_tracking_runs__run_id__ai_corrections_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Run Id
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AICorrectionCreateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AICorrectionRunResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - tracking
+      summary: Get Latest AI Correction
+      description: Get the latest AI correction run metadata for a tracking run.
+      operationId: get_latest_ai_correction_api_v1_tracking_runs__run_id__ai_corrections_get
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Run Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                anyOf:
+                - $ref: '#/components/schemas/AICorrectionRunResponse'
+                - type: 'null'
+                title: Response Get Latest AI Correction Api V1 Tracking Runs  Run Id  Ai Corrections Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tracking/runs/{run_id}/ai-corrections/{audit_id}/report:
+    get:
+      tags:
+      - tracking
+      summary: Get AI Correction Report
+      description: Get metrics, clusters, and pending review items for an AI correction run.
+      operationId: get_ai_correction_report_api_v1_tracking_runs__run_id__ai_corrections__audit_id__report_get
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Run Id
+      - name: audit_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Audit Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AICorrectionReportResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tracking/runs/{run_id}/ai-corrections/{audit_id}/review-items/{item_id}/apply:
+    post:
+      tags:
+      - tracking
+      summary: Apply AI Review Item
+      description: Apply a low-confidence AI suggestion after human review (stored as user feedback in Turso).
+      operationId: apply_ai_review_item_api_v1_tracking_runs__run_id__ai_corrections__audit_id__review_items__item_id__apply_post
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Run Id
+      - name: audit_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Audit Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Item Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackSubmitResponse'
         '422':
           description: Validation Error
           content:
@@ -2651,6 +2919,282 @@ components:
       - prompt_response_en
       - brands_extracted
       title: RunInspectorPromptExport
+    AICorrectionCreateRequest:
+      properties:
+        provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider
+        model_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Name
+        thresholds:
+          anyOf:
+          - $ref: '#/components/schemas/AICorrectionThresholds'
+          - type: 'null'
+          title: Thresholds
+        min_confidence_levels:
+          anyOf:
+          - $ref: '#/components/schemas/AICorrectionMinConfidenceLevels'
+          - type: 'null'
+          title: Min Confidence Levels
+        dry_run:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Dry Run
+      type: object
+      title: AICorrectionCreateRequest
+    AICorrectionThresholds:
+      properties:
+        reject_brand:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Reject Brand
+        reject_product:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Reject Product
+        reject_mapping:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Reject Mapping
+        validate:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Validate
+        replace:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Replace
+        add_mapping:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Add Mapping
+      type: object
+      title: AICorrectionThresholds
+    AICorrectionMinConfidenceLevels:
+      properties:
+        reject_brand:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reject Brand
+        reject_product:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reject Product
+        reject_mapping:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reject Mapping
+        validate:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Validate
+        replace:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Replace
+        add_mapping:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Add Mapping
+      type: object
+      title: AICorrectionMinConfidenceLevels
+    AICorrectionRunResponse:
+      properties:
+        audit_id:
+          type: integer
+          title: Audit Id
+        run_id:
+          type: integer
+          title: Run Id
+        status:
+          type: string
+          title: Status
+        requested_provider:
+          type: string
+          title: Requested Provider
+        requested_model:
+          type: string
+          title: Requested Model
+        resolved_provider:
+          type: string
+          title: Resolved Provider
+        resolved_model:
+          type: string
+          title: Resolved Model
+        resolved_route:
+          type: string
+          title: Resolved Route
+        dry_run:
+          type: boolean
+          title: Dry Run
+      type: object
+      required:
+      - audit_id
+      - run_id
+      - status
+      - requested_provider
+      - requested_model
+      - resolved_provider
+      - resolved_model
+      - resolved_route
+      - dry_run
+      title: AICorrectionRunResponse
+    AICorrectionMetrics:
+      properties:
+        precision:
+          type: number
+          title: Precision
+        recall:
+          type: number
+          title: Recall
+        true_positives:
+          type: integer
+          title: True Positives
+        false_positives:
+          type: integer
+          title: False Positives
+        false_negatives:
+          type: integer
+          title: False Negatives
+      type: object
+      required:
+      - precision
+      - recall
+      - true_positives
+      - false_positives
+      - false_negatives
+      title: AICorrectionMetrics
+    AICorrectionReviewItem:
+      properties:
+        id:
+          type: integer
+          title: Id
+        run_id:
+          type: integer
+          title: Run Id
+        llm_answer_id:
+          type: integer
+          title: Llm Answer Id
+        category:
+          type: string
+          title: Category
+        action:
+          type: string
+          title: Action
+        confidence_level:
+          type: string
+          title: Confidence Level
+        confidence_score:
+          type: number
+          title: Confidence Score
+        reason:
+          type: string
+          title: Reason
+        evidence_quote_zh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Evidence Quote Zh
+        feedback_payload:
+          type: object
+          additionalProperties: true
+          title: Feedback Payload
+      type: object
+      required:
+      - id
+      - run_id
+      - llm_answer_id
+      - category
+      - action
+      - confidence_level
+      - confidence_score
+      - reason
+      - evidence_quote_zh
+      - feedback_payload
+      title: AICorrectionReviewItem
+    AICorrectionCluster:
+      properties:
+        category:
+          type: string
+          title: Category
+        count:
+          type: integer
+          title: Count
+        examples:
+          items:
+            type: string
+          type: array
+          title: Examples
+      type: object
+      required:
+      - category
+      - count
+      - examples
+      title: AICorrectionCluster
+    AICorrectionReportResponse:
+      properties:
+        audit_id:
+          type: integer
+          title: Audit Id
+        run_id:
+          type: integer
+          title: Run Id
+        resolved_provider:
+          type: string
+          title: Resolved Provider
+        resolved_model:
+          type: string
+          title: Resolved Model
+        resolved_route:
+          type: string
+          title: Resolved Route
+        brands:
+          $ref: '#/components/schemas/AICorrectionMetrics'
+        products:
+          $ref: '#/components/schemas/AICorrectionMetrics'
+        mappings:
+          $ref: '#/components/schemas/AICorrectionMetrics'
+        clusters:
+          items:
+            $ref: '#/components/schemas/AICorrectionCluster'
+          type: array
+          title: Clusters
+        pending_review_items:
+          items:
+            $ref: '#/components/schemas/AICorrectionReviewItem'
+          type: array
+          title: Pending Review Items
+      type: object
+      required:
+      - audit_id
+      - run_id
+      - resolved_provider
+      - resolved_model
+      - resolved_route
+      - brands
+      - products
+      - mappings
+      - clusters
+      - pending_review_items
+      title: AICorrectionReportResponse
     RunEntitiesResponse:
       properties:
         run_id:
@@ -2907,6 +3451,11 @@ components:
           - type: string
           - type: 'null'
           title: Vertical Description
+        canonical_vertical:
+          anyOf:
+          - $ref: '#/components/schemas/FeedbackCanonicalVertical'
+          - type: 'null'
+          title: Canonical Vertical
         brands:
           items:
             $ref: '#/components/schemas/BrandCreate'

@@ -22,6 +22,37 @@ def show():
         placeholder="Brief description of this vertical",
     )
 
+    canonical_verticals = []
+    try:
+        response = httpx.get(
+            f"http://localhost:{settings.api_port}/api/v1/knowledge/verticals",
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        canonical_verticals = response.json() or []
+    except httpx.HTTPError:
+        canonical_verticals = []
+
+    canonical_options = [v["name"] for v in canonical_verticals if v.get("name")]
+    canonical_options.append("Other (create new)")
+    selected_canonical_name = st.selectbox(
+        "Canonical Vertical (shared learning group)",
+        canonical_options,
+        help="Select an existing canonical vertical to share rules across similar verticals, or create a new one.",
+    )
+    canonical_vertical = None
+    if selected_canonical_name == "Other (create new)":
+        new_canonical_name = st.text_input(
+            "New Canonical Vertical Name",
+            value=vertical_name or "",
+            placeholder="e.g., Car",
+        )
+        canonical_vertical = {"name": new_canonical_name, "is_new": True}
+    else:
+        selected = next((v for v in canonical_verticals if v.get("name") == selected_canonical_name), None)
+        if selected:
+            canonical_vertical = {"id": selected.get("id"), "is_new": False}
+
     st.header("2. Primary Brand")
     st.write("Track a single primary brand and let the system discover competitors automatically.")
 
@@ -145,6 +176,9 @@ def show():
         if not vertical_name:
             st.error("❌ Please enter a vertical name")
             return
+        if canonical_vertical and canonical_vertical.get("is_new") and not (canonical_vertical.get("name") or "").strip():
+            st.error("❌ Please enter a canonical vertical name")
+            return
 
         if not brands:
             st.error("❌ Please add at least one brand")
@@ -160,6 +194,7 @@ def show():
         payload = {
             "vertical_name": vertical_name,
             "vertical_description": vertical_description or None,
+            "canonical_vertical": canonical_vertical,
             "brands": brands,
             "prompts": prompts,
             "provider": provider,
@@ -191,6 +226,7 @@ def show():
         payload = {
             "vertical_name": vertical_name,
             "vertical_description": vertical_description or None,
+            "canonical_vertical": canonical_vertical,
             "brands": brands,
             "prompts": prompts,
             "provider": provider,

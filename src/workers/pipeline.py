@@ -245,6 +245,8 @@ async def _extract_single_result(
     provider: str,
     model_name: str,
     resolution,
+    knowledge_brand_aliases: dict[str, list[str]],
+    knowledge_product_aliases: dict[str, list[str]],
 ) -> ExtractionResult:
     import json
     from services.brand_discovery import discover_brands_and_products
@@ -304,11 +306,18 @@ async def _extract_single_result(
         )
 
         product_mentions = await _extract_product_mentions(
-            llm_answer, discovered_products, answer_zh, translator, all_brands, ollama_service
+            llm_answer,
+            discovered_products,
+            answer_zh,
+            translator,
+            all_brands,
+            ollama_service,
+            knowledge_brand_aliases,
+            knowledge_product_aliases,
         )
 
         brand_mentions = await _extract_brand_mentions(
-            answer_zh, all_brands, ollama_service, translator
+            answer_zh, all_brands, ollama_service, translator, knowledge_brand_aliases
         )
 
         return ExtractionResult(
@@ -332,14 +341,16 @@ async def _extract_product_mentions(
     translator,
     brands: list[Brand],
     ollama_service,
+    knowledge_brand_aliases: dict[str, list[str]],
+    knowledge_product_aliases: dict[str, list[str]],
 ) -> list[ProductMentionData]:
     if not products:
         return []
 
     product_names = [p.display_name for p in products]
-    product_aliases = [_product_aliases(p) for p in products]
+    product_aliases = [_extend_aliases(_product_aliases(p), knowledge_product_aliases, p.display_name) for p in products]
     brand_names = [b.display_name for b in brands]
-    brand_aliases = [_brand_aliases(b) for b in brands]
+    brand_aliases = [_extend_aliases(_brand_aliases(b), knowledge_brand_aliases, b.display_name) for b in brands]
 
     async with _get_ollama_semaphore():
         mentions = await ollama_service.extract_products(
@@ -375,12 +386,13 @@ async def _extract_brand_mentions(
     all_brands: list[Brand],
     ollama_service,
     translator,
+    knowledge_brand_aliases: dict[str, list[str]],
 ) -> list[MentionData]:
     if not all_brands:
         return []
 
     brand_names = [b.display_name for b in all_brands]
-    brand_aliases = [_brand_aliases(b) for b in all_brands]
+    brand_aliases = [_extend_aliases(_brand_aliases(b), knowledge_brand_aliases, b.display_name) for b in all_brands]
 
     async with _get_ollama_semaphore():
         mentions = await ollama_service.extract_brands(answer_zh, brand_names, brand_aliases)
@@ -420,6 +432,23 @@ def _product_aliases(product: Product) -> list[str]:
     variants = [product.original_name or "", product.translated_name or ""]
     return [v for v in variants if v]
 
+def _extend_aliases(values: list[str], aliases: dict[str, list[str]], display_name: str) -> list[str]:
+    from services.canonicalization_metrics import normalize_entity_key
+
+    key = normalize_entity_key(display_name)
+    extra = aliases.get(key) or []
+    return _uniq(values + extra)
+
+
+def _uniq(values: list[str]) -> list[str]:
+    seen, out = set(), []
+    for v in values:
+        if not v or v in seen:
+            continue
+        seen.add(v)
+        out.append(v)
+    return out
+
 
 def _map_sentiment(sentiment_str: str) -> Sentiment:
     if sentiment_str == "positive":
@@ -448,11 +477,14 @@ async def extract_all_entities(
     valid_results = [r for r in results if not r.error and r.answer_zh]
     logger.info(f"Extracting entities from {len(valid_results)} answers...")
 
+    from services.brand_recognition.mention_aliases import load_validated_knowledge_aliases
+
+    knowledge_brand_aliases, knowledge_product_aliases = load_validated_knowledge_aliases(db, vertical_id)
     extraction_results = []
     for result in valid_results:
         ext_result = await _extract_single_result(
             result, vertical_id, user_brands, db, ollama_service, translator,
-            run_id, provider, model_name, resolution
+            run_id, provider, model_name, resolution, knowledge_brand_aliases, knowledge_product_aliases
         )
         extraction_results.append(ext_result)
 
