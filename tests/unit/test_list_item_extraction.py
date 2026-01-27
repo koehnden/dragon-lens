@@ -7,6 +7,25 @@ from services.brand_recognition import extract_entities
 
 class TestListItemFirstEntityExtraction:
 
+    def test_fullwidth_numbered_list_triggers_list_filtering(self, monkeypatch):
+        from services.brand_recognition import config, orchestrator
+
+        monkeypatch.setattr(config, "ENABLE_QWEN_EXTRACTION", False)
+        monkeypatch.setattr(orchestrator, "ENABLE_QWEN_EXTRACTION", False)
+
+        response = """
+        １． Honda CRV is a great SUV choice. Another great option from Honda is the Honda HR-V similar to Toyota RAV4.
+        ２． VW Tiguan is spacious.
+        """
+        entities = extract_entities(response, "Honda", {"zh": ["本田"], "en": ["Honda"]})
+        extracted_names = set(entities.all_entities().keys())
+
+        assert any("honda" in name.lower() for name in extracted_names)
+        assert any("crv" in name.lower() or "cr-v" in name.lower() for name in extracted_names)
+        assert any("vw" in name.lower() or "tiguan" in name.lower() for name in extracted_names)
+        assert not any("rav4" in name.lower() for name in extracted_names)
+        assert not any("hr-v" in name.lower() or "hrv" in name.lower() for name in extracted_names)
+
     def test_extracts_only_first_brand_per_list_item_suv(self):
         response = """
         1. Honda CRV is a great SUV choice. Another great option from Honda is the Honda HR-V similar to Toyota RAV4.

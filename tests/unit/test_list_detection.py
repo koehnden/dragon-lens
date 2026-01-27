@@ -13,6 +13,18 @@ class TestIsListFormat:
 3. VW Tiguan is spacious"""
         assert is_list_format(text) is True
 
+    def test_detects_numbered_list_with_fullwidth_period(self):
+        text = """１． Honda CRV is great
+２． Toyota RAV4 is reliable
+３． VW Tiguan is spacious"""
+        assert is_list_format(text) is True
+
+    def test_detects_numbered_list_with_fullwidth_parenthesis(self):
+        text = """1） Nike Air Max
+2） Adidas Ultraboost
+3） New Balance 990"""
+        assert is_list_format(text) is True
+
     def test_detects_numbered_list_with_parenthesis(self):
         text = """1) Nike Air Max
 2) Adidas Ultraboost
@@ -88,6 +100,26 @@ class TestSplitIntoListItems:
         assert "Honda CRV" in items[0]
         assert "Toyota RAV4" in items[1]
         assert "VW Tiguan" in items[2]
+
+    def test_splits_numbered_list_with_fullwidth_period(self):
+        text = """１． Honda CRV is great
+２． Toyota RAV4 is reliable
+３． VW Tiguan is spacious"""
+        items = split_into_list_items(text)
+        assert len(items) == 3
+        assert "Honda CRV" in items[0]
+        assert "Toyota RAV4" in items[1]
+        assert "VW Tiguan" in items[2]
+
+    def test_splits_numbered_list_with_fullwidth_parenthesis(self):
+        text = """1） Nike Air Max
+2） Adidas Ultraboost
+3） New Balance 990"""
+        items = split_into_list_items(text)
+        assert len(items) == 3
+        assert "Nike Air Max" in items[0]
+        assert "Adidas Ultraboost" in items[1]
+        assert "New Balance 990" in items[2]
 
     def test_splits_dash_bullet_list(self):
         text = """- iPhone 15 Pro is the flagship
