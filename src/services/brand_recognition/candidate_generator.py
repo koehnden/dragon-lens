@@ -137,15 +137,22 @@ def _list_table_candidates(text: str) -> Set[str]:
     brand_mentions = re.findall(r'(?:品牌|推荐|产品|型号)[:：]\s*([A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff0-9\s]{2,20})', text)
     hits.update(brand_mentions)
 
+    from services.brand_recognition.markdown_table import extract_markdown_table_rows
+    for row in extract_markdown_table_rows(text):
+        for cell in row:
+            cell_clean = cell.strip()
+            if 2 <= len(cell_clean) <= 80:
+                hits.add(cell_clean)
+
     cleaned = set()
     for item in hits:
         item_clean = item.strip()
-        if 2 <= len(item_clean) <= 30:
+        if 2 <= len(item_clean) <= 80:
             parts = re.split(r'\s+', item_clean)
             for part in parts:
                 if len(part) >= 2:
                     cleaned.add(part)
-            if len(parts) <= 3:
+            if len(parts) <= 6:
                 cleaned.add(item_clean)
 
     return cleaned
