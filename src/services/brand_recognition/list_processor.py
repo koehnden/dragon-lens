@@ -13,6 +13,8 @@ from constants import (
     GENERIC_TERMS,
     PRODUCT_HINTS,
     COMPILED_LIST_PATTERNS,
+    LIST_ITEM_MARKER_REGEX,
+    LIST_ITEM_SPLIT_REGEX,
     COMPARISON_MARKERS,
     CLAUSE_SEPARATORS,
     VALID_EXTRA_TERMS,
@@ -39,8 +41,7 @@ def split_into_list_items(text: str) -> List[str]:
     if not is_list_format(text):
         return []
 
-    combined_pattern = r'(?:^\s*\d+[.\)]|^\s*\d+、|^\s*[-*]|^\s*[・○→]|^#{1,4}\s*\**\d+[.\)])\s*'
-    parts = re.split(combined_pattern, text, flags=re.MULTILINE)
+    parts = re.split(LIST_ITEM_SPLIT_REGEX, text, flags=re.MULTILINE)
     items = [p.strip() for p in parts if p and p.strip()]
 
     first_item_idx = _find_first_list_item_index(text)
@@ -52,8 +53,7 @@ def split_into_list_items(text: str) -> List[str]:
 
 def _find_first_list_item_index(text: str) -> int:
     """Find the index of the first list item marker in text."""
-    combined_pattern = r'(?:^\s*\d+[.\)]|^\s*\d+、|^\s*[-*]|^\s*[・○→]|^#{1,4}\s*\**\d+[.\)])'
-    match = re.search(combined_pattern, text, flags=re.MULTILINE)
+    match = re.search(LIST_ITEM_MARKER_REGEX, text, flags=re.MULTILINE)
     return match.start() if match else 0
 
 
