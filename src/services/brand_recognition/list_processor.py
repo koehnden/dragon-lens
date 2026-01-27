@@ -25,10 +25,18 @@ from services.brand_recognition.classification import (
     is_likely_product,
 )
 from services.brand_recognition.models import EntityCandidate
+from services.brand_recognition.markdown_table import (
+    extract_markdown_table_row_items,
+    find_first_markdown_table_index,
+    markdown_table_has_min_data_rows,
+)
 
 
 def is_list_format(text: str) -> bool:
     """Check if text is in list format."""
+    if markdown_table_has_min_data_rows(text, min_rows=2):
+        return True
+
     for pattern in COMPILED_LIST_PATTERNS:
         matches = pattern.findall(text)
         if len(matches) >= 2:
@@ -40,6 +48,9 @@ def split_into_list_items(text: str) -> List[str]:
     """Split list-formatted text into individual items."""
     if not is_list_format(text):
         return []
+
+    if markdown_table_has_min_data_rows(text, min_rows=2):
+        return extract_markdown_table_row_items(text)
 
     parts = re.split(LIST_ITEM_SPLIT_REGEX, text, flags=re.MULTILINE)
     items = [p.strip() for p in parts if p and p.strip()]
@@ -53,8 +64,17 @@ def split_into_list_items(text: str) -> List[str]:
 
 def _find_first_list_item_index(text: str) -> int:
     """Find the index of the first list item marker in text."""
-    match = re.search(LIST_ITEM_MARKER_REGEX, text, flags=re.MULTILINE)
-    return match.start() if match else 0
+    marker_match = re.search(LIST_ITEM_MARKER_REGEX, text, flags=re.MULTILINE)
+    marker_idx = marker_match.start() if marker_match else None
+    table_idx = find_first_markdown_table_index(text)
+
+    if marker_idx is None and table_idx is None:
+        return 0
+    if marker_idx is None:
+        return table_idx or 0
+    if table_idx is None:
+        return marker_idx
+    return min(marker_idx, table_idx)
 
 
 def _is_intro_paragraph(candidate: str, full_text: str) -> bool:
