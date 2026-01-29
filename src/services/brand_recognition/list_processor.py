@@ -52,12 +52,42 @@ def split_into_list_items(text: str) -> List[str]:
     if markdown_table_has_min_data_rows(text, min_rows=2):
         return extract_markdown_table_row_items(text)
 
-    parts = re.split(LIST_ITEM_SPLIT_REGEX, text, flags=re.MULTILINE)
-    items = [p.strip() for p in parts if p and p.strip()]
+    lines = text.splitlines()
 
-    first_item_idx = _find_first_list_item_index(text)
-    if first_item_idx > 0 and items:
-        items = items[1:] if _is_intro_paragraph(items[0], text) else items
+    marker_indents: List[int] = []
+    for line in lines:
+        if re.match(LIST_ITEM_SPLIT_REGEX, line):
+            indent = len(line) - len(line.lstrip(" \t"))
+            marker_indents.append(indent)
+
+    base_indent = min(marker_indents) if marker_indents else 0
+
+    items: List[str] = []
+    current: Optional[str] = None
+
+    for line in lines:
+        marker_match = re.match(LIST_ITEM_SPLIT_REGEX, line)
+        if marker_match:
+            indent = len(line) - len(line.lstrip(" \t"))
+            rest = line[marker_match.end():].strip()
+
+            if indent == base_indent:
+                if current is not None and current.strip():
+                    items.append(current.strip())
+                current = rest
+            else:
+                # Nested sub-list line: do not create a new item; attach its content to the parent.
+                if current is not None and rest:
+                    current = f"{current}\n{rest}" if current else rest
+            continue
+
+        if current is not None:
+            cont = line.strip()
+            if cont:
+                current = f"{current}\n{cont}" if current else cont
+
+    if current is not None and current.strip():
+        items.append(current.strip())
 
     return items
 
@@ -94,6 +124,7 @@ def extract_primary_entities_from_list_item(item: str) -> Dict[str, Optional[str
     item_normalized = normalize_text_for_ner(item)
     item_lower = item_normalized.lower()
     product_positions: List[Tuple[int, int, str]] = []
+    first_product_pos: Optional[int] = None
     
     for product in KNOWN_PRODUCTS:
         pos = item_lower.find(product.lower())
@@ -110,11 +141,20 @@ def extract_primary_entities_from_list_item(item: str) -> Dict[str, Optional[str
     if product_positions:
         product_positions.sort(key=lambda x: (x[0], x[1]))
         result["primary_product"] = product_positions[0][2]
+        first_product_pos = product_positions[0][0]
     
     if result["primary_brand"] is None:
         brand_pattern = r"\b([A-Z][a-z]{3,}|[A-Z]{2,4})\b"
         for match in re.finditer(brand_pattern, item_normalized):
             candidate = match.group(1)
+            if is_likely_brand(candidate) and candidate.lower() not in GENERIC_TERMS:
+                result["primary_brand"] = candidate
+                break
+
+    if result["primary_brand"] is None:
+        brand_region = item_normalized[:first_product_pos] if first_product_pos else item_normalized
+        for match in re.finditer(r"[\u4e00-\u9fff]{2,4}", brand_region):
+            candidate = match.group(0)
             if is_likely_brand(candidate) and candidate.lower() not in GENERIC_TERMS:
                 result["primary_brand"] = candidate
                 break
