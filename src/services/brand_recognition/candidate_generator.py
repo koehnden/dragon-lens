@@ -13,6 +13,7 @@ from constants import (
     KNOWN_PRODUCTS,
     GENERIC_TERMS,
     PRODUCT_HINTS,
+    BULLET_MARKER_CLASS,
 )
 
 from services.brand_recognition.models import EntityCandidate
@@ -128,7 +129,11 @@ def _list_table_candidates(text: str) -> Set[str]:
     numbered_items = re.findall(r'^\s*\d+[\.．、\)）]\s+([A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff0-9\s\-]{1,30}?)[\s\-:]', text, re.MULTILINE)
     hits.update(numbered_items)
 
-    bulleted_items = re.findall(r'^\s*[-•·]\s+([A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff0-9\s\-]{1,30}?)[\s\-:]', text, re.MULTILINE)
+    bulleted_items = re.findall(
+        rf'^\s*[{BULLET_MARKER_CLASS}]\s+([A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff0-9\s\-]{{1,30}}?)[\s\-:]',
+        text,
+        re.MULTILINE,
+    )
     hits.update(bulleted_items)
 
     inline_numbered = re.findall(r'\d+[\.．、\)）]\s*([A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff0-9\s]{1,20}?)[\s\-:]', text)
