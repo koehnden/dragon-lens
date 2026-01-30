@@ -6,6 +6,7 @@ list items, and extracting entities from list items.
 """
 
 import re
+import unicodedata
 from typing import Dict, List, Optional, Tuple
 
 from constants import (
@@ -18,6 +19,9 @@ from constants import (
     COMPARISON_MARKERS,
     CLAUSE_SEPARATORS,
     VALID_EXTRA_TERMS,
+    COMPILED_EXPECTED_COUNT_PATTERNS,
+    COMPILED_CHINESE_COUNT_PATTERNS,
+    CHINESE_NUMBERS,
 )
 
 from services.brand_recognition.classification import (
@@ -30,6 +34,43 @@ from services.brand_recognition.markdown_table import (
     find_first_markdown_table_index,
     markdown_table_has_min_data_rows,
 )
+
+
+def parse_expected_count(text: str) -> Optional[int]:
+    """
+    Parse expected entity count from text phrases like "TOP 10" or "推荐10款".
+
+    Searches only the first 500 characters (intro/title area).
+    Returns the expected count or None if no pattern matched.
+    """
+    text_first_500 = text[:500]
+
+    # Try numeric patterns first
+    for pattern in COMPILED_EXPECTED_COUNT_PATTERNS:
+        match = pattern.search(text_first_500)
+        if match:
+            try:
+                return int(match.group(1))
+            except (ValueError, IndexError):
+                continue
+
+    # Try Chinese number patterns
+    for pattern in COMPILED_CHINESE_COUNT_PATTERNS:
+        match = pattern.search(text_first_500)
+        if match:
+            chinese_num = match.group(1)
+            if chinese_num in CHINESE_NUMBERS:
+                return CHINESE_NUMBERS[chinese_num]
+
+    return None
+
+
+def get_list_item_count(text: str) -> int:
+    """Get the count of list items in text."""
+    if not is_list_format(text):
+        return 0
+    items = split_into_list_items(text)
+    return len(items)
 
 
 def is_list_format(text: str) -> bool:
@@ -79,6 +120,9 @@ def split_into_list_items(text: str) -> List[str]:
                 # Nested sub-list line: do not create a new item; attach its content to the parent.
                 if current is not None and rest:
                     current = f"{current}\n{rest}" if current else rest
+            continue
+
+        if _is_structural_header_line(line):
             continue
 
         if current is not None:
@@ -189,6 +233,10 @@ def _filter_by_list_position(candidates: List[EntityCandidate], text: str) -> Li
     if intro_text:
         _add_all_entities_from_text(intro_text, candidates, allowed_brands, allowed_products)
 
+    header_context = _get_header_context_text(text)
+    if header_context:
+        _add_all_entities_from_text(header_context, candidates, allowed_brands, allowed_products)
+
     for item in list_items:
         primary = _extract_first_brand_and_product_from_item(item, candidates)
         if primary["brand"]:
@@ -207,6 +255,63 @@ def _get_intro_text(text: str) -> Optional[str]:
     if first_marker_idx > 0:
         return text[:first_marker_idx].strip()
     return None
+
+
+def _is_numbered_markdown_heading(line: str) -> bool:
+    stripped = line.strip()
+    return bool(re.match(r"^#{1,6}\s*\**\d+[\.．\)）]", stripped))
+
+
+def _starts_with_emoji_symbol(text: str) -> bool:
+    if not text:
+        return False
+    first = text[0]
+    # Avoid treating symbols like ® © ™ as emoji headers.
+    if ord(first) < 0x1F000:
+        return False
+    # Most emoji are in "So" (Symbol, Other) or "Sk" (Symbol, Modifier).
+    if unicodedata.category(first) not in {"So", "Sk"}:
+        return False
+    return True
+
+
+def _is_structural_header_line(line: str) -> bool:
+    """
+    Detect structural header lines (vertical-agnostic).
+
+    These should not be appended into list items. Brands/products mentioned in
+    headers can be preserved separately as context for list-position filtering.
+    """
+    stripped = line.strip()
+    if not stripped:
+        return False
+
+    # Keep numbered markdown headings as list items (e.g. "### 1. Toyota ...").
+    if _is_numbered_markdown_heading(stripped):
+        return False
+
+    # Markdown headings like "### Toyota Recommended Picks".
+    if re.match(r"^#{1,6}\s+", stripped):
+        return True
+
+    # Emoji/title lines (common in LLM answers).
+    if _starts_with_emoji_symbol(stripped):
+        return True
+
+    # Short label lines ending with ":" / "：" (often section headers).
+    if stripped.endswith((":","：")) and len(stripped) <= 80:
+        return True
+
+    return False
+
+
+def _get_header_context_text(text: str) -> Optional[str]:
+    """Collect structural header lines as context for list-position filtering."""
+    lines: List[str] = []
+    for line in text.splitlines():
+        if _is_structural_header_line(line):
+            lines.append(line.strip())
+    return "\n".join(lines) if lines else None
 
 
 def _add_all_entities_from_text(

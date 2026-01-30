@@ -46,6 +46,8 @@ async def _extract_entities_with_qwen(
     vertical_description: str = "",
     db: Optional[Session] = None,
     vertical_id: Optional[int] = None,
+    min_expected_entities: Optional[int] = None,
+    retry_feedback: Optional[str] = None,
 ) -> ExtractionResult:
     """Extract entities using Qwen - simplified for maximum recall.
 
@@ -77,7 +79,9 @@ async def _extract_entities_with_qwen(
         )
 
     system_prompt = _build_extraction_system_prompt(
-        vertical, vertical_description, augmentation_context
+        vertical, vertical_description, augmentation_context,
+        min_expected_entities=min_expected_entities,
+        retry_feedback=retry_feedback,
     )
     prompt = _build_extraction_prompt(text)
 
@@ -292,11 +296,13 @@ def _build_extraction_system_prompt(
     vertical: str,
     vertical_description: str,
     augmentation_context: Optional[Dict] = None,
+    min_expected_entities: Optional[int] = None,
+    retry_feedback: Optional[str] = None,
 ) -> str:
     """Build the system prompt for entity extraction using template."""
     is_automotive = _is_automotive_vertical(vertical.lower()) if vertical else False
     context = augmentation_context or {}
-    return load_prompt(
+    base_prompt = load_prompt(
         "extraction_system_prompt",
         vertical=vertical,
         vertical_description=vertical_description,
@@ -306,6 +312,20 @@ def _build_extraction_system_prompt(
         rejected_brands=context.get("rejected_brands", []),
         rejected_products=context.get("rejected_products", []),
     )
+
+    # Add expected count guidance if provided
+    if min_expected_entities:
+        base_prompt += (
+            f"\n\nIMPORTANT: The text appears to list approximately "
+            f"{min_expected_entities} items. Ensure you extract at least "
+            f"{min_expected_entities} brand/product entities."
+        )
+
+    # Add retry feedback if this is a retry attempt
+    if retry_feedback:
+        base_prompt += f"\n\nFEEDBACK FROM PREVIOUS ATTEMPT:\n{retry_feedback}"
+
+    return base_prompt
 
 
 def _build_extraction_prompt(text: str) -> str:

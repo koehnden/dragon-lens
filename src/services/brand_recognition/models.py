@@ -50,12 +50,23 @@ class ConsolidationDebugInfo:
 
 
 @dataclass
+class ExtractionQuality:
+    """Quality assessment for entity extraction."""
+    expected_count: Optional[int] = None  # From "TOP 10" patterns
+    list_item_count: int = 0              # Number of list items detected
+    extracted_count: int = 0              # Total brands + products extracted
+    is_sufficient: bool = True            # extracted >= expected
+    warning_message: Optional[str] = None
+
+
+@dataclass
 class ExtractionResult:
     """Final result of entity extraction."""
     brands: Dict[str, List[str]]
     products: Dict[str, List[str]]
     product_brand_relationships: Dict[str, str] = field(default_factory=dict)
     debug_info: Optional[ExtractionDebugInfo] = None
+    quality: Optional[ExtractionQuality] = None
 
     def all_entities(self) -> Dict[str, List[str]]:
         """Combine brands and products into a single dictionary."""
