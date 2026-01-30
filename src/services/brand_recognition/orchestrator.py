@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from services.brand_recognition.models import (
     EntityCandidate,
     ExtractionResult,
+    ExtractionQuality,
 )
 from services.brand_recognition.config import (
     ENABLE_QWEN_EXTRACTION,
@@ -38,22 +39,59 @@ def extract_entities(
 ) -> ExtractionResult:
     """
     Main entry point for entity extraction.
-    
+
     This function orchestrates the entire entity extraction pipeline:
-    1. Candidate generation
-    2. Qwen-based extraction (if enabled)
-    3. Filtering and validation
-    4. Normalization and clustering
-    5. Final result assembly
+    1. Parse expected count from text
+    2. Candidate generation
+    3. Qwen-based extraction (if enabled) with expected count hint
+    4. Retry if extracted count < expected count
+    5. Filtering and validation
+    6. Normalization and clustering
+    7. Final result assembly with quality assessment
     """
     # Import here to avoid circular imports
     from services.brand_recognition.candidate_generator import generate_candidates
     from services.brand_recognition.brand_extractor import _extract_entities_with_qwen
+    from services.brand_recognition.list_processor import (
+        parse_expected_count,
+        get_list_item_count,
+    )
 
     if ENABLE_QWEN_EXTRACTION:
-        return _run_async(_extract_entities_with_qwen(
-            text, vertical, vertical_description, db=db, vertical_id=vertical_id
+        # Step 1: Parse expected count
+        expected_count = parse_expected_count(text)
+        list_item_count = get_list_item_count(text)
+        min_expected = expected_count or list_item_count or None
+
+        # Step 2: First extraction attempt with min_expected hint
+        result = _run_async(_extract_entities_with_qwen(
+            text, vertical, vertical_description, db=db, vertical_id=vertical_id,
+            min_expected_entities=min_expected,
         ))
+
+        # Step 3: Check if extraction is sufficient and retry if needed
+        extracted_count = len(result.brands) + len(result.products)
+        if min_expected and extracted_count < min_expected:
+            logger.info(
+                f"[Extraction] Insufficient: extracted {extracted_count}, "
+                f"expected at least {min_expected}. Retrying..."
+            )
+            retry_feedback = (
+                f"Previous extraction found only {extracted_count} entities. "
+                f"The text mentions {min_expected} items. Please extract at least "
+                f"{min_expected} brand/product entities."
+            )
+            result = _run_async(_extract_entities_with_qwen(
+                text, vertical, vertical_description, db=db, vertical_id=vertical_id,
+                min_expected_entities=min_expected,
+                retry_feedback=retry_feedback,
+            ))
+
+        # Step 4: Final quality assessment
+        result.quality = _assess_extraction_quality(
+            text, result, expected_count, list_item_count
+        )
+        return result
 
     normalized_text = normalize_text_for_ner(text)
     candidates = generate_candidates(normalized_text, primary_brand, aliases)
@@ -134,3 +172,31 @@ def canonicalize_entities(
         final_clusters = _simple_clustering(embedding_clusters, primary_brand, aliases)
 
     return final_clusters
+
+
+def _assess_extraction_quality(
+    text: str,
+    result: ExtractionResult,
+    expected_count: Optional[int],
+    list_item_count: int,
+) -> ExtractionQuality:
+    """Assess extraction quality based on expected vs actual counts."""
+    extracted_count = len(result.brands) + len(result.products)
+    min_expected = expected_count or list_item_count or None
+
+    is_sufficient = True
+    warning_message = None
+
+    if min_expected and extracted_count < min_expected:
+        is_sufficient = False
+        warning_message = (
+            f"Extracted {extracted_count} entities but expected at least {min_expected}"
+        )
+
+    return ExtractionQuality(
+        expected_count=expected_count,
+        list_item_count=list_item_count,
+        extracted_count=extracted_count,
+        is_sufficient=is_sufficient,
+        warning_message=warning_message,
+    )
