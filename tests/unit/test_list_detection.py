@@ -163,13 +163,23 @@ class TestSplitIntoListItems:
 
     def test_splits_multiline_list_items(self):
         text = """1. Honda CRV - This is a great SUV
-   with excellent fuel economy.
+  	   with excellent fuel economy.
 2. Toyota RAV4 - Known for
-   reliability and longevity."""
+  	   reliability and longevity."""
         items = split_into_list_items(text)
         assert len(items) == 2
         assert "fuel economy" in items[0]
         assert "reliability" in items[1]
+
+    def test_does_not_collapse_top_level_numbered_items_with_indent_jitter(self):
+        text = """1. Alpha
+  2. Beta
+   3. Gamma"""
+        items = split_into_list_items(text)
+        assert len(items) == 3
+        assert "Alpha" in items[0]
+        assert "Beta" in items[1]
+        assert "Gamma" in items[2]
 
     def test_handles_chinese_list_markers(self):
         text = """・Royal Canin成猫粮

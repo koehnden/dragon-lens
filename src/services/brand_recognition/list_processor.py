@@ -93,6 +93,22 @@ def split_into_list_items(text: str) -> List[str]:
     if markdown_table_has_min_data_rows(text, min_rows=2):
         return extract_markdown_table_row_items(text)
 
+    def _marker_kind(line: str) -> str:
+        stripped = line.lstrip(" \t")
+        if not stripped:
+            return "unknown"
+        if re.match(r"^#{1,4}\s*\**\d+[\.．\)）]", stripped):
+            return "numbered"
+        if re.match(r"^\d+[\.．\)）]", stripped):
+            return "numbered"
+        if re.match(r"^\d+、", stripped):
+            return "numbered"
+        if stripped[0] in "-*•·":
+            return "bullet"
+        if stripped[0] in "・○→":
+            return "bullet"
+        return "unknown"
+
     lines = text.splitlines()
 
     marker_indents: List[int] = []
@@ -105,17 +121,35 @@ def split_into_list_items(text: str) -> List[str]:
 
     items: List[str] = []
     current: Optional[str] = None
+    current_marker_indent: Optional[int] = None
+    current_marker_kind: Optional[str] = None
+
+    # In LLM outputs, "flat" top-level lists often have inconsistent leading whitespace
+    # across sibling items (e.g. "1. A" then "  2. B"). Treat small indent deltas as
+    # top-level to avoid collapsing siblings into the previous item.
+    top_level_indent_jitter = 3
 
     for line in lines:
         marker_match = re.match(LIST_ITEM_SPLIT_REGEX, line)
         if marker_match:
             indent = len(line) - len(line.lstrip(" \t"))
             rest = line[marker_match.end():].strip()
+            kind = _marker_kind(line)
 
-            if indent == base_indent:
+            is_top_level_indent = indent <= (base_indent + top_level_indent_jitter)
+            nested_under_numbered = (
+                current_marker_kind == "numbered"
+                and kind == "bullet"
+                and current_marker_indent is not None
+                and indent >= (current_marker_indent + 2)
+            )
+
+            if current is None or (is_top_level_indent and not nested_under_numbered):
                 if current is not None and current.strip():
                     items.append(current.strip())
                 current = rest
+                current_marker_indent = indent
+                current_marker_kind = kind
             else:
                 # Nested sub-list line: do not create a new item; attach its content to the parent.
                 if current is not None and rest:
