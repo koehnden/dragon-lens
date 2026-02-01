@@ -13,6 +13,7 @@ from constants import (
     KNOWN_PRODUCTS,
     GENERIC_TERMS,
     PRODUCT_HINTS,
+    BULLET_MARKER_CLASS,
 )
 
 from services.brand_recognition.models import EntityCandidate
@@ -125,27 +126,38 @@ def _list_table_candidates(text: str) -> Set[str]:
     """Extract candidates from list and table formats."""
     hits = set()
 
-    numbered_items = re.findall(r'^\s*\d+[\.、\)]\s+([A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff0-9\s\-]{1,30}?)[\s\-:]', text, re.MULTILINE)
+    numbered_items = re.findall(r'^\s*\d+[\.．、\)）]\s+([A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff0-9\s\-]{1,30}?)[\s\-:]', text, re.MULTILINE)
     hits.update(numbered_items)
 
-    bulleted_items = re.findall(r'^\s*[-•·]\s+([A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff0-9\s\-]{1,30}?)[\s\-:]', text, re.MULTILINE)
+    bulleted_items = re.findall(
+        rf'^\s*[{BULLET_MARKER_CLASS}]\s+([A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff0-9\s\-]{{1,30}}?)[\s\-:]',
+        text,
+        re.MULTILINE,
+    )
     hits.update(bulleted_items)
 
-    inline_numbered = re.findall(r'\d+[\.、]\s*([A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff0-9\s]{1,20}?)[\s\-:]', text)
+    inline_numbered = re.findall(r'\d+[\.．、\)）]\s*([A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff0-9\s]{1,20}?)[\s\-:]', text)
     hits.update(inline_numbered)
 
     brand_mentions = re.findall(r'(?:品牌|推荐|产品|型号)[:：]\s*([A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff0-9\s]{2,20})', text)
     hits.update(brand_mentions)
 
+    from services.brand_recognition.markdown_table import extract_markdown_table_rows
+    for row in extract_markdown_table_rows(text):
+        for cell in row:
+            cell_clean = cell.strip()
+            if 2 <= len(cell_clean) <= 80:
+                hits.add(cell_clean)
+
     cleaned = set()
     for item in hits:
         item_clean = item.strip()
-        if 2 <= len(item_clean) <= 30:
+        if 2 <= len(item_clean) <= 80:
             parts = re.split(r'\s+', item_clean)
             for part in parts:
                 if len(part) >= 2:
                     cleaned.add(part)
-            if len(parts) <= 3:
+            if len(parts) <= 6:
                 cleaned.add(item_clean)
 
     return cleaned

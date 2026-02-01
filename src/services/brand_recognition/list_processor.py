@@ -6,6 +6,7 @@ list items, and extracting entities from list items.
 """
 
 import re
+import unicodedata
 from typing import Dict, List, Optional, Tuple
 
 from constants import (
@@ -13,9 +14,14 @@ from constants import (
     GENERIC_TERMS,
     PRODUCT_HINTS,
     COMPILED_LIST_PATTERNS,
+    LIST_ITEM_MARKER_REGEX,
+    LIST_ITEM_SPLIT_REGEX,
     COMPARISON_MARKERS,
     CLAUSE_SEPARATORS,
     VALID_EXTRA_TERMS,
+    COMPILED_EXPECTED_COUNT_PATTERNS,
+    COMPILED_CHINESE_COUNT_PATTERNS,
+    CHINESE_NUMBERS,
 )
 
 from services.brand_recognition.classification import (
@@ -23,10 +29,55 @@ from services.brand_recognition.classification import (
     is_likely_product,
 )
 from services.brand_recognition.models import EntityCandidate
+from services.brand_recognition.markdown_table import (
+    extract_markdown_table_row_items,
+    find_first_markdown_table_index,
+    markdown_table_has_min_data_rows,
+)
+
+
+def parse_expected_count(text: str) -> Optional[int]:
+    """
+    Parse expected entity count from text phrases like "TOP 10" or "推荐10款".
+
+    Searches only the first 500 characters (intro/title area).
+    Returns the expected count or None if no pattern matched.
+    """
+    text_first_500 = text[:500]
+
+    # Try numeric patterns first
+    for pattern in COMPILED_EXPECTED_COUNT_PATTERNS:
+        match = pattern.search(text_first_500)
+        if match:
+            try:
+                return int(match.group(1))
+            except (ValueError, IndexError):
+                continue
+
+    # Try Chinese number patterns
+    for pattern in COMPILED_CHINESE_COUNT_PATTERNS:
+        match = pattern.search(text_first_500)
+        if match:
+            chinese_num = match.group(1)
+            if chinese_num in CHINESE_NUMBERS:
+                return CHINESE_NUMBERS[chinese_num]
+
+    return None
+
+
+def get_list_item_count(text: str) -> int:
+    """Get the count of list items in text."""
+    if not is_list_format(text):
+        return 0
+    items = split_into_list_items(text)
+    return len(items)
 
 
 def is_list_format(text: str) -> bool:
     """Check if text is in list format."""
+    if markdown_table_has_min_data_rows(text, min_rows=2):
+        return True
+
     for pattern in COMPILED_LIST_PATTERNS:
         matches = pattern.findall(text)
         if len(matches) >= 2:
@@ -39,22 +90,99 @@ def split_into_list_items(text: str) -> List[str]:
     if not is_list_format(text):
         return []
 
-    combined_pattern = r'(?:^\s*\d+[.\)]|^\s*\d+、|^\s*[-*]|^\s*[・○→]|^#{1,4}\s*\**\d+[.\)])\s*'
-    parts = re.split(combined_pattern, text, flags=re.MULTILINE)
-    items = [p.strip() for p in parts if p and p.strip()]
+    if markdown_table_has_min_data_rows(text, min_rows=2):
+        return extract_markdown_table_row_items(text)
 
-    first_item_idx = _find_first_list_item_index(text)
-    if first_item_idx > 0 and items:
-        items = items[1:] if _is_intro_paragraph(items[0], text) else items
+    def _marker_kind(line: str) -> str:
+        stripped = line.lstrip(" \t")
+        if not stripped:
+            return "unknown"
+        if re.match(r"^#{1,4}\s*\**\d+[\.．\)）]", stripped):
+            return "numbered"
+        if re.match(r"^\d+[\.．\)）]", stripped):
+            return "numbered"
+        if re.match(r"^\d+、", stripped):
+            return "numbered"
+        if stripped[0] in "-*•·":
+            return "bullet"
+        if stripped[0] in "・○→":
+            return "bullet"
+        return "unknown"
+
+    lines = text.splitlines()
+
+    marker_indents: List[int] = []
+    for line in lines:
+        if re.match(LIST_ITEM_SPLIT_REGEX, line):
+            indent = len(line) - len(line.lstrip(" \t"))
+            marker_indents.append(indent)
+
+    base_indent = min(marker_indents) if marker_indents else 0
+
+    items: List[str] = []
+    current: Optional[str] = None
+    current_marker_indent: Optional[int] = None
+    current_marker_kind: Optional[str] = None
+
+    # In LLM outputs, "flat" top-level lists often have inconsistent leading whitespace
+    # across sibling items (e.g. "1. A" then "  2. B"). Treat small indent deltas as
+    # top-level to avoid collapsing siblings into the previous item.
+    top_level_indent_jitter = 3
+
+    for line in lines:
+        marker_match = re.match(LIST_ITEM_SPLIT_REGEX, line)
+        if marker_match:
+            indent = len(line) - len(line.lstrip(" \t"))
+            rest = line[marker_match.end():].strip()
+            kind = _marker_kind(line)
+
+            is_top_level_indent = indent <= (base_indent + top_level_indent_jitter)
+            nested_under_numbered = (
+                current_marker_kind == "numbered"
+                and kind == "bullet"
+                and current_marker_indent is not None
+                and indent >= (current_marker_indent + 2)
+            )
+
+            if current is None or (is_top_level_indent and not nested_under_numbered):
+                if current is not None and current.strip():
+                    items.append(current.strip())
+                current = rest
+                current_marker_indent = indent
+                current_marker_kind = kind
+            else:
+                # Nested sub-list line: do not create a new item; attach its content to the parent.
+                if current is not None and rest:
+                    current = f"{current}\n{rest}" if current else rest
+            continue
+
+        if _is_structural_header_line(line):
+            continue
+
+        if current is not None:
+            cont = line.strip()
+            if cont:
+                current = f"{current}\n{cont}" if current else cont
+
+    if current is not None and current.strip():
+        items.append(current.strip())
 
     return items
 
 
 def _find_first_list_item_index(text: str) -> int:
     """Find the index of the first list item marker in text."""
-    combined_pattern = r'(?:^\s*\d+[.\)]|^\s*\d+、|^\s*[-*]|^\s*[・○→]|^#{1,4}\s*\**\d+[.\)])'
-    match = re.search(combined_pattern, text, flags=re.MULTILINE)
-    return match.start() if match else 0
+    marker_match = re.search(LIST_ITEM_MARKER_REGEX, text, flags=re.MULTILINE)
+    marker_idx = marker_match.start() if marker_match else None
+    table_idx = find_first_markdown_table_index(text)
+
+    if marker_idx is None and table_idx is None:
+        return 0
+    if marker_idx is None:
+        return table_idx or 0
+    if table_idx is None:
+        return marker_idx
+    return min(marker_idx, table_idx)
 
 
 def _is_intro_paragraph(candidate: str, full_text: str) -> bool:
@@ -74,6 +202,7 @@ def extract_primary_entities_from_list_item(item: str) -> Dict[str, Optional[str
     item_normalized = normalize_text_for_ner(item)
     item_lower = item_normalized.lower()
     product_positions: List[Tuple[int, int, str]] = []
+    first_product_pos: Optional[int] = None
     
     for product in KNOWN_PRODUCTS:
         pos = item_lower.find(product.lower())
@@ -90,11 +219,20 @@ def extract_primary_entities_from_list_item(item: str) -> Dict[str, Optional[str
     if product_positions:
         product_positions.sort(key=lambda x: (x[0], x[1]))
         result["primary_product"] = product_positions[0][2]
+        first_product_pos = product_positions[0][0]
     
     if result["primary_brand"] is None:
         brand_pattern = r"\b([A-Z][a-z]{3,}|[A-Z]{2,4})\b"
         for match in re.finditer(brand_pattern, item_normalized):
             candidate = match.group(1)
+            if is_likely_brand(candidate) and candidate.lower() not in GENERIC_TERMS:
+                result["primary_brand"] = candidate
+                break
+
+    if result["primary_brand"] is None:
+        brand_region = item_normalized[:first_product_pos] if first_product_pos else item_normalized
+        for match in re.finditer(r"[\u4e00-\u9fff]{2,4}", brand_region):
+            candidate = match.group(0)
             if is_likely_brand(candidate) and candidate.lower() not in GENERIC_TERMS:
                 result["primary_brand"] = candidate
                 break
@@ -129,6 +267,10 @@ def _filter_by_list_position(candidates: List[EntityCandidate], text: str) -> Li
     if intro_text:
         _add_all_entities_from_text(intro_text, candidates, allowed_brands, allowed_products)
 
+    header_context = _get_header_context_text(text)
+    if header_context:
+        _add_all_entities_from_text(header_context, candidates, allowed_brands, allowed_products)
+
     for item in list_items:
         primary = _extract_first_brand_and_product_from_item(item, candidates)
         if primary["brand"]:
@@ -147,6 +289,63 @@ def _get_intro_text(text: str) -> Optional[str]:
     if first_marker_idx > 0:
         return text[:first_marker_idx].strip()
     return None
+
+
+def _is_numbered_markdown_heading(line: str) -> bool:
+    stripped = line.strip()
+    return bool(re.match(r"^#{1,6}\s*\**\d+[\.．\)）]", stripped))
+
+
+def _starts_with_emoji_symbol(text: str) -> bool:
+    if not text:
+        return False
+    first = text[0]
+    # Avoid treating symbols like ® © ™ as emoji headers.
+    if ord(first) < 0x1F000:
+        return False
+    # Most emoji are in "So" (Symbol, Other) or "Sk" (Symbol, Modifier).
+    if unicodedata.category(first) not in {"So", "Sk"}:
+        return False
+    return True
+
+
+def _is_structural_header_line(line: str) -> bool:
+    """
+    Detect structural header lines (vertical-agnostic).
+
+    These should not be appended into list items. Brands/products mentioned in
+    headers can be preserved separately as context for list-position filtering.
+    """
+    stripped = line.strip()
+    if not stripped:
+        return False
+
+    # Keep numbered markdown headings as list items (e.g. "### 1. Toyota ...").
+    if _is_numbered_markdown_heading(stripped):
+        return False
+
+    # Markdown headings like "### Toyota Recommended Picks".
+    if re.match(r"^#{1,6}\s+", stripped):
+        return True
+
+    # Emoji/title lines (common in LLM answers).
+    if _starts_with_emoji_symbol(stripped):
+        return True
+
+    # Short label lines ending with ":" / "：" (often section headers).
+    if stripped.endswith((":","：")) and len(stripped) <= 80:
+        return True
+
+    return False
+
+
+def _get_header_context_text(text: str) -> Optional[str]:
+    """Collect structural header lines as context for list-position filtering."""
+    lines: List[str] = []
+    for line in text.splitlines():
+        if _is_structural_header_line(line):
+            lines.append(line.strip())
+    return "\n".join(lines) if lines else None
 
 
 def _add_all_entities_from_text(

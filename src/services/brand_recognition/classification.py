@@ -31,6 +31,10 @@ def is_likely_brand(name: str) -> bool:
     if name_lower in GENERIC_TERMS:
         return False
 
+    # If we already have strong evidence this is a product/model token, do not treat it as a brand.
+    if name_lower in PRODUCT_HINTS:
+        return False
+
     if _is_descriptor_pattern(name):
         return False
 
