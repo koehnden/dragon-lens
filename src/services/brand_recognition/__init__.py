@@ -11,6 +11,7 @@ from services.brand_recognition.models import (
     ExtractedEntities,
     ExtractionDebugInfo,
     ExtractionResult,
+    ExtractionQuality,
 )
 from services.brand_recognition.orchestrator import (
     extract_entities,
@@ -71,6 +72,8 @@ from services.brand_recognition.list_processor import (
     is_list_format,
     split_into_list_items,
     extract_primary_entities_from_list_item,
+    parse_expected_count,
+    get_list_item_count,
 )
 from services.brand_recognition.config import (
     ENABLE_QWEN_FILTERING,
@@ -90,12 +93,13 @@ __all__ = [
     "ExtractedEntities",
     "ExtractionDebugInfo",
     "ExtractionResult",
-    
+    "ExtractionQuality",
+
     # Main API functions
     "extract_entities",
     "canonicalize_entities",
     "generate_candidates",
-    
+
     # Classification functions
     "is_likely_brand",
     "is_likely_product",
@@ -106,18 +110,20 @@ __all__ = [
     "_has_product_patterns",
     "_calculate_brand_confidence",
     "_calculate_product_confidence",
-    
+
     # Text utilities
     "normalize_text_for_ner",
     "extract_snippet_for_brand",
     "extract_snippet_with_list_awareness",
     "_truncate_list_item",
-    
+
     # List processing
     "is_list_format",
     "split_into_list_items",
     "extract_primary_entities_from_list_item",
-    
+    "parse_expected_count",
+    "get_list_item_count",
+
     # Configuration
     "ENABLE_QWEN_FILTERING",
     "ENABLE_QWEN_EXTRACTION",
