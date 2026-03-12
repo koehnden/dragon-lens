@@ -462,9 +462,56 @@ class QwenBatchExtractor:
         # Call extract_batch for each batch
 ```
 
-#### 4.2 `src/prompts/extraction/qwen_item_extraction.md`
+#### 4.2 Negative Few-Shot Examples (Feedback Loop)
 
-New prompt designed for per-item extraction:
+The Qwen prompt is augmented with **negative examples** (previous extraction
+mistakes) and **positive examples** (validated entities) from the knowledge base.
+This creates an iterative learning loop:
+
+1. **Step 3 stores rejections**: When DeepSeek rejects an entity (e.g., "SUV" is
+   a generic category, not a product), it's stored in `KnowledgeRejectedEntity`
+   with the reason.
+2. **Step 2 loads rejections**: Before building the Qwen prompt, load the most
+   recent rejections for this vertical (capped at 20 per entity type to avoid
+   prompt bloat).
+3. **Prompt includes negative examples**: "DO NOT extract these — they were
+   incorrectly identified before: SUV (generic category), 新能源车 (generic
+   category), 比亚迪 (this is a brand, not a product)".
+4. **Prompt includes positive examples**: Known validated brands and products
+   so Qwen knows what good extractions look like.
+
+```python
+# In QwenBatchExtractor:
+def _load_augmentation(self, db: Session, vertical_id: int) -> dict:
+    """Load positive/negative examples for prompt augmentation."""
+    rejected = db.query(KnowledgeRejectedEntity).filter(
+        KnowledgeRejectedEntity.vertical_id == vertical_id,
+    ).order_by(KnowledgeRejectedEntity.created_at.desc()).limit(40).all()
+
+    rejected_brands = [e for e in rejected if e.entity_type == EntityType.BRAND][:20]
+    rejected_products = [e for e in rejected if e.entity_type == EntityType.PRODUCT][:20]
+
+    validated_brands = db.query(KnowledgeBrand).filter(
+        KnowledgeBrand.vertical_id == vertical_id,
+        KnowledgeBrand.is_validated == True,
+    ).limit(30).all()
+
+    validated_products = db.query(KnowledgeProduct).filter(
+        KnowledgeProduct.vertical_id == vertical_id,
+        KnowledgeProduct.is_validated == True,
+    ).limit(30).all()
+
+    return {
+        "rejected_brands": rejected_brands,
+        "rejected_products": rejected_products,
+        "validated_brands": validated_brands,
+        "validated_products": validated_products,
+    }
+```
+
+#### 4.3 `src/prompts/extraction/qwen_item_extraction.md`
+
+New prompt designed for per-item extraction, with negative/positive few-shot examples:
 
 ```markdown
 ---
@@ -481,6 +528,30 @@ For each numbered item below, extract the BRAND (company/manufacturer) and
 PRODUCT (specific model/item) if present.
 
 {{ intro_context_section }}
+
+{% if validated_brands %}
+KNOWN VALID BRANDS (extract these when you see them):
+{% for brand in validated_brands %}
+- {{ brand.display_name }}{% if brand.aliases %} (also: {{ brand.aliases | map(attribute='alias') | join(', ') }}){% endif %}
+{% endfor %}
+{% endif %}
+
+{% if validated_products %}
+KNOWN VALID PRODUCTS (extract these when you see them):
+{% for product in validated_products %}
+- {{ product.display_name }}
+{% endfor %}
+{% endif %}
+
+{% if rejected_brands or rejected_products %}
+DO NOT EXTRACT THESE (previous mistakes):
+{% for entity in rejected_brands %}
+- {{ entity.name }} — {{ entity.reason }}
+{% endfor %}
+{% for entity in rejected_products %}
+- {{ entity.name }} — {{ entity.reason }}
+{% endfor %}
+{% endif %}
 
 ITEMS TO ANALYZE:
 {{ items_json }}
@@ -508,6 +579,10 @@ Rules:
 - Batching: all items from response A stay together
 - Intro context included when available
 - Empty items list -> no Ollama call
+- Prompt includes validated brands/products as positive examples
+- Prompt includes rejected entities as negative few-shot examples with reasons
+- Negative examples capped at 20 per entity type
+- No augmentation data -> prompt sections omitted cleanly
 
 ### Phase 5: DeepSeek Consultation (Step 3)
 
@@ -558,6 +633,29 @@ class DeepSeekConsultant:
         # Batch max 20 entities per call
         # Call DeepSeek to check relevance
 
+    def store_rejections(
+        self,
+        db: Session,
+        vertical_id: int,
+        rejected_brands: set[str],
+        rejected_products: set[str],
+        rejection_reasons: dict[str, str],
+    ) -> None:
+        """Store rejected entities in KB for negative few-shot examples.
+
+        Called after validate_relevance(). Each rejection is stored with
+        the reason from DeepSeek (e.g., "generic category", "brand not product",
+        "not relevant to vertical").
+
+        These rejections are loaded by QwenBatchExtractor._load_augmentation()
+        in future runs to prevent Qwen from repeating the same mistakes.
+        """
+        # For each rejected brand:
+        #   Insert KnowledgeRejectedEntity(entity_type=BRAND, name=brand, reason=reason)
+        # For each rejected product:
+        #   Insert KnowledgeRejectedEntity(entity_type=PRODUCT, name=product, reason=reason)
+        # Skip if already exists (idempotent)
+
     def _build_proximity_map(
         self,
         item_pairs: list[tuple[str | None, str | None]],
@@ -579,14 +677,19 @@ class DeepSeekConsultant:
 
 **`src/prompts/extraction/deepseek_validate.md`**:
 - Input: brands + products, vertical + description
-- Output: `{valid_brands: [...], valid_products: [...], rejected_brands: [...], rejected_products: [...]}`
+- Output: `{valid_brands: [...], valid_products: [...], rejected: [{name: "SUV", reason: "generic category"}, {name: "比亚迪", reason: "brand misclassified as product"}]}`
 - Rules: reject entities not relevant to the vertical
+- **Each rejection MUST include a reason** — this reason is stored in `KnowledgeRejectedEntity` and shown to Qwen as a negative few-shot example in future runs
 
 **Tests** (`tests/unit/test_deepseek_consultant.py`):
 - Proximity mapping: items with (brand, product) -> correct map
 - Proximity mapping: product without brand -> unmapped
 - Mock DeepSeek: normalization response parsing
 - Mock DeepSeek: validation response parsing
+- Mock DeepSeek: rejection reasons parsed and stored correctly
+- `store_rejections()`: creates KnowledgeRejectedEntity with correct reasons
+- `store_rejections()`: idempotent — skips duplicates
+- `store_rejections()`: stored rejections loaded by Qwen in next run
 - No DeepSeek API key -> graceful fallback (keep all, no normalization)
 - Batching: >20 entities -> multiple calls
 
