@@ -947,3 +947,136 @@ else:
 ```
 
 This allows A/B comparison and safe rollout.
+
+---
+
+## Evaluation: Gold Set & F0.5 Scoring
+
+### Goal
+
+Measure extraction quality with **F0.5** (beta=0.5), which weights precision
+twice as much as recall. Target: **F0.5 ≥ 0.95**.
+
+### Gold Set Creation
+
+Use the full `suv_example.json` (20 prompts × ~10 items each ≈ 200 items) as
+the evaluation corpus. Label manually in a Google Sheet.
+
+**Step 1: Generate responses**
+
+Run the 20 prompts through Qwen to get actual Chinese LLM responses. Save as
+`examples/suv_gold_responses.json`:
+
+```json
+[
+  {
+    "prompt_index": 0,
+    "prompt_text": "预算15-20万...",
+    "response_text": "以下是推荐的SUV...\n1. 比亚迪宋PLUS ...\n2. ..."
+  }
+]
+```
+
+**Step 2: Label in Google Sheet**
+
+Create a sheet with columns:
+
+| prompt_index | item_position | item_text | gold_brand | gold_product | gold_brand_canonical | notes |
+|---|---|---|---|---|---|---|
+| 0 | 1 | 比亚迪宋PLUS DM-i - 省油... | 比亚迪 | 宋PLUS DM-i | BYD | |
+| 0 | 2 | 哈弗H6 - 销量冠军... | 哈弗 | H6 | Haval | brand=长城子品牌 |
+| 0 | 3 | ... | null | null | null | intro text, no entity |
+
+Rules for labeling:
+- `gold_brand`: Brand as it appears in the text (Chinese)
+- `gold_product`: Product as it appears in the text (Chinese)
+- `gold_brand_canonical`: English canonical name (for normalization scoring)
+- `null` if item has no brand/product (e.g., intro text, generic advice)
+- One brand + one product per item (same as pipeline contract)
+- ~200 items total, 1-2 hours of manual labeling
+
+**Step 3: Export to JSON**
+
+Download as `examples/suv_gold_labels.json` for automated scoring:
+
+```json
+[
+  {"prompt_index": 0, "item_position": 1, "item_text": "比亚迪宋PLUS...",
+   "gold_brand": "比亚迪", "gold_product": "宋PLUS DM-i", "gold_brand_canonical": "BYD"},
+  ...
+]
+```
+
+### Scoring Script
+
+`scripts/score_extraction.py` — simple, no over-engineering:
+
+```python
+"""Score extraction pipeline output against gold labels.
+
+Usage: python scripts/score_extraction.py examples/suv_gold_labels.json [--pipeline new|old]
+"""
+
+def score_f_beta(tp: int, fp: int, fn: int, beta: float = 0.5) -> float:
+    """F-beta score. beta=0.5 weights precision 2x over recall."""
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    if precision + recall == 0:
+        return 0.0
+    beta_sq = beta ** 2
+    return (1 + beta_sq) * (precision * recall) / (beta_sq * precision + recall)
+
+def evaluate(gold_labels: list[dict], pipeline_results: list[dict]) -> dict:
+    """Compare pipeline output against gold labels.
+
+    Matching logic:
+    - Brand match: exact string match OR alias match (gold_brand in pipeline brand aliases)
+    - Product match: exact string match OR normalized match (strip whitespace, case)
+    - An item is a TRUE POSITIVE if both brand AND product match gold
+    - An item is a FALSE POSITIVE if pipeline extracted brand/product but gold is null
+    - An item is a FALSE NEGATIVE if gold has brand/product but pipeline returned null
+
+    Returns dict with:
+    - brand_precision, brand_recall, brand_f05
+    - product_precision, product_recall, product_f05
+    - combined_precision, combined_recall, combined_f05
+    - per_item_details (for debugging mismatches)
+    """
+
+def print_report(scores: dict) -> None:
+    """Print human-readable scoring report."""
+    # Brand extraction:  P=0.97  R=0.93  F0.5=0.96
+    # Product extraction: P=0.95  R=0.91  F0.5=0.94
+    # Combined:          P=0.96  R=0.92  F0.5=0.95
+    # ---
+    # Mismatches (top 10):
+    #   Item "哈弗H6 - ..." -> predicted (长城, H6) vs gold (哈弗, H6)
+```
+
+### What to Measure
+
+Score **three dimensions separately**:
+
+| Metric | What counts as correct | Why |
+|--------|----------------------|-----|
+| **Brand extraction** | Pipeline brand matches gold brand (or alias) | Core accuracy |
+| **Product extraction** | Pipeline product matches gold product | Core accuracy |
+| **Brand-product pairing** | Pipeline maps product to correct brand | Relationship accuracy |
+
+### When to Run
+
+- **After each phase**: Run scoring to track progress
+- **Old vs new comparison**: Run both pipelines on same gold set, compare F0.5
+- **Regression gate**: F0.5 must not drop below 0.90 during development
+
+### Gaps and Edge Cases to Watch
+
+1. **Section headers parsed as items**: "5座SUV：" is not an entity — parser
+   must skip these or the scorer flags them as FP
+2. **Sub-brand vs brand**: 哈弗 is a sub-brand of 长城 — gold set should use
+   the name as it appears (哈弗), normalization is a separate concern
+3. **Items without products**: "比亚迪在新能源领域领先" mentions a brand but no
+   specific product — gold label should have brand=比亚迪, product=null
+4. **Multiple brands in one item**: "大众途观L和丰田RAV4对比" — current pipeline
+   contract is one brand per item, so gold set should pick the primary (first)
+   or we flag these as "ambiguous" and exclude from scoring
