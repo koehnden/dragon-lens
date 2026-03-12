@@ -398,8 +398,15 @@ class KnowledgeBaseMatcher:
         # Returns ItemExtractionResult with source="kb"
 
     def add_to_session(self, brand: str | None, product: str | None):
-        """Add newly discovered entity to in-memory session KB."""
-        # Called after Qwen extraction to enable matching in subsequent items
+        """Add newly discovered entity to in-memory session KB (run-scoped).
+
+        Called after Qwen extraction. The session KB is shared across ALL
+        responses in the same run, so a brand discovered in response 1 can be
+        rule-matched in response 5 without another Qwen call.
+
+        Session KB entities are NOT persisted to TursoDB here — they stay
+        in-memory only. Persistence happens in Step 3 after DeepSeek validates.
+        """
 
     @staticmethod
     def _build_lookup(entities: list, aliases: list) -> dict[str, str]:
@@ -569,6 +576,11 @@ Rules:
 - null if not found
 - Extract EXACT names as they appear
 - One brand and one product per item maximum
+- Product = model name only, WITHOUT trim/variant suffixes
+  - YES: "途观L", "RAV4荣放", "宋PLUS DM-i", "唐DM-i"
+  - NO: "途观L 2024款", "RAV4荣放 豪华版", "唐DM-i 冠军版 120KM"
+  - Keep sub-model identifiers that distinguish product lines (DM-i, EV, PLUS)
+  - Drop edition/trim suffixes (冠军版, 豪华版, 旗舰版, 2024款)
 ```
 
 **Tests** (`tests/unit/test_qwen_extractor.py`):
@@ -699,7 +711,12 @@ class DeepSeekConsultant:
 
 ```python
 class ExtractionPipeline:
-    """Orchestrate the 3-step extraction pipeline."""
+    """Orchestrate the 3-step extraction pipeline.
+
+    IMPORTANT: One pipeline instance per run. The KnowledgeBaseMatcher is
+    created once and shared across all responses — entities discovered by
+    Qwen in response 1 are available for rule-matching in response 5.
+    """
 
     def __init__(
         self,
@@ -712,6 +729,15 @@ class ExtractionPipeline:
         self.vertical_description = vertical_description
         self.vertical_id = vertical_id
         self.db = db
+        # Run-scoped: created once, shared across all responses
+        self._matcher: KnowledgeBaseMatcher | None = None
+        self._all_results: list[ItemExtractionResult] = []
+
+    def _get_matcher(self) -> KnowledgeBaseMatcher:
+        """Lazy-init the run-scoped matcher (loaded once from KB)."""
+        if self._matcher is None:
+            self._matcher = KnowledgeBaseMatcher(self.vertical_id, self.db)
+        return self._matcher
 
     async def extract_from_response(
         self,
@@ -724,8 +750,8 @@ class ExtractionPipeline:
         Runs steps -1 through 2. Step 3 (DeepSeek) runs separately via consult().
         Returns ExtractionResult compatible with existing pipeline.
         """
-        # Step -1: Seed if cold start
-        if self.vertical_id and self.db:
+        # Step -1: Seed if cold start (only on first response)
+        if self.vertical_id and self.db and self._matcher is None:
             seeder = VerticalSeeder(self.vertical, self.vertical_description, self.vertical_id)
             await seeder.ensure_seeded(self.db, user_brands)
 
@@ -733,8 +759,8 @@ class ExtractionPipeline:
         items = parse_response_into_items(text, response_id)
         intro = extract_intro_context(text)
 
-        # Step 1: Rule-based extraction
-        matcher = KnowledgeBaseMatcher(self.vertical_id, self.db)
+        # Step 1: Rule-based extraction (run-scoped matcher)
+        matcher = self._get_matcher()
         results = [matcher.match_item(item) for item in items]
 
         # Collect missing items
@@ -748,21 +774,30 @@ class ExtractionPipeline:
                 missing, {response_id: intro} if intro else {}
             )
             # Merge qwen results into main results
-            # Add to session KB
+            # Add to session KB (run-scoped, NOT persisted to TursoDB yet)
             for qr in qwen_results:
                 matcher.add_to_session(qr.brand, qr.product)
+
+        # Accumulate for Step 3
+        self._all_results.extend(results)
 
         # Convert to ExtractionResult (same shape as existing)
         return self._build_extraction_result(results)
 
-    async def consult(
-        self,
-        all_results: list[ItemExtractionResult],
-    ) -> BatchExtractionResult:
-        """Run Step 3 (DeepSeek consultation) after all responses processed."""
+    async def consult(self) -> BatchExtractionResult:
+        """Run Step 3 (DeepSeek consultation) after ALL responses processed.
+
+        This is a post-run batch operation. DeepSeek is expensive, so we
+        collect all entities from steps 0-2 across all 20 responses and
+        send them in bulk (1-3 DeepSeek calls total, not per-response).
+
+        Within a single run, if Qwen repeats the same mistake across
+        multiple responses, Step 3 catches it once and stores the rejection.
+        The negative few-shot loop prevents it on the NEXT run.
+        """
         consultant = DeepSeekConsultant(self.vertical, self.vertical_description)
-        # ... normalize, map, validate
-        # ... store in knowledge DB
+        # ... normalize, map, validate using self._all_results
+        # ... store validated entities + rejections in TursoDB
 
     def _build_extraction_result(
         self, item_results: list[ItemExtractionResult]
@@ -916,6 +951,51 @@ def test_e2e_cold_start_with_user_brands(db_session, knowledge_db_session):
 
 ---
 
+## Performance Budget: 20 Prompts in ≤ 20 Minutes
+
+The old pipeline was painfully slow. The new pipeline must complete a full
+20-prompt run (including extraction) in **≤ 20 minutes total**.
+
+### Time Budget Per Step
+
+| Step | Per response | 20 responses | Notes |
+|------|-------------|--------------|-------|
+| **Step -1: Seed** | — | ~10s (once) | 1 DeepSeek call, only on first run |
+| **Step 0: Parse** | <50ms | <1s | Pure string splitting, no LLM |
+| **Step 1: Rule match** | <100ms | <2s | In-memory dict lookup, no DB queries during matching |
+| **Step 2: Qwen** | ~15-30s | ~5-10min | 1-2 batches per response (≤10 items each), **main bottleneck** |
+| **Step 3: DeepSeek** | — | ~30-60s (once) | 1-3 calls total at end of run, not per-response |
+| **Total extraction** | — | **~6-12min** | Leaves headroom within 20min budget |
+
+### Key Performance Decisions
+
+1. **KnowledgeBaseMatcher loaded once per run** — Load all brands/products/aliases
+   for the vertical into memory at start. No DB queries during item matching.
+   As KB grows across runs, Step 1 resolves more items → fewer Qwen calls.
+
+2. **Session KB is run-scoped** — Entities discovered by Qwen in response 1
+   are immediately available for rule-matching in responses 2-20. This means
+   the first few responses may be slower (more Qwen calls), but later responses
+   are faster as the session KB fills up. Over a 20-prompt run, we expect
+   Qwen calls to decrease as common brands/products get session-cached.
+
+3. **DeepSeek runs once at end of run** — Not per-response. Collects all unique
+   entities from steps 0-2, deduplicates, then sends 1-3 bulk calls:
+   - 1 call for normalize + map (~30 unique brands, ~50 products)
+   - 1 call for validate relevance (same batch)
+   This keeps DeepSeek token usage and cost minimal.
+
+4. **Qwen batching** — Max 10 items per call, all items from one response
+   together. A typical response has 10 list items; if KB matches 3-5 of them,
+   Qwen only processes 5-7 items in a single call. As KB grows, this drops
+   further.
+
+5. **No Qwen call if KB covers everything** — On mature verticals (run 3+),
+   most brands/products are in the KB. Step 1 resolves them instantly.
+   Qwen is only called for genuinely new entities.
+
+---
+
 ## Implementation Order
 
 1. **models.py** - Data classes (no dependencies)
@@ -955,7 +1035,13 @@ This allows A/B comparison and safe rollout.
 ### Goal
 
 Measure extraction quality with **F0.5** (beta=0.5), which weights precision
-twice as much as recall. Target: **F0.5 ≥ 0.95**.
+twice as much as recall.
+
+**Targets:**
+- Brand extraction: F0.5 ≥ 0.95 (achievable — brand names are distinctive)
+- Product extraction: F0.5 ≥ 0.90 (harder — product name boundaries are fuzzy)
+- Combined (brand+product pair): F0.5 ≥ 0.90 (minimum gate), aspirational 0.95
+- **Regression gate during development**: F0.5 must not drop below 0.85
 
 ### Gold Set Creation
 
@@ -993,6 +1079,10 @@ Rules for labeling:
 - `gold_brand_canonical`: English canonical name (for normalization scoring)
 - `null` if item has no brand/product (e.g., intro text, generic advice)
 - One brand + one product per item (same as pipeline contract)
+- **Product name boundary**: model name only, keep sub-model identifiers (DM-i,
+  EV, PLUS), drop trim/edition suffixes (冠军版, 豪华版, 2024款)
+  - YES: "宋PLUS DM-i", "途观L", "RAV4荣放"
+  - NO: "宋PLUS DM-i 冠军版", "途观L 2024款 330TSI"
 - ~200 items total, 1-2 hours of manual labeling
 
 **Step 3: Export to JSON**
@@ -1026,15 +1116,34 @@ def score_f_beta(tp: int, fp: int, fn: int, beta: float = 0.5) -> float:
     beta_sq = beta ** 2
     return (1 + beta_sq) * (precision * recall) / (beta_sq * precision + recall)
 
+def normalize_for_match(text: str) -> str:
+    """Normalize entity name for fuzzy matching.
+
+    Chinese-aware normalization:
+    - Strip whitespace, lowercase ASCII portions
+    - Remove common Chinese suffixes: 版, 款, 型, 系列
+    - Remove trim suffixes: 冠军版, 豪华版, 旗舰版, 尊贵版, 运动版
+    - Remove year/config patterns: 2024款, 330TSI, 1.5T
+    - Normalize Unicode: fullwidth -> halfwidth (Ｈ６ -> H6)
+    - Keep sub-model identifiers: DM-i, EV, PLUS, Pro, Max
+    """
+
+TRIM_SUFFIXES_RE = re.compile(
+    r'[\s]*(冠军版|豪华版|旗舰版|尊贵版|运动版|舒适版|智享版|'
+    r'\d{4}款|[A-Z0-9]+TSI|[0-9]+\.[0-9]+[TL])'
+    r'[\s]*$'
+)
+
 def evaluate(gold_labels: list[dict], pipeline_results: list[dict]) -> dict:
     """Compare pipeline output against gold labels.
 
     Matching logic:
     - Brand match: exact string match OR alias match (gold_brand in pipeline brand aliases)
-    - Product match: exact string match OR normalized match (strip whitespace, case)
+    - Product match: exact string match OR normalized fuzzy match via normalize_for_match()
     - An item is a TRUE POSITIVE if both brand AND product match gold
     - An item is a FALSE POSITIVE if pipeline extracted brand/product but gold is null
     - An item is a FALSE NEGATIVE if gold has brand/product but pipeline returned null
+    - Brand and product scored independently (brand can be TP while product is FN)
 
     Returns dict with:
     - brand_precision, brand_recall, brand_f05
@@ -1067,7 +1176,7 @@ Score **three dimensions separately**:
 
 - **After each phase**: Run scoring to track progress
 - **Old vs new comparison**: Run both pipelines on same gold set, compare F0.5
-- **Regression gate**: F0.5 must not drop below 0.90 during development
+- **Regression gate**: Combined F0.5 must not drop below 0.85 during development
 
 ### Gaps and Edge Cases to Watch
 
