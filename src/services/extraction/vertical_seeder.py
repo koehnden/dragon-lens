@@ -2,6 +2,8 @@
 
 import json
 import logging
+import re
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -23,6 +25,21 @@ logger = logging.getLogger(__name__)
 SEED_PROMPT_PATH = Path(__file__).parent.parent.parent / "prompts" / "extraction" / "deepseek_seed_vertical.md"
 
 MIN_VALIDATED_BRANDS = 10
+
+
+@dataclass
+class _BrandCache:
+    by_id: dict[int, KnowledgeBrand] = field(default_factory=dict)
+    by_alias_key: dict[str, KnowledgeBrand] = field(default_factory=dict)
+    alias_keys_by_brand_id: dict[int, set[str]] = field(default_factory=dict)
+
+
+@dataclass
+class _ProductCache:
+    by_id: dict[int, KnowledgeProduct] = field(default_factory=dict)
+    by_alias_key: dict[str, KnowledgeProduct] = field(default_factory=dict)
+    alias_keys_by_product_id: dict[int, set[str]] = field(default_factory=dict)
+    mapping_pairs: set[tuple[int, int]] = field(default_factory=set)
 
 
 class VerticalSeeder:
@@ -65,40 +82,54 @@ class VerticalSeeder:
         """
         seeded = 0
         updated_existing = False
-        for brand_data in user_brands:
-            display_name = brand_data.get("display_name", "")
-            if not display_name:
-                continue
+        brand_cache = self._load_brand_cache(db)
 
-            alias_texts = {display_name}
-            aliases = brand_data.get("aliases", {}) or {}
-            for alias_list in aliases.values():
-                alias_texts.update(a for a in alias_list if a)
+        with db.begin_nested():
+            for brand_data in user_brands:
+                display_name = brand_data.get("display_name", "")
+                if not display_name:
+                    continue
 
-            existing = self._find_existing_brand(db, alias_texts)
-            if existing:
-                self._add_brand_aliases(db, existing.id, aliases)
-                if not existing.is_validated:
-                    existing.is_validated = True
-                    existing.validation_source = "user"
-                    updated_existing = True
-                continue
+                alias_texts = {display_name}
+                aliases = brand_data.get("aliases", {}) or {}
+                for alias_list in aliases.values():
+                    alias_texts.update(a for a in alias_list if a)
 
-            brand = KnowledgeBrand(
-                vertical_id=self.vertical_id,
-                canonical_name=display_name,
-                display_name=display_name,
-                is_validated=True,
-                validation_source="user",
-            )
-            db.add(brand)
-            db.flush()
+                existing = self._find_existing_brand(db, alias_texts, brand_cache=brand_cache)
+                if existing:
+                    self._add_brand_aliases(
+                        db,
+                        existing.id,
+                        aliases,
+                        brand_cache=brand_cache,
+                    )
+                    if not existing.is_validated:
+                        existing.is_validated = True
+                        existing.validation_source = "user"
+                        updated_existing = True
+                    continue
 
-            self._add_brand_aliases(db, brand.id, aliases)
-            seeded += 1
+                brand = KnowledgeBrand(
+                    vertical_id=self.vertical_id,
+                    canonical_name=display_name,
+                    display_name=display_name,
+                    is_validated=True,
+                    validation_source="user",
+                )
+                db.add(brand)
+                db.flush()
 
-        if seeded or updated_existing:
-            db.flush()
+                self._register_brand(brand_cache, brand)
+                self._add_brand_aliases(
+                    db,
+                    brand.id,
+                    aliases,
+                    brand_cache=brand_cache,
+                )
+                seeded += 1
+
+            if seeded or updated_existing:
+                db.flush()
         if seeded:
             logger.info(
                 "Seeded %d user brands for vertical '%s'", seeded, self.vertical
@@ -166,9 +197,9 @@ class VerticalSeeder:
         """Build the DeepSeek seed prompt from template."""
         template = SEED_PROMPT_PATH.read_text(encoding="utf-8")
         return template.replace(
-            "{{ vertical }}", self.vertical
+            "{{ vertical }}", _sanitize_prompt_value(self.vertical)
         ).replace(
-            "{{ vertical_description }}", self.vertical_description
+            "{{ vertical_description }}", _sanitize_prompt_value(self.vertical_description)
         )
 
     def _store_seed_response(self, db: Session, response_text: str) -> int:
@@ -179,17 +210,26 @@ class VerticalSeeder:
             return 0
 
         seeded = 0
-        for brand_data in data["brands"]:
-            brand = self._store_seed_brand(db, brand_data)
-            if not brand:
-                continue
-            seeded += 1
+        brand_cache = self._load_brand_cache(db)
+        product_cache = self._load_product_cache(db)
 
-            for product_data in brand_data.get("products", []):
-                self._store_seed_product(db, brand, product_data)
+        with db.begin_nested():
+            for brand_data in data["brands"]:
+                brand = self._store_seed_brand(db, brand_data, brand_cache=brand_cache)
+                if not brand:
+                    continue
+                seeded += 1
 
-        if seeded:
-            db.flush()
+                for product_data in brand_data.get("products", []):
+                    self._store_seed_product(
+                        db,
+                        brand,
+                        product_data,
+                        product_cache=product_cache,
+                    )
+
+            if seeded:
+                db.flush()
             logger.info(
                 "Seeded %d brands from DeepSeek for vertical '%s'",
                 seeded, self.vertical,
@@ -197,7 +237,11 @@ class VerticalSeeder:
         return seeded
 
     def _store_seed_brand(
-        self, db: Session, brand_data: dict
+        self,
+        db: Session,
+        brand_data: dict,
+        *,
+        brand_cache: _BrandCache | None = None,
     ) -> Optional[KnowledgeBrand]:
         """Store a single brand from the seed response."""
         name_en = brand_data.get("name_en", "")
@@ -208,9 +252,16 @@ class VerticalSeeder:
 
         alias_texts = {display_name, name_en, name_zh}
         alias_texts.update(a for a in brand_data.get("aliases", []) if a)
-        existing = self._find_existing_brand(db, alias_texts)
+        existing = self._find_existing_brand(db, alias_texts, brand_cache=brand_cache)
         if existing:
-            self._add_seed_brand_aliases(db, existing.id, name_en, name_zh, brand_data.get("aliases", []))
+            self._add_seed_brand_aliases(
+                db,
+                existing.id,
+                name_en,
+                name_zh,
+                brand_data.get("aliases", []),
+                brand_cache=brand_cache,
+            )
             return existing
 
         brand = KnowledgeBrand(
@@ -223,12 +274,26 @@ class VerticalSeeder:
         db.add(brand)
         db.flush()
 
-        self._add_seed_brand_aliases(db, brand.id, name_en, name_zh, brand_data.get("aliases", []))
+        if brand_cache is not None:
+            self._register_brand(brand_cache, brand)
+        self._add_seed_brand_aliases(
+            db,
+            brand.id,
+            name_en,
+            name_zh,
+            brand_data.get("aliases", []),
+            brand_cache=brand_cache,
+        )
 
         return brand
 
     def _store_seed_product(
-        self, db: Session, brand: KnowledgeBrand, product_data: dict
+        self,
+        db: Session,
+        brand: KnowledgeBrand,
+        product_data: dict,
+        *,
+        product_cache: _ProductCache | None = None,
     ) -> Optional[KnowledgeProduct]:
         """Store a single product from the seed response."""
         name = product_data.get("name", "")
@@ -237,8 +302,14 @@ class VerticalSeeder:
 
         alias_texts = {name}
         alias_texts.update(a for a in product_data.get("aliases", []) if a)
-        existing = self._find_existing_product(db, alias_texts)
+        existing = self._find_existing_product(db, alias_texts, product_cache=product_cache)
         if existing:
+            self._ensure_product_brand_mapping(
+                db,
+                product_id=existing.id,
+                brand_id=brand.id,
+                product_cache=product_cache,
+            )
             return existing
 
         product = KnowledgeProduct(
@@ -251,65 +322,96 @@ class VerticalSeeder:
         )
         db.add(product)
         db.flush()
+        if product_cache is not None:
+            self._register_product(product_cache, product)
 
         # Add product aliases
+        existing_alias_keys = (
+            product_cache.alias_keys_by_product_id.setdefault(product.id, set())
+            if product_cache is not None
+            else None
+        )
         for alias_text in product_data.get("aliases", []):
             if not alias_text or alias_text == name:
                 continue
-            existing_alias = (
-                db.query(KnowledgeProductAlias)
-                .filter(
-                    KnowledgeProductAlias.product_id == product.id,
-                    KnowledgeProductAlias.alias_key == normalize_entity_key(alias_text),
-                )
-                .first()
-            )
-            if not existing_alias:
-                db.add(
-                    KnowledgeProductAlias(
-                        product_id=product.id,
-                        alias=alias_text,
+            alias_key = normalize_entity_key(alias_text)
+            if existing_alias_keys is not None and alias_key in existing_alias_keys:
+                continue
+            if existing_alias_keys is None:
+                existing_alias = (
+                    db.query(KnowledgeProductAlias)
+                    .filter(
+                        KnowledgeProductAlias.product_id == product.id,
+                        KnowledgeProductAlias.alias_key == alias_key,
                     )
+                    .first()
                 )
+                if existing_alias:
+                    continue
+            db.add(
+                KnowledgeProductAlias(
+                    product_id=product.id,
+                    alias=alias_text,
+                )
+            )
+            if existing_alias_keys is not None:
+                existing_alias_keys.add(alias_key)
+                product_cache.by_alias_key[alias_key] = product
 
         # Create product-brand mapping
-        db.add(
-            KnowledgeProductBrandMapping(
-                vertical_id=self.vertical_id,
-                product_id=product.id,
-                brand_id=brand.id,
-                is_validated=False,
-                source="seed",
-            )
+        self._ensure_product_brand_mapping(
+            db,
+            product_id=product.id,
+            brand_id=brand.id,
+            product_cache=product_cache,
         )
 
         return product
 
     def _add_brand_aliases(
-        self, db: Session, brand_id: int, aliases: dict[str, list[str]]
+        self,
+        db: Session,
+        brand_id: int,
+        aliases: dict[str, list[str]],
+        *,
+        brand_cache: _BrandCache | None = None,
     ) -> None:
         """Add brand aliases from user brand data format."""
+        existing_alias_keys = (
+            brand_cache.alias_keys_by_brand_id.setdefault(brand_id, set())
+            if brand_cache is not None
+            else None
+        )
         for lang, alias_list in aliases.items():
             for alias_text in alias_list:
                 if not alias_text:
                     continue
                 a_key = normalize_entity_key(alias_text)
-                existing = (
-                    db.query(KnowledgeBrandAlias)
-                    .filter(
-                        KnowledgeBrandAlias.brand_id == brand_id,
-                        KnowledgeBrandAlias.alias_key == a_key,
-                    )
-                    .first()
-                )
-                if not existing:
-                    db.add(
-                        KnowledgeBrandAlias(
-                            brand_id=brand_id,
-                            alias=alias_text,
-                            language=lang,
+                if existing_alias_keys is not None and a_key in existing_alias_keys:
+                    continue
+                if existing_alias_keys is None:
+                    existing = (
+                        db.query(KnowledgeBrandAlias)
+                        .filter(
+                            KnowledgeBrandAlias.brand_id == brand_id,
+                            KnowledgeBrandAlias.alias_key == a_key,
                         )
+                        .first()
                     )
+                    if existing:
+                        continue
+                db.add(
+                    KnowledgeBrandAlias(
+                        brand_id=brand_id,
+                        alias=alias_text,
+                        language=lang,
+                    )
+                )
+                if existing_alias_keys is not None:
+                    existing_alias_keys.add(a_key)
+                    brand = brand_cache.by_id.get(brand_id)
+                    if brand is not None:
+                        brand_cache.by_alias_key[a_key] = brand
 
     def _add_seed_brand_aliases(
         self,
@@ -318,6 +420,8 @@ class VerticalSeeder:
         name_en: str,
         name_zh: str,
         aliases: list[str],
+        *,
+        brand_cache: _BrandCache | None = None,
     ) -> None:
         alias_payloads: list[tuple[str, str | None]] = []
         if name_zh:
@@ -328,17 +432,26 @@ class VerticalSeeder:
             if alias and alias not in {name_en, name_zh}:
                 alias_payloads.append((alias, None))
 
+        existing_alias_keys = (
+            brand_cache.alias_keys_by_brand_id.setdefault(brand_id, set())
+            if brand_cache is not None
+            else None
+        )
         for alias_text, language in alias_payloads:
-            existing_alias = (
-                db.query(KnowledgeBrandAlias)
-                .filter(
-                    KnowledgeBrandAlias.brand_id == brand_id,
-                    KnowledgeBrandAlias.alias_key == normalize_entity_key(alias_text),
-                )
-                .first()
-            )
-            if existing_alias:
+            alias_key = normalize_entity_key(alias_text)
+            if existing_alias_keys is not None and alias_key in existing_alias_keys:
                 continue
+            if existing_alias_keys is None:
+                existing_alias = (
+                    db.query(KnowledgeBrandAlias)
+                    .filter(
+                        KnowledgeBrandAlias.brand_id == brand_id,
+                        KnowledgeBrandAlias.alias_key == alias_key,
+                    )
+                    .first()
+                )
+                if existing_alias:
+                    continue
             db.add(
                 KnowledgeBrandAlias(
                     brand_id=brand_id,
@@ -346,16 +459,29 @@ class VerticalSeeder:
                     language=language,
                 )
             )
+            if existing_alias_keys is not None:
+                existing_alias_keys.add(alias_key)
+                brand = brand_cache.by_id.get(brand_id)
+                if brand is not None:
+                    brand_cache.by_alias_key[alias_key] = brand
 
     def _find_existing_brand(
         self,
         db: Session,
         alias_texts: set[str],
+        *,
+        brand_cache: _BrandCache | None = None,
     ) -> Optional[KnowledgeBrand]:
         alias_keys = {normalize_entity_key(text) for text in alias_texts if text}
         alias_keys.discard("")
         if not alias_keys:
             return None
+
+        if brand_cache is not None:
+            for alias_key in alias_keys:
+                existing = brand_cache.by_alias_key.get(alias_key)
+                if existing:
+                    return existing
 
         existing = (
             db.query(KnowledgeBrand)
@@ -389,11 +515,19 @@ class VerticalSeeder:
         self,
         db: Session,
         alias_texts: set[str],
+        *,
+        product_cache: _ProductCache | None = None,
     ) -> Optional[KnowledgeProduct]:
         alias_keys = {normalize_entity_key(text) for text in alias_texts if text}
         alias_keys.discard("")
         if not alias_keys:
             return None
+
+        if product_cache is not None:
+            for alias_key in alias_keys:
+                existing = product_cache.by_alias_key.get(alias_key)
+                if existing:
+                    return existing
 
         existing = (
             db.query(KnowledgeProduct)
@@ -442,15 +576,123 @@ class VerticalSeeder:
             .count()
         )
 
+    def _load_brand_cache(self, db: Session) -> _BrandCache:
+        cache = _BrandCache()
+        brands = (
+            db.query(KnowledgeBrand)
+            .filter(KnowledgeBrand.vertical_id == self.vertical_id)
+            .all()
+        )
+        brands_by_id = {brand.id: brand for brand in brands}
+        for brand in brands:
+            self._register_brand(cache, brand)
+
+        alias_rows = (
+            db.query(KnowledgeBrandAlias.brand_id, KnowledgeBrandAlias.alias_key)
+            .join(KnowledgeBrand, KnowledgeBrand.id == KnowledgeBrandAlias.brand_id)
+            .filter(KnowledgeBrand.vertical_id == self.vertical_id)
+            .all()
+        )
+        for brand_id, alias_key in alias_rows:
+            brand = brands_by_id.get(brand_id)
+            if not brand or not alias_key:
+                continue
+            cache.by_alias_key[alias_key] = brand
+            cache.alias_keys_by_brand_id.setdefault(brand_id, set()).add(alias_key)
+        return cache
+
+    def _load_product_cache(self, db: Session) -> _ProductCache:
+        cache = _ProductCache()
+        products = (
+            db.query(KnowledgeProduct)
+            .filter(KnowledgeProduct.vertical_id == self.vertical_id)
+            .all()
+        )
+        products_by_id = {product.id: product for product in products}
+        for product in products:
+            self._register_product(cache, product)
+
+        alias_rows = (
+            db.query(KnowledgeProductAlias.product_id, KnowledgeProductAlias.alias_key)
+            .join(KnowledgeProduct, KnowledgeProduct.id == KnowledgeProductAlias.product_id)
+            .filter(KnowledgeProduct.vertical_id == self.vertical_id)
+            .all()
+        )
+        for product_id, alias_key in alias_rows:
+            product = products_by_id.get(product_id)
+            if not product or not alias_key:
+                continue
+            cache.by_alias_key[alias_key] = product
+            cache.alias_keys_by_product_id.setdefault(product_id, set()).add(alias_key)
+
+        cache.mapping_pairs = {
+            (product_id, brand_id)
+            for product_id, brand_id in db.query(
+                KnowledgeProductBrandMapping.product_id,
+                KnowledgeProductBrandMapping.brand_id,
+            )
+            .filter(KnowledgeProductBrandMapping.vertical_id == self.vertical_id)
+            .all()
+            if product_id and brand_id
+        }
+        return cache
+
+    def _register_brand(self, cache: _BrandCache, brand: KnowledgeBrand) -> None:
+        if not brand.id:
+            return
+        cache.by_id[brand.id] = brand
+        cache.by_alias_key[brand.alias_key] = brand
+        cache.alias_keys_by_brand_id.setdefault(brand.id, set())
+
+    def _register_product(self, cache: _ProductCache, product: KnowledgeProduct) -> None:
+        if not product.id:
+            return
+        cache.by_id[product.id] = product
+        cache.by_alias_key[product.alias_key] = product
+        cache.alias_keys_by_product_id.setdefault(product.id, set())
+
+    def _ensure_product_brand_mapping(
+        self,
+        db: Session,
+        *,
+        product_id: int,
+        brand_id: int,
+        product_cache: _ProductCache | None = None,
+    ) -> None:
+        mapping_key = (product_id, brand_id)
+        if product_cache is not None and mapping_key in product_cache.mapping_pairs:
+            return
+        if product_cache is None:
+            existing = (
+                db.query(KnowledgeProductBrandMapping)
+                .filter(
+                    KnowledgeProductBrandMapping.vertical_id == self.vertical_id,
+                    KnowledgeProductBrandMapping.product_id == product_id,
+                    KnowledgeProductBrandMapping.brand_id == brand_id,
+                )
+                .first()
+            )
+            if existing:
+                return
+        db.add(
+            KnowledgeProductBrandMapping(
+                vertical_id=self.vertical_id,
+                product_id=product_id,
+                brand_id=brand_id,
+                is_validated=False,
+                source="seed",
+            )
+        )
+        if product_cache is not None:
+            product_cache.mapping_pairs.add(mapping_key)
+
 
 def _parse_json_response(text: str) -> Optional[dict[str, Any]]:
     """Extract JSON from a response that may contain markdown fences."""
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        # Drop first and last lines (fences)
-        lines = [l for l in lines if not l.strip().startswith("```")]
-        text = "\n".join(lines)
+    text = (text or "").strip()
+    fenced_match = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, flags=re.DOTALL)
+    if fenced_match:
+        text = fenced_match.group(1).strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:
@@ -463,3 +705,9 @@ def _parse_json_response(text: str) -> Optional[dict[str, Any]]:
             except json.JSONDecodeError:
                 return None
         return None
+
+
+def _sanitize_prompt_value(value: str) -> str:
+    cleaned = re.sub(r"`{3,}", "", (value or ""))
+    cleaned = cleaned.replace("\x00", " ").strip()
+    return cleaned[:1000]

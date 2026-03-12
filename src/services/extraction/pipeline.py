@@ -318,6 +318,15 @@ class ExtractionPipeline:
 
 
 def _brand_to_seed_dict(brand: object) -> dict:
+    if isinstance(brand, dict):
+        aliases = brand.get("aliases", None) or {"zh": [], "en": []}
+        return {
+            "display_name": brand.get("display_name", ""),
+            "aliases": {
+                "zh": list(aliases.get("zh", [])),
+                "en": list(aliases.get("en", [])),
+            },
+        }
     aliases = getattr(brand, "aliases", None) or {"zh": [], "en": []}
     return {
         "display_name": getattr(brand, "display_name", ""),
@@ -405,7 +414,7 @@ def _upsert_brand(db: Session, vertical_id: int, canonical_name: str) -> Knowled
     )
     if brand:
         brand.is_validated = True
-        brand.validation_source = "pipeline"
+        brand.validation_source = _preferred_validation_source(brand.validation_source)
         return brand
     brand = KnowledgeBrand(
         vertical_id=vertical_id,
@@ -452,7 +461,7 @@ def _upsert_product(
     )
     if product:
         product.is_validated = True
-        product.validation_source = "pipeline"
+        product.validation_source = _preferred_validation_source(product.validation_source)
         if brand_id and not product.brand_id:
             product.brand_id = brand_id
         return product
@@ -523,3 +532,9 @@ def _ordered_unique(values: Iterable[str]) -> list[str]:
         seen.add(value)
         ordered.append(value)
     return ordered
+
+
+def _preferred_validation_source(existing_source: str | None) -> str:
+    if existing_source == "user":
+        return "user"
+    return "pipeline"
