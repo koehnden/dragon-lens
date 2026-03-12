@@ -1,7 +1,8 @@
 # Extraction Redesign: Implementation Plan
 
 ## Goal
-Replace the current brand/product extraction pipeline with a 3-step approach:
+Replace the current brand/product extraction pipeline with a new approach:
+0. **Seed vertical** from user brands + DeepSeek (cold start, once per vertical)
 1. **Rule-based extraction** from knowledge base (per item)
 2. **Qwen LLM extraction** for items with missing brand/product (batched, max 10)
 3. **DeepSeek consultation** for normalization, mapping, and validation (batched)
@@ -13,7 +14,15 @@ The rest of the system (mentions, metrics, sentiment, UI, consolidation DB write
 ## Architecture Overview
 
 ```
-Response Text
+Vertical Created / First Run
+      |
+[Step -1: Seed] (if < 10 validated brands in KB)
+      |  Insert user-provided brands + aliases (validated=True, source="user")
+      |  Call DeepSeek for top 30-50 brands + products + aliases for vertical
+      |  Insert as validated=False, source="seed"
+      |  -> KB now populated for Step 1
+      |
+Response Text (original Chinese answer_zh)
       |
 [Step 0] Parse into structured items
       |  split_into_list_items() / extract_markdown_table_row_items()
@@ -48,14 +57,17 @@ ExtractionResult (same shape as today -> plugs into existing pipeline)
 |------|---------|
 | `src/services/extraction/__init__.py` | Package init, re-export public API |
 | `src/services/extraction/models.py` | Data classes: ResponseItem, ItemExtractionResult, etc. |
+| `src/services/extraction/vertical_seeder.py` | Step -1: Cold start seeding from user brands + DeepSeek |
 | `src/services/extraction/item_parser.py` | Step 0: Parse responses into items |
 | `src/services/extraction/rule_extractor.py` | Step 1: KB-based rule matching |
 | `src/services/extraction/qwen_extractor.py` | Step 2: Qwen batch extraction |
 | `src/services/extraction/deepseek_consultant.py` | Step 3: DeepSeek normalization/validation |
-| `src/services/extraction/pipeline.py` | Orchestrate steps 0-3, produce ExtractionResult |
+| `src/services/extraction/pipeline.py` | Orchestrate steps -1 through 3, produce ExtractionResult |
+| `src/prompts/extraction/deepseek_seed_vertical.md` | New prompt: generate brands/products for vertical |
 | `src/prompts/extraction/qwen_item_extraction.md` | New prompt: extract brand/product from list items |
 | `src/prompts/extraction/deepseek_normalize_map.md` | New prompt: normalize + map brands/products |
 | `src/prompts/extraction/deepseek_validate.md` | New prompt: validate relevance to vertical |
+| `tests/unit/test_vertical_seeder.py` | Unit tests for cold start seeding |
 | `tests/unit/test_item_parser.py` | Unit tests for item parsing |
 | `tests/unit/test_rule_extractor.py` | Unit tests for KB matching |
 | `tests/unit/test_qwen_extractor.py` | Unit tests for Qwen batch extraction |
@@ -69,6 +81,61 @@ ExtractionResult (same shape as today -> plugs into existing pipeline)
 |------|--------|
 | `src/services/brand_recognition/orchestrator.py` | `extract_entities()` delegates to new pipeline |
 | `src/services/brand_recognition/__init__.py` | Update imports if needed |
+| `src/models/knowledge_domain.py` | Add `alias_key` columns, add `KnowledgeExtractionLog` |
+
+## Schema Changes (TursoDB / knowledge_domain.py)
+
+### Add `alias_key` indexed column to 5 tables
+
+The rule extractor (Step 1) needs fast lookups. Currently every query uses
+`func.lower(canonical_name)` at query time. Adding a pre-computed, indexed
+`alias_key` column (populated via `normalize_entity_key()` on insert) enables
+efficient bulk loading of the entire vertical's KB into memory.
+
+Tables that get `alias_key`:
+- `knowledge_brands` — indexed, populated from `canonical_name`
+- `knowledge_brand_aliases` — indexed, populated from `alias`
+- `knowledge_products` — indexed, populated from `canonical_name`
+- `knowledge_product_aliases` — indexed, populated from `alias`
+- `knowledge_rejected_entities` — indexed, populated from `name`
+
+```python
+# Example for knowledge_brands:
+alias_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+# Set on insert: alias_key = normalize_entity_key(canonical_name)
+```
+
+### Add `KnowledgeExtractionLog` table (new)
+
+Audit trail for every entity extracted by the pipeline. Essential for debugging
+and iteratively improving the KB.
+
+```python
+class KnowledgeExtractionLog(KnowledgeBase):
+    __tablename__ = "knowledge_extraction_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vertical_id: Mapped[int] = mapped_column(ForeignKey("knowledge_verticals.id"), nullable=False)
+    run_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    entity_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType), nullable=False)
+    extraction_source: Mapped[str] = mapped_column(String(50), nullable=False)
+    # "kb_rule", "qwen_batch", "deepseek_normalize", "deepseek_validate", "seed", "user_feedback"
+    resolved_to: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    was_accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    item_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+```
+
+### Tables kept as-is
+
+- `knowledge_verticals` — no changes
+- `knowledge_vertical_aliases` — no changes
+- `knowledge_product_brand_mappings` — kept as audit trail (Step 3 writes here with source)
+- `knowledge_feedback_events` — no changes (independent of extraction)
+- `knowledge_translation_overrides` — no changes (independent of extraction)
 
 ## Files NOT Modified (kept as-is)
 
@@ -83,7 +150,7 @@ Everything outside `brand_recognition/orchestrator.py` stays untouched:
 
 ## Step-by-Step Implementation
 
-### Phase 1: Data Models & Item Parser (Step 0)
+### Phase 1: Data Models, Schema Changes & Cold Start Seeder
 
 #### 1.1 `src/services/extraction/models.py`
 
@@ -134,7 +201,152 @@ class PipelineDebugInfo:
     step3_rejected_products: list[str]
 ```
 
-#### 1.2 `src/services/extraction/item_parser.py`
+#### 1.2 Schema changes in `src/models/knowledge_domain.py`
+
+Add `alias_key` columns to 5 tables (see Schema Changes section above).
+Add `KnowledgeExtractionLog` model.
+
+Run `alembic revision --autogenerate -m "add alias_key columns and extraction log"`
+to generate the migration, then verify and apply.
+
+For existing data, backfill `alias_key` via a data migration step:
+```python
+# In the migration:
+from services.canonicalization_metrics import normalize_entity_key
+# For each row in knowledge_brands: alias_key = normalize_entity_key(canonical_name)
+# Same for brand_aliases, products, product_aliases, rejected_entities
+```
+
+#### 1.3 `src/services/extraction/vertical_seeder.py`
+
+Solves the cold start problem: on first run for a vertical (< 10 validated
+brands in KB), seed the knowledge base with known entities.
+
+```python
+class VerticalSeeder:
+    """Seed a vertical's knowledge base for cold start."""
+
+    def __init__(self, vertical: str, vertical_description: str, vertical_id: int):
+        self.vertical = vertical
+        self.vertical_description = vertical_description
+        self.vertical_id = vertical_id
+
+    async def should_seed(self, db: Session) -> bool:
+        """Check if vertical needs seeding (< 10 validated brands)."""
+        # Count KnowledgeBrand WHERE vertical_id=X AND is_validated=True
+        # Return True if count < 10
+
+    def seed_from_user_brands(self, db: Session, user_brands: list[Brand]) -> int:
+        """Insert user-provided brands + aliases as validated.
+
+        Reads aliases from Brand.aliases dict ({"zh": [...], "en": [...]}).
+        Creates KnowledgeBrand (is_validated=True, source="user") +
+        KnowledgeBrandAlias for each alias.
+        Returns count of brands seeded.
+        """
+
+    async def seed_from_deepseek(self, db: Session) -> int:
+        """Ask DeepSeek for top brands/products for this vertical.
+
+        One DeepSeek call returns:
+        {
+          "brands": [
+            {
+              "name_en": "Toyota",
+              "name_zh": "丰田",
+              "aliases": ["一汽丰田", "广汽丰田"],
+              "products": [
+                {"name": "RAV4", "aliases": ["RAV4荣放", "荣放"]},
+                {"name": "Camry", "aliases": ["凯美瑞"]}
+              ]
+            }
+          ]
+        }
+
+        Stores everything with is_validated=False, source="seed".
+        Creates:
+        - KnowledgeBrand + KnowledgeBrandAlias (Chinese aliases are key!)
+        - KnowledgeProduct + KnowledgeProductAlias
+        - KnowledgeProductBrandMapping (source="seed")
+        Returns count of brands seeded.
+        """
+
+    async def ensure_seeded(self, db: Session, user_brands: list[Brand] | None = None):
+        """Main entry point: seed if needed, skip if already seeded.
+
+        Order:
+        1. Insert user brands first (these are ground truth, validated=True)
+        2. If still < 10 validated, call DeepSeek for market knowledge
+        3. DeepSeek results stored as unvalidated seeds
+        """
+```
+
+**Seeding rules:**
+- User brands: `is_validated=True`, `validation_source="user"` — ground truth
+- DeepSeek seeds: `is_validated=False`, `validation_source="seed"` — provisional
+- Seed runs once per vertical, triggered by `ensure_seeded()` in pipeline
+- Seeded entities participate in Step 1 rule matching immediately
+- Over time, validated via mention count, Step 3 validation, or user feedback
+
+#### 1.4 `src/prompts/extraction/deepseek_seed_vertical.md`
+
+```markdown
+---
+id: deepseek_seed_vertical
+version: v1
+requires:
+  - vertical
+  - vertical_description
+---
+You are a market research expert for the Chinese consumer market.
+
+For the following industry vertical:
+Vertical: {{ vertical }}
+Description: {{ vertical_description }}
+
+List the top 30-50 brands and their key products that a Chinese consumer
+would likely encounter or ask about in this vertical.
+
+IMPORTANT:
+- Include BOTH Chinese names (name_zh) and English names (name_en)
+- Include Chinese aliases: JV names (一汽丰田, 广汽丰田), colloquial names, etc.
+- Include product aliases: Chinese names (凯美瑞 for Camry), model variants
+- Focus on brands/products that appear in Chinese LLM responses
+- Cover mainstream, premium, and budget segments
+
+OUTPUT (JSON only):
+{
+  "brands": [
+    {
+      "name_en": "Toyota",
+      "name_zh": "丰田",
+      "aliases": ["一汽丰田", "广汽丰田", "TOYOTA"],
+      "products": [
+        {"name": "RAV4", "aliases": ["RAV4荣放", "荣放"]},
+        {"name": "Camry", "aliases": ["凯美瑞"]},
+        {"name": "Highlander", "aliases": ["汉兰达"]}
+      ]
+    }
+  ]
+}
+```
+
+**Tests** (`tests/unit/test_vertical_seeder.py`):
+- `should_seed()`: returns True when < 10 validated brands
+- `should_seed()`: returns False when >= 10 validated brands
+- `seed_from_user_brands()`: creates KnowledgeBrand + aliases with validated=True
+- `seed_from_user_brands()`: skips duplicates if brand already exists
+- `seed_from_deepseek()`: mock DeepSeek, verify brands/products/aliases created
+- `seed_from_deepseek()`: all entries have is_validated=False, source="seed"
+- `seed_from_deepseek()`: product-brand mappings created with source="seed"
+- `seed_from_deepseek()`: Chinese aliases stored correctly
+- `seed_from_deepseek()`: graceful fallback if no DeepSeek API key
+- `ensure_seeded()`: calls seed_from_user_brands then seed_from_deepseek
+- `ensure_seeded()`: skips DeepSeek if user brands already >= 10
+
+### Phase 2: Item Parser (Step 0)
+
+#### 2.1 `src/services/extraction/item_parser.py`
 
 Reuse existing `split_into_list_items()` and `extract_markdown_table_row_items()` from `list_processor.py`. Wrap them:
 
@@ -160,9 +372,9 @@ def extract_intro_context(text: str) -> str | None:
 - Intro text extraction
 - Chinese numbered lists (1、2、3、)
 
-### Phase 2: Rule-Based Extractor (Step 1)
+### Phase 3: Rule-Based Extractor (Step 1)
 
-#### 2.1 `src/services/extraction/rule_extractor.py`
+#### 3.1 `src/services/extraction/rule_extractor.py`
 
 ```python
 class KnowledgeBaseMatcher:
@@ -205,9 +417,9 @@ class KnowledgeBaseMatcher:
 - Case-insensitive matching
 - Chinese + English alias matching
 
-### Phase 3: Qwen Batch Extractor (Step 2)
+### Phase 4: Qwen Batch Extractor (Step 2)
 
-#### 3.1 `src/services/extraction/qwen_extractor.py`
+#### 4.1 `src/services/extraction/qwen_extractor.py`
 
 ```python
 class QwenBatchExtractor:
@@ -250,7 +462,7 @@ class QwenBatchExtractor:
         # Call extract_batch for each batch
 ```
 
-#### 3.2 `src/prompts/extraction/qwen_item_extraction.md`
+#### 4.2 `src/prompts/extraction/qwen_item_extraction.md`
 
 New prompt designed for per-item extraction:
 
@@ -297,9 +509,9 @@ Rules:
 - Intro context included when available
 - Empty items list -> no Ollama call
 
-### Phase 4: DeepSeek Consultation (Step 3)
+### Phase 5: DeepSeek Consultation (Step 3)
 
-#### 4.1 `src/services/extraction/deepseek_consultant.py`
+#### 5.1 `src/services/extraction/deepseek_consultant.py`
 
 ```python
 class DeepSeekConsultant:
@@ -358,7 +570,7 @@ class DeepSeekConsultant:
         # Falls back gracefully if no API key
 ```
 
-#### 4.2 Prompts
+#### 5.2 Prompts
 
 **`src/prompts/extraction/deepseek_normalize_map.md`**:
 - Input: brands list, unmapped products, vertical
@@ -378,9 +590,9 @@ class DeepSeekConsultant:
 - No DeepSeek API key -> graceful fallback (keep all, no normalization)
 - Batching: >20 entities -> multiple calls
 
-### Phase 5: Pipeline Orchestrator
+### Phase 6: Pipeline Orchestrator
 
-#### 5.1 `src/services/extraction/pipeline.py`
+#### 6.1 `src/services/extraction/pipeline.py`
 
 ```python
 class ExtractionPipeline:
@@ -402,12 +614,18 @@ class ExtractionPipeline:
         self,
         text: str,
         response_id: str | None = None,
+        user_brands: list[Brand] | None = None,
     ) -> ExtractionResult:
         """Extract entities from a single response.
 
-        Runs steps 0-2. Step 3 (DeepSeek) runs separately via extract_and_consult().
+        Runs steps -1 through 2. Step 3 (DeepSeek) runs separately via consult().
         Returns ExtractionResult compatible with existing pipeline.
         """
+        # Step -1: Seed if cold start
+        if self.vertical_id and self.db:
+            seeder = VerticalSeeder(self.vertical, self.vertical_description, self.vertical_id)
+            await seeder.ensure_seeded(self.db, user_brands)
+
         # Step 0: Parse items
         items = parse_response_into_items(text, response_id)
         intro = extract_intro_context(text)
@@ -464,7 +682,7 @@ class ExtractionPipeline:
         )
 ```
 
-#### 5.2 Wire into existing orchestrator
+#### 6.2 Wire into existing orchestrator
 
 Modify `src/services/brand_recognition/orchestrator.py`:
 - `extract_entities()` calls `ExtractionPipeline.extract_from_response()`
@@ -477,9 +695,9 @@ Modify `src/services/brand_recognition/orchestrator.py`:
 - Mixed: some KB, some Qwen
 - ExtractionResult shape matches existing format
 
-### Phase 6: E2E Test with suv_example_mini
+### Phase 7: E2E Test with suv_example_mini
 
-#### 6.1 `tests/integration/test_extraction_e2e.py`
+#### 7.1 `tests/integration/test_extraction_e2e.py`
 
 ```python
 """End-to-end extraction test using suv_example_mini.json fixture.
@@ -555,6 +773,27 @@ def test_e2e_partial_kb_extraction(db_session, knowledge_db_session):
 def test_e2e_debug_info_complete(db_session, knowledge_db_session):
     """Verify debug info captures all pipeline steps."""
     # Assert PipelineDebugInfo has correct counts for each step
+
+def test_e2e_cold_start_seeding(db_session, knowledge_db_session):
+    """First run on empty vertical triggers DeepSeek seeding."""
+    # Empty KB, no user brands
+    # Mock DeepSeek seed response with 5 brands + products
+    # Run pipeline -> assert:
+    #   - DeepSeek seed called once
+    #   - KnowledgeBrand entries created with source="seed", is_validated=False
+    #   - Products + aliases also created
+    #   - Step 1 now matches against seeded entries
+    #   - Subsequent call does NOT re-seed (already populated)
+
+def test_e2e_cold_start_with_user_brands(db_session, knowledge_db_session):
+    """User brands inserted as validated, then DeepSeek fills the rest."""
+    # Load suv_example_mini.json -> VW brand with aliases
+    # Run pipeline -> assert:
+    #   - VW brand created with is_validated=True, source="user"
+    #   - VW aliases (大众汽车, 一汽-大众, 上汽大众) all in KB
+    #   - DeepSeek seed called (still < 10 validated brands)
+    #   - DeepSeek entries created with source="seed"
+    #   - Step 1 matches VW items via user aliases AND seeded brands
 ```
 
 ---
@@ -563,12 +802,13 @@ def test_e2e_debug_info_complete(db_session, knowledge_db_session):
 
 | Layer | What | How | Mocking |
 |-------|------|-----|---------|
+| **Unit: vertical_seeder** | Cold start seeding, user brands, DeepSeek seed | Mock DeepSeek, real in-memory KB | DeepSeek mocked |
 | **Unit: item_parser** | Parse lists, tables, paragraphs | Pure functions, no mocks | None |
 | **Unit: rule_extractor** | KB matching, alias resolution | In-memory KB dict | No DB, no LLM |
 | **Unit: qwen_extractor** | Prompt construction, response parsing, batching | Mock OllamaService._call_ollama | Ollama mocked |
 | **Unit: deepseek_consultant** | Proximity mapping, response parsing, batching | Mock DeepSeekService.query | DeepSeek mocked |
-| **Unit: pipeline** | Step orchestration, result assembly | Mock all 3 extractors | All extractors mocked |
-| **Integration: e2e** | Full flow with fixture data | Mock LLM calls, real DB | Ollama + DeepSeek mocked |
+| **Unit: pipeline** | Step orchestration, result assembly | Mock all extractors + seeder | All mocked |
+| **Integration: e2e** | Full flow with fixture data incl. cold start | Mock LLM calls, real DB | Ollama + DeepSeek mocked |
 | **Regression** | Compare new vs old on benchmark data | Side-by-side `benchmark_extraction.py` | Can run with real LLMs |
 
 ---
@@ -576,14 +816,16 @@ def test_e2e_debug_info_complete(db_session, knowledge_db_session):
 ## Implementation Order
 
 1. **models.py** - Data classes (no dependencies)
-2. **item_parser.py** + tests - Reuses existing list_processor
-3. **rule_extractor.py** + tests - Needs knowledge DB models
-4. **qwen_extractor.py** + prompt + tests - Needs OllamaService
-5. **deepseek_consultant.py** + prompts + tests - Needs DeepSeekService
-6. **pipeline.py** + tests - Orchestrates everything
-7. **Wire into orchestrator.py** - Replace extract_entities() body
-8. **E2E test** - Full integration test with suv_example_mini
-9. **Manual validation** - Run on suv_example.json with real LLMs
+2. **Schema changes** - alias_key columns + KnowledgeExtractionLog + migration
+3. **vertical_seeder.py** + prompt + tests - Cold start seeding
+4. **item_parser.py** + tests - Reuses existing list_processor
+5. **rule_extractor.py** + tests - Needs knowledge DB models + alias_key
+6. **qwen_extractor.py** + prompt + tests - Needs OllamaService
+7. **deepseek_consultant.py** + prompts + tests - Needs DeepSeekService
+8. **pipeline.py** + tests - Orchestrates everything incl. seeder
+9. **Wire into orchestrator.py** - Replace extract_entities() body
+10. **E2E test** - Full integration test with suv_example_mini (incl. cold start)
+11. **Manual validation** - Run on suv_example.json with real LLMs
 
 ---
 
