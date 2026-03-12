@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -13,6 +14,7 @@ from models.knowledge_domain import (
     KnowledgeProduct,
     KnowledgeProductAlias,
     KnowledgeProductBrandMapping,
+    KnowledgeVertical,
 )
 from services.knowledge_verticals import normalize_entity_key
 
@@ -32,7 +34,13 @@ class VerticalSeeder:
         self.vertical_id = vertical_id
 
     def should_seed(self, db: Session) -> bool:
-        """Check if vertical needs seeding (< 10 validated brands)."""
+        """Check if vertical needs a one-time seed bootstrap."""
+        vertical = db.query(KnowledgeVertical).filter(
+            KnowledgeVertical.id == self.vertical_id
+        ).first()
+        if vertical and vertical.seeded_at is not None:
+            return False
+
         count = (
             db.query(KnowledgeBrand)
             .filter(
@@ -56,40 +64,42 @@ class VerticalSeeder:
             Count of brands seeded.
         """
         seeded = 0
+        updated_existing = False
         for brand_data in user_brands:
             display_name = brand_data.get("display_name", "")
             if not display_name:
                 continue
 
-            alias_key = normalize_entity_key(display_name)
-            existing = (
-                db.query(KnowledgeBrand)
-                .filter(
-                    KnowledgeBrand.vertical_id == self.vertical_id,
-                    KnowledgeBrand.alias_key == alias_key,
-                )
-                .first()
-            )
+            alias_texts = {display_name}
+            aliases = brand_data.get("aliases", {}) or {}
+            for alias_list in aliases.values():
+                alias_texts.update(a for a in alias_list if a)
+
+            existing = self._find_existing_brand(db, alias_texts)
             if existing:
+                self._add_brand_aliases(db, existing.id, aliases)
+                if not existing.is_validated:
+                    existing.is_validated = True
+                    existing.validation_source = "user"
+                    updated_existing = True
                 continue
 
             brand = KnowledgeBrand(
                 vertical_id=self.vertical_id,
                 canonical_name=display_name,
                 display_name=display_name,
-                alias_key=alias_key,
                 is_validated=True,
                 validation_source="user",
             )
             db.add(brand)
             db.flush()
 
-            aliases = brand_data.get("aliases", {})
             self._add_brand_aliases(db, brand.id, aliases)
             seeded += 1
 
-        if seeded:
+        if seeded or updated_existing:
             db.flush()
+        if seeded:
             logger.info(
                 "Seeded %d user brands for vertical '%s'", seeded, self.vertical
             )
@@ -133,14 +143,22 @@ class VerticalSeeder:
         2. If still < 10 validated, call DeepSeek for market knowledge
         3. DeepSeek results stored as unvalidated seeds
         """
-        if not self.should_seed(db):
-            return
-
         if user_brands:
             self.seed_from_user_brands(db, user_brands)
 
+        vertical = db.query(KnowledgeVertical).filter(
+            KnowledgeVertical.id == self.vertical_id
+        ).first()
+        if vertical and vertical.seeded_at is not None:
+            db.flush()
+            return
+
         if self.should_seed(db):
-            await self.seed_from_deepseek(db)
+            seeded = await self.seed_from_deepseek(db)
+            if seeded:
+                self._mark_seeded(db, "deepseek_v1")
+        elif self._validated_brand_count(db) >= MIN_VALIDATED_BRANDS:
+            self._mark_seeded(db, "user_only")
 
         db.flush()
 
@@ -188,58 +206,24 @@ class VerticalSeeder:
         if not display_name:
             return None
 
-        alias_key = normalize_entity_key(display_name)
-        existing = (
-            db.query(KnowledgeBrand)
-            .filter(
-                KnowledgeBrand.vertical_id == self.vertical_id,
-                KnowledgeBrand.alias_key == alias_key,
-            )
-            .first()
-        )
+        alias_texts = {display_name, name_en, name_zh}
+        alias_texts.update(a for a in brand_data.get("aliases", []) if a)
+        existing = self._find_existing_brand(db, alias_texts)
         if existing:
+            self._add_seed_brand_aliases(db, existing.id, name_en, name_zh, brand_data.get("aliases", []))
             return existing
 
         brand = KnowledgeBrand(
             vertical_id=self.vertical_id,
             canonical_name=display_name,
             display_name=display_name,
-            alias_key=alias_key,
             is_validated=False,
             validation_source="seed",
         )
         db.add(brand)
         db.flush()
 
-        # Add aliases: name_zh, name_en, and extra aliases
-        aliases_to_add = []
-        if name_zh:
-            aliases_to_add.append((name_zh, "zh"))
-        if name_en:
-            aliases_to_add.append((name_en, "en"))
-        for alias in brand_data.get("aliases", []):
-            if alias and alias not in (name_en, name_zh):
-                aliases_to_add.append((alias, None))
-
-        for alias_text, lang in aliases_to_add:
-            a_key = normalize_entity_key(alias_text)
-            existing_alias = (
-                db.query(KnowledgeBrandAlias)
-                .filter(
-                    KnowledgeBrandAlias.brand_id == brand.id,
-                    KnowledgeBrandAlias.alias_key == a_key,
-                )
-                .first()
-            )
-            if not existing_alias:
-                db.add(
-                    KnowledgeBrandAlias(
-                        brand_id=brand.id,
-                        alias=alias_text,
-                        alias_key=a_key,
-                        language=lang,
-                    )
-                )
+        self._add_seed_brand_aliases(db, brand.id, name_en, name_zh, brand_data.get("aliases", []))
 
         return brand
 
@@ -251,15 +235,9 @@ class VerticalSeeder:
         if not name:
             return None
 
-        alias_key = normalize_entity_key(name)
-        existing = (
-            db.query(KnowledgeProduct)
-            .filter(
-                KnowledgeProduct.vertical_id == self.vertical_id,
-                KnowledgeProduct.alias_key == alias_key,
-            )
-            .first()
-        )
+        alias_texts = {name}
+        alias_texts.update(a for a in product_data.get("aliases", []) if a)
+        existing = self._find_existing_product(db, alias_texts)
         if existing:
             return existing
 
@@ -268,7 +246,6 @@ class VerticalSeeder:
             brand_id=brand.id,
             canonical_name=name,
             display_name=name,
-            alias_key=alias_key,
             is_validated=False,
             validation_source="seed",
         )
@@ -279,12 +256,11 @@ class VerticalSeeder:
         for alias_text in product_data.get("aliases", []):
             if not alias_text or alias_text == name:
                 continue
-            a_key = normalize_entity_key(alias_text)
             existing_alias = (
                 db.query(KnowledgeProductAlias)
                 .filter(
                     KnowledgeProductAlias.product_id == product.id,
-                    KnowledgeProductAlias.alias_key == a_key,
+                    KnowledgeProductAlias.alias_key == normalize_entity_key(alias_text),
                 )
                 .first()
             )
@@ -293,7 +269,6 @@ class VerticalSeeder:
                     KnowledgeProductAlias(
                         product_id=product.id,
                         alias=alias_text,
-                        alias_key=a_key,
                     )
                 )
 
@@ -332,10 +307,140 @@ class VerticalSeeder:
                         KnowledgeBrandAlias(
                             brand_id=brand_id,
                             alias=alias_text,
-                            alias_key=a_key,
                             language=lang,
                         )
                     )
+
+    def _add_seed_brand_aliases(
+        self,
+        db: Session,
+        brand_id: int,
+        name_en: str,
+        name_zh: str,
+        aliases: list[str],
+    ) -> None:
+        alias_payloads: list[tuple[str, str | None]] = []
+        if name_zh:
+            alias_payloads.append((name_zh, "zh"))
+        if name_en:
+            alias_payloads.append((name_en, "en"))
+        for alias in aliases:
+            if alias and alias not in {name_en, name_zh}:
+                alias_payloads.append((alias, None))
+
+        for alias_text, language in alias_payloads:
+            existing_alias = (
+                db.query(KnowledgeBrandAlias)
+                .filter(
+                    KnowledgeBrandAlias.brand_id == brand_id,
+                    KnowledgeBrandAlias.alias_key == normalize_entity_key(alias_text),
+                )
+                .first()
+            )
+            if existing_alias:
+                continue
+            db.add(
+                KnowledgeBrandAlias(
+                    brand_id=brand_id,
+                    alias=alias_text,
+                    language=language,
+                )
+            )
+
+    def _find_existing_brand(
+        self,
+        db: Session,
+        alias_texts: set[str],
+    ) -> Optional[KnowledgeBrand]:
+        alias_keys = {normalize_entity_key(text) for text in alias_texts if text}
+        alias_keys.discard("")
+        if not alias_keys:
+            return None
+
+        existing = (
+            db.query(KnowledgeBrand)
+            .filter(
+                KnowledgeBrand.vertical_id == self.vertical_id,
+                KnowledgeBrand.alias_key.in_(alias_keys),
+            )
+            .first()
+        )
+        if existing:
+            return existing
+
+        alias_row = (
+            db.query(KnowledgeBrandAlias)
+            .join(KnowledgeBrand, KnowledgeBrand.id == KnowledgeBrandAlias.brand_id)
+            .filter(
+                KnowledgeBrand.vertical_id == self.vertical_id,
+                KnowledgeBrandAlias.alias_key.in_(alias_keys),
+            )
+            .first()
+        )
+        if not alias_row:
+            return None
+        return (
+            db.query(KnowledgeBrand)
+            .filter(KnowledgeBrand.id == alias_row.brand_id)
+            .first()
+        )
+
+    def _find_existing_product(
+        self,
+        db: Session,
+        alias_texts: set[str],
+    ) -> Optional[KnowledgeProduct]:
+        alias_keys = {normalize_entity_key(text) for text in alias_texts if text}
+        alias_keys.discard("")
+        if not alias_keys:
+            return None
+
+        existing = (
+            db.query(KnowledgeProduct)
+            .filter(
+                KnowledgeProduct.vertical_id == self.vertical_id,
+                KnowledgeProduct.alias_key.in_(alias_keys),
+            )
+            .first()
+        )
+        if existing:
+            return existing
+
+        alias_row = (
+            db.query(KnowledgeProductAlias)
+            .join(KnowledgeProduct, KnowledgeProduct.id == KnowledgeProductAlias.product_id)
+            .filter(
+                KnowledgeProduct.vertical_id == self.vertical_id,
+                KnowledgeProductAlias.alias_key.in_(alias_keys),
+            )
+            .first()
+        )
+        if not alias_row:
+            return None
+        return (
+            db.query(KnowledgeProduct)
+            .filter(KnowledgeProduct.id == alias_row.product_id)
+            .first()
+        )
+
+    def _mark_seeded(self, db: Session, seed_version: str) -> None:
+        vertical = db.query(KnowledgeVertical).filter(
+            KnowledgeVertical.id == self.vertical_id
+        ).first()
+        if not vertical or vertical.seeded_at is not None:
+            return
+        vertical.seeded_at = datetime.now(timezone.utc)
+        vertical.seed_version = seed_version
+
+    def _validated_brand_count(self, db: Session) -> int:
+        return (
+            db.query(KnowledgeBrand)
+            .filter(
+                KnowledgeBrand.vertical_id == self.vertical_id,
+                KnowledgeBrand.is_validated == True,
+            )
+            .count()
+        )
 
 
 def _parse_json_response(text: str) -> Optional[dict[str, Any]]:

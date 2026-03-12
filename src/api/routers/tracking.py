@@ -715,6 +715,9 @@ def _complete_run_inline(db: Session, run: Run, vertical: Vertical) -> None:
     answer = LLMAnswer(
         run_id=run.id,
         prompt_id=prompt.id,
+        provider=run.provider,
+        model_name=run.model_name,
+        route=run.route,
         raw_answer_zh=prompt.text_zh or prompt.text_en or "",
         raw_answer_en=prompt.text_en,
         tokens_in=0,

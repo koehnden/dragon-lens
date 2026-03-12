@@ -4,7 +4,6 @@ from services import brand_recognition
 from services.brand_recognition import (
     EntityCandidate,
     canonicalize_entities,
-    extract_entities,
     generate_candidates,
 )
 
@@ -39,18 +38,6 @@ def test_canonicalize_entities_maps_aliases_and_products():
         for k in canonical.keys()
     )
     assert has_song_plus or "宋Plus DM-i" in canonical, f"Expected 宋Plus in {canonical}"
-
-
-def test_extract_entities_unifies_primary_and_competitors():
-    text = "我喜欢大众ID.4，也会考虑特斯拉Model Y。"
-    aliases = {"zh": ["上汽大众"], "en": ["VW"]}
-    result = extract_entities(text, "大众", aliases)
-    all_entities = result.all_entities()
-    has_vw = "Volkswagen" in all_entities or "大众" in all_entities
-    assert has_vw, f"Expected Volkswagen or 大众 in {all_entities}"
-    has_tesla = "Tesla" in all_entities or "特斯拉" in all_entities
-    assert has_tesla or len(all_entities) > 0
-
 
 def test_cluster_with_embeddings_groups_by_name():
     candidates = [

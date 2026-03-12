@@ -9,19 +9,30 @@ from api.routers import api_keys, consolidation, feedback, knowledge, metrics, t
 from config import settings
 from models.knowledge_database import init_knowledge_db
 from models.migrations import upgrade_db
-from services.brand_recognition import OLLAMA_EMBEDDING_MODEL, ENABLE_EMBEDDING_CLUSTERING
 
 logger = logging.getLogger(__name__)
+
+
+def _log_embedding_model_config() -> None:
+    from services.brand_recognition.config import (
+        ENABLE_EMBEDDING_CLUSTERING,
+        OLLAMA_EMBEDDING_MODEL,
+    )
+
+    if ENABLE_EMBEDDING_CLUSTERING:
+        logging.info("Using Ollama embedding model: %s", OLLAMA_EMBEDDING_MODEL)
+        logging.info("Ensure model is pulled with: ollama pull qllama/bge-small-zh-v1.5")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     upgrade_db()
     init_knowledge_db()
-    if ENABLE_EMBEDDING_CLUSTERING:
-        logger.info(f"Using Ollama embedding model: {OLLAMA_EMBEDDING_MODEL}")
-        logger.info("Ensure model is pulled with: ollama pull qllama/bge-small-zh-v1.5")
+    _log_embedding_model_config()
     yield
+
+
+_log_embedding_model_config()
 
 app = FastAPI(
     title=settings.app_name,

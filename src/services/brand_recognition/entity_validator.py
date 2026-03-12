@@ -7,15 +7,11 @@ using Qwen-based validation and simple rule-based filtering.
 
 import logging
 import re
-from typing import Dict, List, Set, Optional
+from typing import Dict, List, Optional
 
 from services.brand_recognition.models import EntityCandidate
 from services.brand_recognition.classification import (
-    is_likely_brand,
-    is_likely_product,
     classify_entity_type,
-    _has_product_model_patterns,
-    _has_product_suffix,
 )
 from services.brand_recognition.text_utils import _extract_evidence, _parse_json_response
 from services.brand_recognition.prompts import load_prompt

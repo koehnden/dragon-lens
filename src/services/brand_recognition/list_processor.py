@@ -352,7 +352,6 @@ def _add_all_entities_from_text(
     text: str, candidates: List[EntityCandidate], brands: set, products: set
 ) -> None:
     """Add all entities found in text to the allowed sets."""
-    from services.brand_recognition.classification import _has_product_model_patterns, _has_product_suffix
 
     text_lower = text.lower()
     for candidate in candidates:

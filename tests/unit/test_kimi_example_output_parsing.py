@@ -7,10 +7,9 @@ from services.brand_recognition import is_list_format, split_into_list_items
 
 @pytest.fixture(autouse=True)
 def _disable_qwen_extraction(monkeypatch):
-    from services.brand_recognition import config, orchestrator
+    from services.brand_recognition import config
 
     monkeypatch.setattr(config, "ENABLE_QWEN_EXTRACTION", False)
-    monkeypatch.setattr(orchestrator, "ENABLE_QWEN_EXTRACTION", False)
 
 
 def test_kimi_example_multiple_markdown_tables_are_parsed_into_row_items():

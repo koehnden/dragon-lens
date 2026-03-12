@@ -406,6 +406,73 @@ class TestEnsureSeeded:
             await seeder.ensure_seeded(knowledge_db_session, USER_BRANDS)
             mock_ds_cls.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_marks_vertical_seeded_after_deepseek(
+        self, seeder: VerticalSeeder, knowledge_db_session: Session, vertical: KnowledgeVertical
+    ):
+        with patch("services.remote_llms.DeepSeekService") as mock_ds_cls:
+            mock_ds = mock_ds_cls.return_value
+            mock_ds.has_api_key.return_value = True
+            mock_ds.query = AsyncMock(
+                return_value=(DEEPSEEK_SEED_RESPONSE, 100, 500, 0.5)
+            )
+
+            await seeder.ensure_seeded(knowledge_db_session, USER_BRANDS)
+
+        knowledge_db_session.refresh(vertical)
+        assert vertical.seeded_at is not None
+        assert vertical.seed_version == "deepseek_v1"
+
+    @pytest.mark.asyncio
+    async def test_does_not_reseed_after_seed_marker(
+        self, seeder: VerticalSeeder, knowledge_db_session: Session, vertical: KnowledgeVertical
+    ):
+        with patch("services.remote_llms.DeepSeekService") as mock_ds_cls:
+            mock_ds = mock_ds_cls.return_value
+            mock_ds.has_api_key.return_value = True
+            mock_ds.query = AsyncMock(
+                return_value=(DEEPSEEK_SEED_RESPONSE, 100, 500, 0.5)
+            )
+
+            await seeder.ensure_seeded(knowledge_db_session, USER_BRANDS)
+            await seeder.ensure_seeded(knowledge_db_session, USER_BRANDS)
+
+            mock_ds.query.assert_called_once()
+
+    def test_user_brand_matches_existing_alias(
+        self, seeder: VerticalSeeder, knowledge_db_session: Session, vertical: KnowledgeVertical
+    ):
+        brand = KnowledgeBrand(
+            vertical_id=vertical.id,
+            canonical_name="Volkswagen",
+            display_name="Volkswagen",
+            is_validated=False,
+            validation_source="seed",
+        )
+        knowledge_db_session.add(brand)
+        knowledge_db_session.flush()
+        knowledge_db_session.add(
+            KnowledgeBrandAlias(
+                brand_id=brand.id,
+                alias="VW",
+                language="en",
+            )
+        )
+        knowledge_db_session.flush()
+
+        count = seeder.seed_from_user_brands(
+            knowledge_db_session,
+            [{"display_name": "VW", "aliases": {"zh": ["大众"]}}],
+        )
+
+        knowledge_db_session.refresh(brand)
+        assert count == 0
+        assert brand.is_validated is True
+        aliases = knowledge_db_session.query(KnowledgeBrandAlias).filter(
+            KnowledgeBrandAlias.brand_id == brand.id
+        ).all()
+        assert {alias.alias for alias in aliases} >= {"VW", "大众"}
+
 
 class TestParseJsonResponse:
     def test_parses_clean_json(self):

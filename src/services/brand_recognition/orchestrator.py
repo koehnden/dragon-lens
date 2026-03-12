@@ -16,14 +16,7 @@ from services.brand_recognition.models import (
     ExtractionResult,
     ExtractionQuality,
 )
-from services.brand_recognition.config import (
-    ENABLE_QWEN_EXTRACTION,
-    ENABLE_QWEN_FILTERING,
-    ENABLE_EMBEDDING_CLUSTERING,
-    ENABLE_LLM_CLUSTERING,
-)
 from services.brand_recognition.async_utils import _run_async
-from services.brand_recognition.text_utils import normalize_text_for_ner
 
 logger = logging.getLogger(__name__)
 
@@ -40,91 +33,48 @@ def extract_entities(
     """
     Main entry point for entity extraction.
 
-    This function orchestrates the entire entity extraction pipeline:
-    1. Parse expected count from text
-    2. Candidate generation
-    3. Qwen-based extraction (if enabled) with expected count hint
-    4. Retry if extracted count < expected count
-    5. Filtering and validation
-    6. Normalization and clustering
-    7. Final result assembly with quality assessment
+    The redesigned pipeline is run-scoped. This wrapper executes the run-level
+    pipeline against a single response for direct callers that still need a
+    one-shot extraction.
     """
-    # Import here to avoid circular imports
-    from services.brand_recognition.candidate_generator import generate_candidates
-    from services.brand_recognition.brand_extractor import _extract_entities_with_qwen
+    from services.extraction.pipeline import ExtractionPipeline
     from services.brand_recognition.list_processor import (
         parse_expected_count,
         get_list_item_count,
     )
 
-    if ENABLE_QWEN_EXTRACTION:
-        # Step 1: Parse expected count
-        expected_count = parse_expected_count(text)
-        list_item_count = get_list_item_count(text)
-        min_expected = expected_count or list_item_count or None
+    expected_count = parse_expected_count(text)
+    list_item_count = get_list_item_count(text)
+    pipeline = ExtractionPipeline(
+        vertical=vertical or "generic",
+        vertical_description=vertical_description or "",
+        db=db,
+    )
+    user_brands = []
+    if primary_brand:
+        user_brands.append(
+            {
+                "display_name": primary_brand,
+                "aliases": aliases or {"zh": [], "en": []},
+            }
+        )
 
-        # Step 2: First extraction attempt with min_expected hint
-        result = _run_async(_extract_entities_with_qwen(
-            text, vertical, vertical_description, db=db, vertical_id=vertical_id,
-            min_expected_entities=min_expected,
-        ))
-
-        # Step 3: Check if extraction is sufficient and retry if needed
-        extracted_count = len(result.brands) + len(result.products)
-        if min_expected and extracted_count < min_expected:
-            logger.info(
-                f"[Extraction] Insufficient: extracted {extracted_count}, "
-                f"expected at least {min_expected}. Retrying..."
+    try:
+        _run_async(
+            pipeline.process_response(
+                text,
+                response_id="single-response",
+                user_brands=user_brands,
             )
-            retry_feedback = (
-                f"Previous extraction found only {extracted_count} entities. "
-                f"The text mentions {min_expected} items. Please extract at least "
-                f"{min_expected} brand/product entities."
-            )
-            result = _run_async(_extract_entities_with_qwen(
-                text, vertical, vertical_description, db=db, vertical_id=vertical_id,
-                min_expected_entities=min_expected,
-                retry_feedback=retry_feedback,
-            ))
-
-        # Step 4: Final quality assessment
+        )
+        batch = _run_async(pipeline.finalize())
+        result = batch.response_results.get("single-response", ExtractionResult(brands={}, products={}))
         result.quality = _assess_extraction_quality(
             text, result, expected_count, list_item_count
         )
         return result
-
-    normalized_text = normalize_text_for_ner(text)
-    candidates = generate_candidates(normalized_text, primary_brand, aliases)
-
-    if ENABLE_QWEN_FILTERING:
-        from services.brand_recognition.entity_validator import _filter_candidates_with_qwen
-        filtered_candidates = _run_async(
-            _filter_candidates_with_qwen(candidates, normalized_text, vertical, vertical_description)
-        )
-    else:
-        from services.brand_recognition.entity_validator import _filter_candidates_simple
-        filtered_candidates = _filter_candidates_simple(candidates)
-
-    from services.brand_recognition.list_processor import _filter_by_list_position
-    filtered_candidates = _filter_by_list_position(filtered_candidates, text)
-
-    if ENABLE_EMBEDDING_CLUSTERING:
-        from services.brand_recognition.clustering import _cluster_with_embeddings
-        embedding_clusters = _run_async(_cluster_with_embeddings(filtered_candidates))
-    else:
-        embedding_clusters = {c.name: [c] for c in filtered_candidates}
-
-    if ENABLE_LLM_CLUSTERING:
-        from services.brand_recognition.clustering import _llm_assisted_clustering
-        final_clusters = _run_async(_llm_assisted_clustering(embedding_clusters, primary_brand, aliases))
-    else:
-        from services.brand_recognition.clustering import _simple_clustering
-        final_clusters = _simple_clustering(embedding_clusters, primary_brand, aliases)
-
-    from services.brand_recognition.clustering import _split_clusters_by_type
-    brands, products = _split_clusters_by_type(final_clusters, filtered_candidates)
-    
-    return ExtractionResult(brands=brands, products=products)
+    finally:
+        pipeline.close()
 
 
 def canonicalize_entities(

@@ -10,9 +10,6 @@ import importlib
 from typing import Dict, List, Set
 
 from constants import (
-    KNOWN_PRODUCTS,
-    GENERIC_TERMS,
-    PRODUCT_HINTS,
     BULLET_MARKER_CLASS,
 )
 

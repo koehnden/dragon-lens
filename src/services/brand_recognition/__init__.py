@@ -87,6 +87,9 @@ from services.brand_recognition.config import (
     OLLAMA_EMBEDDING_MODEL,
 )
 
+# Backward-compatible compatibility hook for older tests and scripts.
+KNOWN_BRANDS: set[str] = set()
+
 __all__ = [
     # Data models
     "EntityCandidate",
@@ -110,12 +113,23 @@ __all__ = [
     "_has_product_patterns",
     "_calculate_brand_confidence",
     "_calculate_product_confidence",
+    "_extract_entities_with_qwen",
+    "_parse_extraction_response",
+    "_build_extraction_system_prompt",
+    "_build_extraction_prompt",
+    "_check_wikidata_brand",
+    "_check_wikidata_product",
 
     # Text utilities
     "normalize_text_for_ner",
     "extract_snippet_for_brand",
     "extract_snippet_with_list_awareness",
     "_truncate_list_item",
+    "_build_alias_lookup",
+    "_has_variant_signals",
+    "_match_substring_alias",
+    "_extract_evidence",
+    "_parse_json_response",
 
     # List processing
     "is_list_format",
@@ -123,6 +137,21 @@ __all__ = [
     "extract_primary_entities_from_list_item",
     "parse_expected_count",
     "get_list_item_count",
+    "_regex_candidates",
+    "_default_alias_table",
+    "_alias_hits",
+    "_list_table_candidates",
+    "_filter_candidates_simple",
+    "_filter_candidates_with_qwen",
+    "_verify_entity_with_qwen",
+    "_simple_clustering",
+    "_cluster_with_embeddings",
+    "_llm_assisted_clustering",
+    "_split_clusters_by_type",
+    "GENERIC_TERMS",
+    "KNOWN_BRANDS",
+    "KNOWN_PRODUCTS",
+    "PRODUCT_HINTS",
 
     # Configuration
     "ENABLE_QWEN_FILTERING",
