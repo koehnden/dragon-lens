@@ -48,6 +48,7 @@ class KnowledgeBrand(KnowledgeBase):
     vertical_id: Mapped[int] = mapped_column(ForeignKey("knowledge_verticals.id"), nullable=False)
     canonical_name: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    alias_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     is_validated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     validation_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     mention_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -71,6 +72,7 @@ class KnowledgeBrandAlias(KnowledgeBase):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     brand_id: Mapped[int] = mapped_column(ForeignKey("knowledge_brands.id"), nullable=False)
     alias: Mapped[str] = mapped_column(String(255), nullable=False)
+    alias_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     language: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -88,6 +90,7 @@ class KnowledgeProduct(KnowledgeBase):
     brand_id: Mapped[Optional[int]] = mapped_column(ForeignKey("knowledge_brands.id"), nullable=True)
     canonical_name: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    alias_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     is_validated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     validation_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     mention_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -112,6 +115,7 @@ class KnowledgeProductAlias(KnowledgeBase):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("knowledge_products.id"), nullable=False)
     alias: Mapped[str] = mapped_column(String(255), nullable=False)
+    alias_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     language: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -128,6 +132,7 @@ class KnowledgeRejectedEntity(KnowledgeBase):
     vertical_id: Mapped[int] = mapped_column(ForeignKey("knowledge_verticals.id"), nullable=False)
     entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    alias_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -194,3 +199,21 @@ class KnowledgeFeedbackEvent(KnowledgeBase):
     )
 
     vertical: Mapped["KnowledgeVertical"] = relationship(KnowledgeVertical)
+
+
+class KnowledgeExtractionLog(KnowledgeBase):
+    __tablename__ = "knowledge_extraction_logs"
+    __table_args__ = {"extend_existing": True}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vertical_id: Mapped[int] = mapped_column(ForeignKey("knowledge_verticals.id"), nullable=False)
+    run_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    entity_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType), nullable=False)
+    extraction_source: Mapped[str] = mapped_column(String(50), nullable=False)
+    resolved_to: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    was_accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    item_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
