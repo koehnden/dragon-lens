@@ -1,0 +1,604 @@
+# Extraction Redesign: Implementation Plan
+
+## Goal
+Replace the current brand/product extraction pipeline with a 3-step approach:
+1. **Rule-based extraction** from knowledge base (per item)
+2. **Qwen LLM extraction** for items with missing brand/product (batched, max 10)
+3. **DeepSeek consultation** for normalization, mapping, and validation (batched)
+
+The rest of the system (mentions, metrics, sentiment, UI, consolidation DB writes) stays untouched.
+
+---
+
+## Architecture Overview
+
+```
+Response Text
+      |
+[Step 0] Parse into structured items
+      |  split_into_list_items() / extract_markdown_table_row_items()
+      |  -> list[ResponseItem(text, position, response_id)]
+      |
+[Step 1] Rule-based extraction (per item)
+      |  KnowledgeBaseMatcher: load KB brands/products/aliases for vertical
+      |  -> for each item: match known brands+aliases, known products+aliases
+      |  -> ItemExtractionResult(brand=..., product=..., source="kb")
+      |  -> collect items where brand is None or product is None
+      |
+[Step 2] Qwen batch extraction (for missing items only)
+      |  Group missing items by response (all items from one response together)
+      |  Batch up to 10 items per Qwen call, include intro/header context
+      |  -> fill in missing brands/products
+      |  -> add newly found entities to in-memory "session KB" for subsequent items
+      |
+[Step 3] DeepSeek consultation (per run, after all responses processed)
+      |  3a. Normalize brands + map products to brands (single call per batch)
+      |  3b. Validate relevance to vertical (separate call per batch)
+      |  -> store validated entities, aliases, mappings in knowledge DB (TursoDB)
+      |
+      v
+ExtractionResult (same shape as today -> plugs into existing pipeline)
+```
+
+---
+
+## Files to Create
+
+| File | Purpose |
+|------|---------|
+| `src/services/extraction/__init__.py` | Package init, re-export public API |
+| `src/services/extraction/models.py` | Data classes: ResponseItem, ItemExtractionResult, etc. |
+| `src/services/extraction/item_parser.py` | Step 0: Parse responses into items |
+| `src/services/extraction/rule_extractor.py` | Step 1: KB-based rule matching |
+| `src/services/extraction/qwen_extractor.py` | Step 2: Qwen batch extraction |
+| `src/services/extraction/deepseek_consultant.py` | Step 3: DeepSeek normalization/validation |
+| `src/services/extraction/pipeline.py` | Orchestrate steps 0-3, produce ExtractionResult |
+| `src/prompts/extraction/qwen_item_extraction.md` | New prompt: extract brand/product from list items |
+| `src/prompts/extraction/deepseek_normalize_map.md` | New prompt: normalize + map brands/products |
+| `src/prompts/extraction/deepseek_validate.md` | New prompt: validate relevance to vertical |
+| `tests/unit/test_item_parser.py` | Unit tests for item parsing |
+| `tests/unit/test_rule_extractor.py` | Unit tests for KB matching |
+| `tests/unit/test_qwen_extractor.py` | Unit tests for Qwen batch extraction |
+| `tests/unit/test_deepseek_consultant.py` | Unit tests for DeepSeek consultation |
+| `tests/unit/test_extraction_pipeline.py` | Unit tests for full pipeline |
+| `tests/integration/test_extraction_e2e.py` | E2E test using suv_example_mini fixture |
+
+## Files to Modify
+
+| File | Change |
+|------|--------|
+| `src/services/brand_recognition/orchestrator.py` | `extract_entities()` delegates to new pipeline |
+| `src/services/brand_recognition/__init__.py` | Update imports if needed |
+
+## Files NOT Modified (kept as-is)
+
+Everything outside `brand_recognition/orchestrator.py` stays untouched:
+- `workers/pipeline.py` (calls `extract_entities()` which we preserve)
+- `brand_discovery.py` (calls `extract_entities()` which we preserve)
+- `entity_consolidation.py` (run-level consolidation, untouched)
+- `consolidation_service.py` (enhanced consolidation, untouched)
+- All mention/metric/sentiment/translation code
+
+---
+
+## Step-by-Step Implementation
+
+### Phase 1: Data Models & Item Parser (Step 0)
+
+#### 1.1 `src/services/extraction/models.py`
+
+```python
+@dataclass
+class ResponseItem:
+    """A single item parsed from a response (list item, table row, paragraph)."""
+    text: str               # The item text
+    position: int           # 0-indexed position in the response
+    response_id: str | None # Optional: link back to the answer
+
+@dataclass
+class ItemExtractionResult:
+    """Extraction result for a single item."""
+    item: ResponseItem
+    brand: str | None
+    product: str | None
+    brand_source: str       # "kb", "qwen", "proximity", "deepseek"
+    product_source: str     # "kb", "qwen", "proximity", "deepseek"
+
+@dataclass
+class BatchExtractionResult:
+    """Result for all items from one or more responses."""
+    items: list[ItemExtractionResult]
+    # Brand normalization: alias -> canonical
+    brand_aliases: dict[str, str]
+    # Product-brand mapping: product -> brand
+    product_brand_map: dict[str, str]
+    # Entities validated as relevant to vertical
+    validated_brands: set[str]
+    validated_products: set[str]
+    # Entities rejected as irrelevant
+    rejected_brands: set[str]
+    rejected_products: set[str]
+
+@dataclass
+class PipelineDebugInfo:
+    """Debug info for the entire pipeline run."""
+    step0_item_count: int
+    step1_kb_matched_brands: list[str]
+    step1_kb_matched_products: list[str]
+    step2_qwen_input_count: int
+    step2_qwen_extracted_brands: list[str]
+    step2_qwen_extracted_products: list[str]
+    step3_normalized_brands: dict[str, str]
+    step3_product_brand_map: dict[str, str]
+    step3_rejected_brands: list[str]
+    step3_rejected_products: list[str]
+```
+
+#### 1.2 `src/services/extraction/item_parser.py`
+
+Reuse existing `split_into_list_items()` and `extract_markdown_table_row_items()` from `list_processor.py`. Wrap them:
+
+```python
+def parse_response_into_items(text: str, response_id: str | None = None) -> list[ResponseItem]:
+    """Parse a response into structured items."""
+    # 1. Try list detection (reuse list_processor.is_list_format / split_into_list_items)
+    # 2. Try table detection (reuse markdown_table functions)
+    # 3. Fallback: treat entire text as one item
+    # Returns list[ResponseItem]
+
+def extract_intro_context(text: str) -> str | None:
+    """Extract intro/header text before the first list item."""
+    # Reuse _get_intro_text() and _get_header_context_text() from list_processor
+```
+
+**Tests** (`tests/unit/test_item_parser.py`):
+- Numbered list -> correct item count and text
+- Bullet list -> correct items
+- Markdown table -> rows as items
+- Mixed format -> correct handling
+- No list structure -> single item
+- Intro text extraction
+- Chinese numbered lists (1、2、3、)
+
+### Phase 2: Rule-Based Extractor (Step 1)
+
+#### 2.1 `src/services/extraction/rule_extractor.py`
+
+```python
+class KnowledgeBaseMatcher:
+    """Fast rule-based entity matcher using knowledge base."""
+
+    def __init__(self, vertical_id: int, db: Session | None = None):
+        # Load from knowledge DB:
+        # - All KnowledgeBrand + KnowledgeBrandAlias for this vertical
+        # - All KnowledgeProduct + KnowledgeProductAlias for this vertical
+        # - All KnowledgeRejectedEntity for this vertical
+        # Build lookup dicts for fast matching
+        self._brand_lookup: dict[str, str] = {}   # lowered alias -> canonical
+        self._product_lookup: dict[str, str] = {}  # lowered alias -> canonical
+        self._rejected: set[str] = set()
+
+    def match_item(self, item: ResponseItem) -> ItemExtractionResult:
+        """Match a single item against the knowledge base."""
+        # 1. Search item text for known brands (longest match first)
+        # 2. Search item text for known products (longest match first)
+        # 3. Skip rejected entities
+        # Returns ItemExtractionResult with source="kb"
+
+    def add_to_session(self, brand: str | None, product: str | None):
+        """Add newly discovered entity to in-memory session KB."""
+        # Called after Qwen extraction to enable matching in subsequent items
+
+    @staticmethod
+    def _build_lookup(entities: list, aliases: list) -> dict[str, str]:
+        """Build lowered-name -> canonical lookup dict."""
+```
+
+**Tests** (`tests/unit/test_rule_extractor.py`):
+- Known brand in item -> extracted
+- Known product in item -> extracted
+- Known alias matches canonical
+- Rejected entity not extracted
+- Unknown entity -> None
+- Session KB: after add_to_session, subsequent items match
+- Multiple brands in item -> first/longest match wins
+- Case-insensitive matching
+- Chinese + English alias matching
+
+### Phase 3: Qwen Batch Extractor (Step 2)
+
+#### 3.1 `src/services/extraction/qwen_extractor.py`
+
+```python
+class QwenBatchExtractor:
+    """Extract brands/products from items using Qwen, batched."""
+
+    def __init__(self, vertical: str, vertical_description: str):
+        self.vertical = vertical
+        self.vertical_description = vertical_description
+
+    async def extract_batch(
+        self,
+        items: list[ResponseItem],
+        intro_context: str | None = None,
+    ) -> list[ItemExtractionResult]:
+        """Extract brand/product for up to 10 items in one Qwen call.
+
+        Args:
+            items: Items missing brand and/or product (max 10)
+            intro_context: Optional intro/header text for context
+        """
+        # 1. Build prompt with items + context
+        # 2. Call OllamaService._call_ollama() with ner_model
+        # 3. Parse structured JSON response
+        # 4. Map results back to items
+
+    async def extract_missing(
+        self,
+        missing_items: list[tuple[ResponseItem, str | None, str | None]],
+        intro_contexts: dict[str, str],
+    ) -> list[ItemExtractionResult]:
+        """Process all missing items, respecting batching rules.
+
+        Rules:
+        - All items from one response must be in the same batch
+        - Max 10 items per batch
+        - Can add items from other responses to fill up to 10
+        """
+        # Group by response_id
+        # Build batches respecting the constraint
+        # Call extract_batch for each batch
+```
+
+#### 3.2 `src/prompts/extraction/qwen_item_extraction.md`
+
+New prompt designed for per-item extraction:
+
+```markdown
+---
+id: qwen_item_extraction
+version: v1
+requires:
+  - vertical
+  - vertical_description
+  - items_json
+---
+You are an entity extractor for the {{ vertical }} industry.
+
+For each numbered item below, extract the BRAND (company/manufacturer) and
+PRODUCT (specific model/item) if present.
+
+{{ intro_context_section }}
+
+ITEMS TO ANALYZE:
+{{ items_json }}
+
+OUTPUT (JSON array, one entry per item):
+[
+  {"item_index": 0, "brand": "Toyota", "product": "RAV4"},
+  {"item_index": 1, "brand": "BYD", "product": null},
+  ...
+]
+
+Rules:
+- brand = company/manufacturer name (e.g., Toyota, BYD, Apple)
+- product = specific model/item (e.g., RAV4, 宋PLUS, iPhone 15)
+- null if not found
+- Extract EXACT names as they appear
+- One brand and one product per item maximum
+```
+
+**Tests** (`tests/unit/test_qwen_extractor.py`):
+- Mock Ollama, verify prompt construction
+- Parse valid JSON response -> correct mapping
+- Parse malformed response -> graceful fallback
+- Batching: 15 items from 2 responses -> correct batch grouping
+- Batching: all items from response A stay together
+- Intro context included when available
+- Empty items list -> no Ollama call
+
+### Phase 4: DeepSeek Consultation (Step 3)
+
+#### 4.1 `src/services/extraction/deepseek_consultant.py`
+
+```python
+class DeepSeekConsultant:
+    """Consultation with DeepSeek for normalization, mapping, and validation."""
+
+    def __init__(self, vertical: str, vertical_description: str):
+        self.vertical = vertical
+        self.vertical_description = vertical_description
+
+    async def normalize_and_map(
+        self,
+        brands: list[str],
+        products: list[str],
+        item_pairs: list[tuple[str | None, str | None]],
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        """Step 3a+3b: Normalize brands and map products to brands.
+
+        Uses proximity (item co-occurrence) first, then DeepSeek for unmapped.
+
+        Args:
+            brands: All unique brands from steps 1+2
+            products: All unique products from steps 1+2
+            item_pairs: (brand, product) pairs from each item (for proximity)
+
+        Returns:
+            (brand_aliases: {alias -> canonical}, product_brand_map: {product -> brand})
+        """
+        # 1. Build proximity-based product-brand map from item_pairs
+        # 2. Find brands that need alias normalization (duplicates, JVs)
+        # 3. Find products without a brand mapping
+        # 4. If anything needs DeepSeek, call it
+        # 5. Merge proximity + DeepSeek results
+
+    async def validate_relevance(
+        self,
+        brands: list[str],
+        products: list[str],
+    ) -> tuple[set[str], set[str], set[str], set[str]]:
+        """Step 3c: Validate brands and products are relevant to the vertical.
+
+        Returns:
+            (valid_brands, valid_products, rejected_brands, rejected_products)
+        """
+        # Batch max 20 entities per call
+        # Call DeepSeek to check relevance
+
+    def _build_proximity_map(
+        self,
+        item_pairs: list[tuple[str | None, str | None]],
+    ) -> dict[str, str]:
+        """Map products to brands based on co-occurrence in same item."""
+
+    async def _call_deepseek(self, system_prompt: str, user_prompt: str) -> str:
+        """Call DeepSeek API."""
+        # Use DeepSeekService from remote_llms.py
+        # Falls back gracefully if no API key
+```
+
+#### 4.2 Prompts
+
+**`src/prompts/extraction/deepseek_normalize_map.md`**:
+- Input: brands list, unmapped products, vertical
+- Output: `{brand_aliases: {alias: canonical}, product_brand_map: {product: brand}}`
+- Instructions for JV normalization, alias deduplication (reuse rules from existing brand_normalization_prompt)
+
+**`src/prompts/extraction/deepseek_validate.md`**:
+- Input: brands + products, vertical + description
+- Output: `{valid_brands: [...], valid_products: [...], rejected_brands: [...], rejected_products: [...]}`
+- Rules: reject entities not relevant to the vertical
+
+**Tests** (`tests/unit/test_deepseek_consultant.py`):
+- Proximity mapping: items with (brand, product) -> correct map
+- Proximity mapping: product without brand -> unmapped
+- Mock DeepSeek: normalization response parsing
+- Mock DeepSeek: validation response parsing
+- No DeepSeek API key -> graceful fallback (keep all, no normalization)
+- Batching: >20 entities -> multiple calls
+
+### Phase 5: Pipeline Orchestrator
+
+#### 5.1 `src/services/extraction/pipeline.py`
+
+```python
+class ExtractionPipeline:
+    """Orchestrate the 3-step extraction pipeline."""
+
+    def __init__(
+        self,
+        vertical: str,
+        vertical_description: str,
+        vertical_id: int | None = None,
+        db: Session | None = None,
+    ):
+        self.vertical = vertical
+        self.vertical_description = vertical_description
+        self.vertical_id = vertical_id
+        self.db = db
+
+    async def extract_from_response(
+        self,
+        text: str,
+        response_id: str | None = None,
+    ) -> ExtractionResult:
+        """Extract entities from a single response.
+
+        Runs steps 0-2. Step 3 (DeepSeek) runs separately via extract_and_consult().
+        Returns ExtractionResult compatible with existing pipeline.
+        """
+        # Step 0: Parse items
+        items = parse_response_into_items(text, response_id)
+        intro = extract_intro_context(text)
+
+        # Step 1: Rule-based extraction
+        matcher = KnowledgeBaseMatcher(self.vertical_id, self.db)
+        results = [matcher.match_item(item) for item in items]
+
+        # Collect missing items
+        missing = [(r.item, r.brand, r.product) for r in results
+                    if r.brand is None or r.product is None]
+
+        # Step 2: Qwen for missing items
+        if missing:
+            qwen = QwenBatchExtractor(self.vertical, self.vertical_description)
+            qwen_results = await qwen.extract_missing(
+                missing, {response_id: intro} if intro else {}
+            )
+            # Merge qwen results into main results
+            # Add to session KB
+            for qr in qwen_results:
+                matcher.add_to_session(qr.brand, qr.product)
+
+        # Convert to ExtractionResult (same shape as existing)
+        return self._build_extraction_result(results)
+
+    async def consult(
+        self,
+        all_results: list[ItemExtractionResult],
+    ) -> BatchExtractionResult:
+        """Run Step 3 (DeepSeek consultation) after all responses processed."""
+        consultant = DeepSeekConsultant(self.vertical, self.vertical_description)
+        # ... normalize, map, validate
+        # ... store in knowledge DB
+
+    def _build_extraction_result(
+        self, item_results: list[ItemExtractionResult]
+    ) -> ExtractionResult:
+        """Convert item results to ExtractionResult for backward compatibility."""
+        brands = {}
+        products = {}
+        relationships = {}
+        for r in item_results:
+            if r.brand:
+                brands.setdefault(r.brand, [r.brand])
+            if r.product:
+                products.setdefault(r.product, [r.product])
+            if r.brand and r.product:
+                relationships[r.product] = r.brand
+        return ExtractionResult(
+            brands=brands,
+            products=products,
+            product_brand_relationships=relationships,
+        )
+```
+
+#### 5.2 Wire into existing orchestrator
+
+Modify `src/services/brand_recognition/orchestrator.py`:
+- `extract_entities()` calls `ExtractionPipeline.extract_from_response()`
+- Returns the same `ExtractionResult` - zero changes needed downstream
+
+**Tests** (`tests/unit/test_extraction_pipeline.py`):
+- Full pipeline with mocked KB + mocked Qwen: correct flow
+- KB covers all items -> no Qwen call
+- KB covers none -> all items sent to Qwen
+- Mixed: some KB, some Qwen
+- ExtractionResult shape matches existing format
+
+### Phase 6: E2E Test with suv_example_mini
+
+#### 6.1 `tests/integration/test_extraction_e2e.py`
+
+```python
+"""End-to-end extraction test using suv_example_mini.json fixture.
+
+Tests the full pipeline: item parsing -> rule extraction -> Qwen batch ->
+DeepSeek consultation -> ExtractionResult with brands/products.
+"""
+
+# Fixture: load suv_example_mini.json
+# Mock Qwen with a realistic SUV response for the mini prompt
+# Mock DeepSeek for normalization/validation
+# Seed knowledge DB with a few known automotive brands
+
+MOCK_LLM_RESPONSE = """
+以下是预算20-30万适合二胎家庭的SUV推荐：
+
+**5座SUV：**
+1. 大众途观L - 空间宽敞，品质可靠
+2. 丰田RAV4荣放 - 省油耐用，保值率高
+3. 本田CR-V - 空间利用率高，动力平顺
+
+**6座SUV：**
+1. 别克昂科旗 - 2+2+2布局灵活
+2. 大众揽巡 - 空间大，配置丰富
+3. 奇瑞瑞虎9 - 性价比高
+
+**7座SUV：**
+1. 比亚迪唐DM-i - 油耗低，空间大
+2. 理想L8 - 增程式，家庭定位
+3. 丰田汉兰达 - 经典7座，空间充裕
+"""
+
+MOCK_QWEN_EXTRACTION_RESPONSE = json.dumps([
+    {"item_index": 0, "brand": "大众", "product": "途观L"},
+    {"item_index": 1, "brand": "丰田", "product": "RAV4荣放"},
+    # ... etc
+])
+
+MOCK_DEEPSEEK_NORMALIZE_RESPONSE = json.dumps({
+    "brand_aliases": {"大众": "Volkswagen", "丰田": "Toyota", ...},
+    "product_brand_map": {"途观L": "Volkswagen", "RAV4荣放": "Toyota", ...},
+})
+
+def test_e2e_extraction_suv_mini(db_session, knowledge_db_session):
+    """Full extraction pipeline using suv_example_mini fixture."""
+    # 1. Load fixture
+    # 2. Seed KB with Volkswagen brand + aliases from fixture
+    # 3. Run pipeline on MOCK_LLM_RESPONSE
+    # 4. Assert:
+    #    - Step 0: 9 items parsed (3+3+3)
+    #    - Step 1: "大众" matched from KB for items mentioning VW
+    #    - Step 2: Qwen called for remaining items
+    #    - Step 3: DeepSeek normalized brands
+    #    - Final: ExtractionResult has expected brands/products
+    #    - VW/大众 mapped to "Volkswagen" canonical
+    #    - 途观L mapped to Volkswagen brand
+    #    - All 9 products extracted
+
+def test_e2e_kb_only_extraction(db_session, knowledge_db_session):
+    """When KB knows all entities, no LLM calls needed."""
+    # Seed KB with all brands/products from the response
+    # Run pipeline -> assert zero Qwen/DeepSeek calls
+
+def test_e2e_no_kb_extraction(db_session):
+    """When KB is empty, all items go to Qwen."""
+    # Empty KB -> all 9 items sent to Qwen in 1 batch (<=10)
+
+def test_e2e_partial_kb_extraction(db_session, knowledge_db_session):
+    """KB knows some brands, Qwen fills the rest."""
+    # Seed KB with only VW and Toyota
+    # Run pipeline -> assert Qwen called for remaining 7 items
+
+def test_e2e_debug_info_complete(db_session, knowledge_db_session):
+    """Verify debug info captures all pipeline steps."""
+    # Assert PipelineDebugInfo has correct counts for each step
+```
+
+---
+
+## Testing Strategy Summary
+
+| Layer | What | How | Mocking |
+|-------|------|-----|---------|
+| **Unit: item_parser** | Parse lists, tables, paragraphs | Pure functions, no mocks | None |
+| **Unit: rule_extractor** | KB matching, alias resolution | In-memory KB dict | No DB, no LLM |
+| **Unit: qwen_extractor** | Prompt construction, response parsing, batching | Mock OllamaService._call_ollama | Ollama mocked |
+| **Unit: deepseek_consultant** | Proximity mapping, response parsing, batching | Mock DeepSeekService.query | DeepSeek mocked |
+| **Unit: pipeline** | Step orchestration, result assembly | Mock all 3 extractors | All extractors mocked |
+| **Integration: e2e** | Full flow with fixture data | Mock LLM calls, real DB | Ollama + DeepSeek mocked |
+| **Regression** | Compare new vs old on benchmark data | Side-by-side `benchmark_extraction.py` | Can run with real LLMs |
+
+---
+
+## Implementation Order
+
+1. **models.py** - Data classes (no dependencies)
+2. **item_parser.py** + tests - Reuses existing list_processor
+3. **rule_extractor.py** + tests - Needs knowledge DB models
+4. **qwen_extractor.py** + prompt + tests - Needs OllamaService
+5. **deepseek_consultant.py** + prompts + tests - Needs DeepSeekService
+6. **pipeline.py** + tests - Orchestrates everything
+7. **Wire into orchestrator.py** - Replace extract_entities() body
+8. **E2E test** - Full integration test with suv_example_mini
+9. **Manual validation** - Run on suv_example.json with real LLMs
+
+---
+
+## Rollout / Feature Flag
+
+Add `ENABLE_NEW_EXTRACTION` env var (default `false`). In `orchestrator.py`:
+
+```python
+if os.getenv("ENABLE_NEW_EXTRACTION", "false").lower() == "true":
+    # New pipeline
+    pipeline = ExtractionPipeline(vertical, vertical_description, vertical_id, db)
+    return _run_async(pipeline.extract_from_response(text))
+else:
+    # Existing pipeline (unchanged)
+    ...
+```
+
+This allows A/B comparison and safe rollout.
