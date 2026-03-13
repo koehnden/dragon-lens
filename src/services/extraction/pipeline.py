@@ -71,18 +71,28 @@ class ExtractionPipeline:
         response_id: str | None = None,
         user_brands: list | None = None,
     ) -> ExtractionResult:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[PIPELINE] process_response starting, response_id={response_id}")
+
         if not self._seed_checked:
+            logger.info(f"[PIPELINE] Ensuring seeded...")
             await self._ensure_seeded(user_brands or [])
             self._seed_checked = True
             self._matcher = KnowledgeBaseMatcher(self.knowledge_vertical_id, self.knowledge_db)
+            logger.info(f"[PIPELINE] Seeding completed")
 
+        logger.info(f"[PIPELINE] Parsing items...")
         items = parse_response_into_items(text, response_id=response_id)
         intro_context = extract_intro_context(text)
         self.debug_info.step0_item_count += len(items)
         self.debug_info.step0_response_count += 1
+        logger.info(f"[PIPELINE] Parsed {len(items)} items")
 
+        logger.info(f"[PIPELINE] Matching items against KB...")
         matcher = self._get_matcher()
         item_results = [matcher.match_item(item) for item in items]
+        logger.info(f"[PIPELINE] KB matching completed")
 
         missing_items = []
         for result in item_results:
@@ -90,18 +100,22 @@ class ExtractionPipeline:
                 missing_items.append((result.item, result.brand, result.product))
             else:
                 self._record_kb_hits(result)
+        logger.info(f"[PIPELINE] Found {len(missing_items)} items needing Qwen extraction")
 
         if missing_items:
+            logger.info(f"[PIPELINE] Creating QwenBatchExtractor...")
             qwen = QwenBatchExtractor(
                 self.vertical,
                 self.vertical_description,
                 vertical_id=self.knowledge_vertical_id,
                 knowledge_db=self.knowledge_db,
             )
+            logger.info(f"[PIPELINE] Calling qwen.extract_missing...")
             qwen_results = await qwen.extract_missing(
                 missing_items,
                 {response_id: intro_context} if intro_context else {},
             )
+            logger.info(f"[PIPELINE] Qwen extraction completed, got {len(qwen_results)} results")
             self.debug_info.step2_qwen_input_count += len(missing_items)
             self.debug_info.step2_qwen_batch_count += 1
             item_results = _merge_item_results(item_results, qwen_results)
@@ -116,33 +130,52 @@ class ExtractionPipeline:
         if response_id is None:
             response_id = f"response-{len(self._response_results)}"
         self._response_results[response_id] = item_results
-        return self._build_response_result(item_results)
+        logger.info(f"[PIPELINE] Building response result...")
+        result = self._build_response_result(item_results)
+        logger.info(f"[PIPELINE] process_response completed successfully")
+        return result
 
     async def finalize(self) -> BatchExtractionResult:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[EXTRACTION] finalize() starting for vertical={self.vertical}")
+
         consultant = DeepSeekConsultant(
             self.vertical,
             self.vertical_description,
             vertical_id=self.knowledge_vertical_id,
             knowledge_db=self.knowledge_db,
         )
+        logger.info(f"[EXTRACTION] DeepSeekConsultant created")
+
         all_results = [item for results in self._response_results.values() for item in results]
         raw_pairs = [pair for item in all_results for pair in item.pairs]
         raw_brands = _ordered_unique(pair.brand for pair in raw_pairs if pair.brand)
         raw_products = _ordered_unique(pair.product for pair in raw_pairs if pair.product)
+        logger.info(f"[EXTRACTION] Collected {len(raw_brands)} brands, {len(raw_products)} products")
 
+        logger.info(f"[EXTRACTION] Calling normalize_and_map...")
         brand_aliases, product_aliases, product_brand_map = await consultant.normalize_and_map(
             raw_brands,
             raw_products,
             [(pair.brand, pair.product) for pair in raw_pairs],
         )
+        logger.info(f"[EXTRACTION] normalize_and_map completed: {len(brand_aliases)} brand aliases, {len(product_aliases)} product aliases")
+
+        logger.info(f"[EXTRACTION] Calling validate_relevance...")
         valid_brands, valid_products, rejected_brands, rejected_products, rejection_reasons = (
             await consultant.validate_relevance(
                 list({brand_aliases.get(brand, brand) for brand in raw_brands}),
                 list({product_aliases.get(product, product) for product in raw_products}),
             )
         )
-        consultant.store_rejections(rejected_brands, rejected_products, rejection_reasons)
+        logger.info(f"[EXTRACTION] validate_relevance completed: {len(valid_brands)} valid brands, {len(valid_products)} valid products")
 
+        logger.info(f"[EXTRACTION] Storing rejections...")
+        consultant.store_rejections(rejected_brands, rejected_products, rejection_reasons)
+        logger.info(f"[EXTRACTION] store_rejections completed")
+
+        logger.info(f"[EXTRACTION] Creating BatchExtractionResult...")
         batch = BatchExtractionResult(
             items=all_results,
             brand_aliases=brand_aliases,
@@ -153,9 +186,13 @@ class ExtractionPipeline:
             rejected_brands=rejected_brands,
             rejected_products=rejected_products,
         )
+        logger.info(f"[EXTRACTION] BatchExtractionResult created")
 
+        logger.info(f"[EXTRACTION] Persisting knowledge to database...")
         self._persist_knowledge(batch)
+        logger.info(f"[EXTRACTION] Knowledge persistence completed")
 
+        logger.info(f"[EXTRACTION] Finalizing {len(self._response_results)} response results...")
         for response_id, item_results in self._response_results.items():
             finalized_items = _finalize_item_results(
                 item_results,
@@ -167,6 +204,7 @@ class ExtractionPipeline:
             )
             extraction_result = self._build_response_result(finalized_items)
             batch.response_results[response_id] = extraction_result
+        logger.info(f"[EXTRACTION] Response results finalized")
 
         self.debug_info.step3_normalized_brands = dict(brand_aliases)
         self.debug_info.step3_normalized_products = dict(product_aliases)
@@ -174,9 +212,11 @@ class ExtractionPipeline:
         self.debug_info.step3_rejected_brands = sorted(rejected_brands)
         self.debug_info.step3_rejected_products = sorted(rejected_products)
 
+        logger.info(f"[EXTRACTION] Flushing and committing knowledge DB...")
         self.knowledge_db.flush()
         if self._owns_knowledge_db:
             self.knowledge_db.commit()
+        logger.info(f"[EXTRACTION] finalize() completed successfully")
         return batch
 
     async def _ensure_seeded(self, user_brands: list) -> None:

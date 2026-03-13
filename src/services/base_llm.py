@@ -145,7 +145,12 @@ class OpenAICompatibleService(BaseLLMService):
         api_key = self._get_api_key()
         model = model_name or self.default_model
 
-        client = AsyncOpenAI(api_key=api_key, base_url=self.api_base)
+        http_client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=30.0))
+        client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=self.api_base,
+            http_client=http_client,
+        )
 
         messages = self._build_messages(prompt_zh)
         request_kwargs = {"model": model, "messages": messages}
@@ -157,12 +162,21 @@ class OpenAICompatibleService(BaseLLMService):
 
         start_time = time.time()
         try:
+            logger.info(f"[BASE_LLM] About to call client.chat.completions.create()")
             response = await client.chat.completions.create(**request_kwargs)
+            logger.info(f"[BASE_LLM] client.chat.completions.create() returned")
             latency = time.time() - start_time
-            return self._parse_openai_response(response, latency)
+            logger.info(f"[BASE_LLM] About to parse response")
+            result = self._parse_openai_response(response, latency)
+            logger.info(f"[BASE_LLM] Parsed response, about to return")
+            return result
         except Exception as e:
             logger.error(f"{self.provider.value} API error: {e}")
             raise
+        finally:
+            logger.info(f"[BASE_LLM] In finally block, about to close http_client")
+            await http_client.aclose()
+            logger.info(f"[BASE_LLM] http_client closed")
 
     def _parse_openai_response(self, response, latency: float) -> tuple[str, int, int, float]:
         answer = response.choices[0].message.content

@@ -154,13 +154,18 @@ class VerticalSeeder:
             return 0
 
         prompt = self._build_seed_prompt()
+        logger.info(f"[SEEDER] Calling DeepSeek API for seed...")
         try:
             answer, _, _, _ = await deepseek.query(prompt)
+            logger.info(f"[SEEDER] DeepSeek API returned successfully, answer length={len(answer)}")
         except Exception:
             logger.exception("DeepSeek seed call failed for '%s'", self.vertical)
             return 0
 
-        return self._store_seed_response(db, answer)
+        logger.info(f"[SEEDER] Calling _store_seed_response...")
+        result = self._store_seed_response(db, answer)
+        logger.info(f"[SEEDER] _store_seed_response completed, result={result}")
+        return result
 
     async def ensure_seeded(
         self,
@@ -204,36 +209,52 @@ class VerticalSeeder:
 
     def _store_seed_response(self, db: Session, response_text: str) -> int:
         """Parse DeepSeek JSON response and store brands/products."""
+        logger.info(f"[SEEDER] _store_seed_response starting, parsing response...")
         data = _parse_json_response(response_text)
         if not data or "brands" not in data:
             logger.warning("Could not parse DeepSeek seed response")
             return 0
+        logger.info(f"[SEEDER] Parsed {len(data.get('brands', []))} brands from response")
 
         seeded = 0
+        logger.info(f"[SEEDER] Loading brand and product caches...")
         brand_cache = self._load_brand_cache(db)
         product_cache = self._load_product_cache(db)
+        logger.info(f"[SEEDER] Caches loaded")
 
+        logger.info(f"[SEEDER] Beginning nested transaction...")
         with db.begin_nested():
-            for brand_data in data["brands"]:
+            logger.info(f"[SEEDER] Processing brands...")
+            for i, brand_data in enumerate(data["brands"]):
+                logger.info(f"[SEEDER] Processing brand {i+1}/{len(data['brands'])}")
                 brand = self._store_seed_brand(db, brand_data, brand_cache=brand_cache)
                 if not brand:
+                    logger.info(f"[SEEDER] Brand {i+1} skipped (already exists or invalid)")
                     continue
                 seeded += 1
+                logger.info(f"[SEEDER] Brand {i+1} stored, seeded count={seeded}")
 
-                for product_data in brand_data.get("products", []):
+                products = brand_data.get("products", [])
+                logger.info(f"[SEEDER] Processing {len(products)} products for brand {i+1}")
+                for j, product_data in enumerate(products):
+                    logger.info(f"[SEEDER] Processing product {j+1}/{len(products)}")
                     self._store_seed_product(
                         db,
                         brand,
                         product_data,
                         product_cache=product_cache,
                     )
+                    logger.info(f"[SEEDER] Product {j+1} stored")
 
             if seeded:
+                logger.info(f"[SEEDER] Flushing {seeded} seeded brands...")
                 db.flush()
+                logger.info(f"[SEEDER] Flush completed")
             logger.info(
                 "Seeded %d brands from DeepSeek for vertical '%s'",
                 seeded, self.vertical,
             )
+        logger.info(f"[SEEDER] _store_seed_response completed")
         return seeded
 
     def _store_seed_brand(

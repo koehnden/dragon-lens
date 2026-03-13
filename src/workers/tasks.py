@@ -408,11 +408,14 @@ def ensure_extraction(
         ollama_service = OllamaService()
 
         answer_zh = answer.raw_answer_zh or ""
+        logger.info(f"[TASK] ensure_extraction: calling discover_brands_and_products for run={run_id}")
         all_brands, extraction_result = discover_brands_and_products(
             answer_zh, run.vertical_id, brands, self.db
         )
+        logger.info(f"[TASK] ensure_extraction: discover_brands_and_products completed, {len(all_brands)} brands found")
 
         if extraction_result.debug_info:
+            logger.info(f"[TASK] ensure_extraction: storing extraction debug info")
             self.db.query(ExtractionDebug).filter(
                 ExtractionDebug.llm_answer_id == llm_answer_id
             ).delete()
@@ -437,7 +440,9 @@ def ensure_extraction(
                 extraction_method="qwen",
             )
             self.db.add(debug_record)
+            logger.info(f"[TASK] ensure_extraction: debug record added")
 
+        logger.info(f"[TASK] ensure_extraction: calling discover_and_store_products")
         discovered_products = discover_and_store_products(
             self.db,
             run.vertical_id,
@@ -445,6 +450,7 @@ def ensure_extraction(
             all_brands,
             extraction_relationships=extraction_result.product_brand_relationships,
         )
+        logger.info(f"[TASK] ensure_extraction: discover_and_store_products completed, {len(discovered_products)} products")
         vertical = self.db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
         vertical_name = vertical.name if vertical else ""
         vertical_description = vertical.description if vertical else None

@@ -42,20 +42,35 @@ class DeepSeekConsultant:
         products: list[str],
         item_pairs: list[tuple[str | None, str | None]],
     ) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[CONSULTANT] normalize_and_map starting: {len(brands)} brands, {len(products)} products")
+
+        logger.info(f"[CONSULTANT] Normalizing entities...")
         brand_aliases = self._normalize_entities(brands, entity_type="brand")
         product_aliases = self._normalize_entities(products, entity_type="product")
+        logger.info(f"[CONSULTANT] Entities normalized")
+
+        logger.info(f"[CONSULTANT] Building proximity map...")
         product_brand_map = self._build_proximity_map(item_pairs, brand_aliases, product_aliases)
+        logger.info(f"[CONSULTANT] Proximity map built: {len(product_brand_map)} mappings")
 
+        logger.info(f"[CONSULTANT] Loading existing product-brand map from KB...")
         product_brand_map.update(self._existing_product_brand_map())
+        logger.info(f"[CONSULTANT] Existing map loaded")
 
+        logger.info(f"[CONSULTANT] Checking if DeepSeek normalization needed...")
         needs_remote = self._has_deepseek() and (
             _has_collisions(brand_aliases) or _has_collisions(product_aliases) or any(
                 product_aliases.get(product, product) not in product_brand_map for product in products
             )
         )
+        logger.info(f"[CONSULTANT] DeepSeek needed: {needs_remote}")
         if not needs_remote:
+            logger.info(f"[CONSULTANT] normalize_and_map completed (no DeepSeek needed)")
             return brand_aliases, product_aliases, product_brand_map
 
+        logger.info(f"[CONSULTANT] Loading prompt...")
         prompt = load_prompt(
             "extraction/deepseek_normalize_map",
             vertical=self.vertical,
@@ -65,9 +80,13 @@ class DeepSeekConsultant:
             item_pairs_json=json.dumps(item_pairs, ensure_ascii=False),
             existing_product_brand_map_json=json.dumps(product_brand_map, ensure_ascii=False),
         )
+        logger.info(f"[CONSULTANT] Calling DeepSeek API...")
         response = await self._call_deepseek(prompt)
+        logger.info(f"[CONSULTANT] DeepSeek API returned, parsing response...")
         parsed = _parse_json_response(response) or {}
+        logger.info(f"[CONSULTANT] Response parsed")
 
+        logger.info(f"[CONSULTANT] Merging DeepSeek results...")
         for alias, canonical in (parsed.get("brand_aliases") or {}).items():
             if alias:
                 brand_aliases[alias] = canonical or alias
@@ -78,6 +97,7 @@ class DeepSeekConsultant:
             if product and brand:
                 product_brand_map[product_aliases.get(product, product)] = brand_aliases.get(brand, brand)
 
+        logger.info(f"[CONSULTANT] normalize_and_map completed successfully")
         return brand_aliases, product_aliases, product_brand_map
 
     async def validate_relevance(
@@ -85,6 +105,10 @@ class DeepSeekConsultant:
         brands: list[str],
         products: list[str],
     ) -> tuple[set[str], set[str], set[str], set[str], dict[str, str]]:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[CONSULTANT] validate_relevance starting: {len(brands)} brands, {len(products)} products")
+
         valid_brands = set(brands)
         valid_products = set(products)
         rejected_brands: set[str] = set()
@@ -92,8 +116,10 @@ class DeepSeekConsultant:
         rejection_reasons: dict[str, str] = {}
 
         if not self._has_deepseek():
+            logger.info(f"[CONSULTANT] No DeepSeek available, accepting all entities")
             return valid_brands, valid_products, rejected_brands, rejected_products, rejection_reasons
 
+        logger.info(f"[CONSULTANT] Loading validation prompt...")
         prompt = load_prompt(
             "extraction/deepseek_validate",
             vertical=self.vertical,
@@ -101,8 +127,11 @@ class DeepSeekConsultant:
             brands_json=json.dumps(sorted(set(brands)), ensure_ascii=False),
             products_json=json.dumps(sorted(set(products)), ensure_ascii=False),
         )
+        logger.info(f"[CONSULTANT] Calling DeepSeek API for validation...")
         response = await self._call_deepseek(prompt)
+        logger.info(f"[CONSULTANT] DeepSeek validation returned, parsing...")
         parsed = _parse_json_response(response) or {}
+        logger.info(f"[CONSULTANT] Validation response parsed")
 
         parsed_valid_brands = {name for name in parsed.get("valid_brands") or [] if name}
         parsed_valid_products = {name for name in parsed.get("valid_products") or [] if name}
@@ -129,6 +158,7 @@ class DeepSeekConsultant:
 
         valid_brands -= rejected_brands
         valid_products -= rejected_products
+        logger.info(f"[CONSULTANT] validate_relevance completed: {len(valid_brands)} valid brands, {len(valid_products)} valid products")
         return valid_brands, valid_products, rejected_brands, rejected_products, rejection_reasons
 
     def store_rejections(

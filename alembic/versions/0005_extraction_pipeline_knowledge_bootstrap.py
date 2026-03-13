@@ -53,6 +53,15 @@ def _index_exists(name: str) -> bool:
     return False
 
 
+def _enum_exists(name: str) -> bool:
+    bind = op.get_bind()
+    result = bind.execute(
+        sa.text("SELECT 1 FROM pg_type WHERE typname = :name"),
+        {"name": name}
+    ).fetchone()
+    return result is not None
+
+
 def _bool_default(value: bool) -> sa.TextClause:
     if op.get_bind().dialect.name == "postgresql":
         return sa.text("true") if value else sa.text("false")
@@ -126,14 +135,25 @@ def upgrade() -> None:
     _backfill_alias_keys("knowledge_product_aliases", "alias")
     _backfill_alias_keys("knowledge_rejected_entities", "name")
 
-    if not _table_exists("knowledge_extraction_logs"):
+    # Only create knowledge_extraction_logs if knowledge base tables exist
+    if not _table_exists("knowledge_extraction_logs") and _table_exists("knowledge_verticals"):
+        # Check if ENUM already exists
+        from sqlalchemy.dialects.postgresql import ENUM as PostgresEnum
+
+        if _enum_exists("entitytype"):
+            # Use existing ENUM type
+            entity_type_col = sa.Column("entity_type", PostgresEnum(name="entitytype", create_type=False), nullable=False)
+        else:
+            # Create new ENUM type
+            entity_type_col = sa.Column("entity_type", sa.Enum("brand", "product", name="entitytype"), nullable=False)
+
         op.create_table(
             "knowledge_extraction_logs",
             sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
             sa.Column("vertical_id", sa.Integer(), sa.ForeignKey("knowledge_verticals.id"), nullable=False),
             sa.Column("run_id", sa.Integer(), nullable=True),
             sa.Column("entity_name", sa.String(length=255), nullable=False),
-            sa.Column("entity_type", sa.Enum("brand", "product", name="entitytype"), nullable=False),
+            entity_type_col,
             sa.Column("extraction_source", sa.String(length=50), nullable=False),
             sa.Column("resolved_to", sa.String(length=255), nullable=True),
             sa.Column("was_accepted", sa.Boolean(), nullable=False, server_default=_bool_default(True)),

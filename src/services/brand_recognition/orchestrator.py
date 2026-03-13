@@ -60,6 +60,7 @@ def extract_entities(
         )
 
     try:
+        logger.info(f"[ORCHESTRATOR] Calling pipeline.process_response()")
         _run_async(
             pipeline.process_response(
                 text,
@@ -67,7 +68,9 @@ def extract_entities(
                 user_brands=user_brands,
             )
         )
+        logger.info(f"[ORCHESTRATOR] process_response completed, calling finalize()")
         batch = _run_async(pipeline.finalize())
+        logger.info(f"[ORCHESTRATOR] finalize completed")
         result = batch.response_results.get("single-response", ExtractionResult(brands={}, products={}))
         result.quality = _assess_extraction_quality(
             text, result, expected_count, list_item_count

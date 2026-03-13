@@ -1,6 +1,7 @@
 import re
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from models.knowledge_domain import KnowledgeVertical, KnowledgeVerticalAlias
@@ -20,7 +21,15 @@ def get_or_create_vertical(db: Session, name: str) -> KnowledgeVertical:
         return vertical
     vertical = KnowledgeVertical(name=name.strip())
     db.add(vertical)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # Another process created this vertical concurrently
+        db.rollback()
+        vertical = _find_vertical(db, name)
+        if vertical:
+            return vertical
+        raise
     return vertical
 
 

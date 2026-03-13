@@ -72,6 +72,11 @@ def discover_brands_and_products(
     vertical_name: Optional[str] = None,
     vertical_description: Optional[str] = None,
 ) -> Tuple[List[Brand], ExtractionResult]:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[DISCOVERY] discover_brands_and_products starting, vertical_id={vertical_id}")
+
+    logger.info(f"[DISCOVERY] calling _extract_for_discovery")
     extraction_result = _extract_for_discovery(
         text=text,
         db=db,
@@ -79,7 +84,10 @@ def discover_brands_and_products(
         vertical_name=vertical_name,
         vertical_description=vertical_description,
     )
-    return discover_brands_and_products_from_result(
+    logger.info(f"[DISCOVERY] _extract_for_discovery completed")
+
+    logger.info(f"[DISCOVERY] calling discover_brands_and_products_from_result")
+    result = discover_brands_and_products_from_result(
         text,
         vertical_id,
         user_brands,
@@ -88,6 +96,8 @@ def discover_brands_and_products(
         vertical_name=vertical_name,
         vertical_description=vertical_description,
     )
+    logger.info(f"[DISCOVERY] discover_brands_and_products_from_result completed, returning")
+    return result
 
 
 def discover_brands_and_products_from_result(
