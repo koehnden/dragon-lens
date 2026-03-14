@@ -28,6 +28,12 @@ class KnowledgeVerticalResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FeedbackCanonicalVertical(BaseModel):
+    id: Optional[int] = None
+    name: Optional[str] = None
+    is_new: bool
+
+
 class BrandCreate(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=255)
     aliases: Dict[str, List[str]] = Field(
@@ -69,6 +75,7 @@ class PromptResponse(BaseModel):
 class TrackingJobCreate(BaseModel):
     vertical_name: str = Field(..., min_length=1)
     vertical_description: Optional[str] = None
+    canonical_vertical: Optional[FeedbackCanonicalVertical] = None
     brands: List[BrandCreate] = Field(default_factory=list)
     prompts: List[PromptCreate]
     provider: str = Field(
@@ -238,6 +245,95 @@ class RunInspectorPromptExport(BaseModel):
     prompt_response_zh: str
     prompt_response_en: Optional[str]
     brands_extracted: List[RunInspectorBrandExtract]
+
+
+class AICorrectionConfidenceLevel(str, enum.Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    VERY_HIGH = "VERY_HIGH"
+
+
+class AICorrectionThresholds(BaseModel):
+    reject_brand: Optional[float] = None
+    reject_product: Optional[float] = None
+    reject_mapping: Optional[float] = None
+    validate_: Optional[float] = Field(default=None, alias="validate")
+    replace: Optional[float] = None
+    add_mapping: Optional[float] = None
+
+    model_config = {"populate_by_name": True}
+
+
+class AICorrectionMinConfidenceLevels(BaseModel):
+    reject_brand: Optional[AICorrectionConfidenceLevel] = None
+    reject_product: Optional[AICorrectionConfidenceLevel] = None
+    reject_mapping: Optional[AICorrectionConfidenceLevel] = None
+    validate_: Optional[AICorrectionConfidenceLevel] = Field(default=None, alias="validate")
+    replace: Optional[AICorrectionConfidenceLevel] = None
+    add_mapping: Optional[AICorrectionConfidenceLevel] = None
+
+    model_config = {"populate_by_name": True}
+
+
+class AICorrectionCreateRequest(BaseModel):
+    provider: Optional[str] = None
+    model_name: Optional[str] = None
+    thresholds: Optional[AICorrectionThresholds] = None
+    min_confidence_levels: Optional[AICorrectionMinConfidenceLevels] = None
+    dry_run: Optional[bool] = None
+
+
+class AICorrectionRunResponse(BaseModel):
+    audit_id: int
+    run_id: int
+    status: str
+    requested_provider: str
+    requested_model: str
+    resolved_provider: str
+    resolved_model: str
+    resolved_route: str
+    dry_run: bool
+
+
+class AICorrectionMetrics(BaseModel):
+    precision: float
+    recall: float
+    true_positives: int
+    false_positives: int
+    false_negatives: int
+
+
+class AICorrectionCluster(BaseModel):
+    category: str
+    count: int
+    examples: List[str]
+
+
+class AICorrectionReviewItem(BaseModel):
+    id: int
+    run_id: int
+    llm_answer_id: int
+    category: str
+    action: str
+    confidence_level: str
+    confidence_score: float
+    reason: str
+    evidence_quote_zh: Optional[str]
+    feedback_payload: dict
+
+
+class AICorrectionReportResponse(BaseModel):
+    audit_id: int
+    run_id: int
+    resolved_provider: str
+    resolved_model: str
+    resolved_route: str
+    brands: AICorrectionMetrics
+    products: AICorrectionMetrics
+    mappings: AICorrectionMetrics
+    clusters: List[AICorrectionCluster]
+    pending_review_items: List[AICorrectionReviewItem]
 
 
 class RunEntityBrand(BaseModel):
@@ -520,12 +616,6 @@ class FeedbackEntityType(str, enum.Enum):
 class FeedbackLanguage(str, enum.Enum):
     ZH = "zh"
     EN = "en"
-
-
-class FeedbackCanonicalVertical(BaseModel):
-    id: Optional[int] = None
-    name: Optional[str] = None
-    is_new: bool
 
 
 class FeedbackBrandFeedbackItem(BaseModel):

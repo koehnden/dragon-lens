@@ -9,8 +9,10 @@ from models.domain import EntityType
 from models.knowledge_domain import (
     FeedbackStatus,
     KnowledgeBrand,
+    KnowledgeBrandAlias,
     KnowledgeFeedbackEvent,
     KnowledgeProduct,
+    KnowledgeProductAlias,
     KnowledgeProductBrandMapping,
     KnowledgeRejectedEntity,
     KnowledgeTranslationOverride,
@@ -38,6 +40,8 @@ def submit_feedback(
     db: Session,
     knowledge_db: Session,
     payload: FeedbackSubmitRequest,
+    reviewer: str = "user",
+    reviewer_model: str | None = None,
 ) -> FeedbackSubmitResponse:
     _validate_payload(payload)
     _validate_run(db, payload.run_id, payload.vertical_id)
@@ -45,7 +49,7 @@ def submit_feedback(
     canonical = _resolve_canonical_vertical(knowledge_db, payload.canonical_vertical)
     _ensure_vertical_alias(knowledge_db, canonical.id, vertical.name)
     applied = _apply_feedback(knowledge_db, canonical.id, payload)
-    _store_feedback_event(knowledge_db, canonical.id, payload)
+    _store_feedback_event(knowledge_db, canonical.id, payload, reviewer, reviewer_model)
     knowledge_db.commit()
     return _response(payload.run_id, canonical.id, applied)
 
@@ -351,10 +355,14 @@ def _apply_brand_replace(
     vertical_id: int,
     item: FeedbackBrandFeedbackItem,
 ) -> None:
-    _upsert_rejected_entity(
-        knowledge_db, vertical_id, EntityType.BRAND, item.wrong_name, item.reason
-    )
-    _upsert_brand(knowledge_db, vertical_id, item.correct_name, True, "feedback")
+    wrong = _clean_name(item.wrong_name)
+    correct = _clean_name(item.correct_name)
+    brand = _upsert_brand(knowledge_db, vertical_id, correct, True, "feedback")
+    if _alias_variant_brand(wrong, correct):
+        _add_knowledge_brand_alias(knowledge_db, brand.id, wrong)
+        _delete_rejected(knowledge_db, vertical_id, EntityType.BRAND, wrong)
+        return
+    _upsert_rejected_entity(knowledge_db, vertical_id, EntityType.BRAND, wrong, item.reason)
 
 
 def _apply_brand_validate(
@@ -406,12 +414,14 @@ def _apply_product_replace(
     vertical_id: int,
     item: FeedbackProductFeedbackItem,
 ) -> None:
-    _upsert_rejected_entity(
-        knowledge_db, vertical_id, EntityType.PRODUCT, item.wrong_name, item.reason
-    )
-    _upsert_product(
-        knowledge_db, vertical_id, None, item.correct_name, True, "feedback"
-    )
+    wrong = _clean_name(item.wrong_name)
+    correct = _clean_name(item.correct_name)
+    product = _upsert_product(knowledge_db, vertical_id, None, correct, True, "feedback")
+    if _alias_variant_simple(wrong, correct):
+        _add_knowledge_product_alias(knowledge_db, product.id, wrong)
+        _delete_rejected(knowledge_db, vertical_id, EntityType.PRODUCT, wrong)
+        return
+    _upsert_rejected_entity(knowledge_db, vertical_id, EntityType.PRODUCT, wrong, item.reason)
 
 
 def _apply_product_validate(
@@ -870,17 +880,23 @@ def _store_feedback_event(
     knowledge_db: Session,
     vertical_id: int,
     payload: FeedbackSubmitRequest,
+    reviewer: str,
+    reviewer_model: str | None,
 ) -> None:
-    knowledge_db.add(_new_feedback_event(vertical_id, payload))
+    knowledge_db.add(_new_feedback_event(vertical_id, payload, reviewer, reviewer_model))
 
 
 def _new_feedback_event(
     vertical_id: int,
     payload: FeedbackSubmitRequest,
+    reviewer: str,
+    reviewer_model: str | None,
 ) -> KnowledgeFeedbackEvent:
     return KnowledgeFeedbackEvent(
         vertical_id=vertical_id,
         run_id=payload.run_id,
+        reviewer=reviewer,
+        reviewer_model=reviewer_model,
         status=FeedbackStatus.RECEIVED,
         payload=payload.model_dump(),
     )
@@ -902,3 +918,71 @@ def _response(
 
 def _clean_name(value: str | None) -> str:
     return (value or "").strip()
+
+
+def _alias_variant_simple(wrong: str, correct: str) -> bool:
+    if not wrong or not correct:
+        return False
+    return normalize_entity_key(wrong) == normalize_entity_key(correct)
+
+
+def _alias_variant_brand(wrong: str, correct: str) -> bool:
+    if _alias_variant_simple(wrong, correct):
+        return True
+    return normalize_entity_key(_strip_brand_suffix(wrong)) == normalize_entity_key(correct)
+
+
+def _strip_brand_suffix(name: str) -> str:
+    value = (name or "").strip()
+    if not value:
+        return ""
+    return _strip_brand_suffix_pass(_strip_brand_suffix_pass(value))
+
+
+def _strip_brand_suffix_pass(value: str) -> str:
+    lowered = value.casefold().strip().strip(".")
+    if lowered.endswith("汽车"):
+        return value[: -len("汽车")].strip()
+    if lowered.endswith("集团"):
+        return value[: -len("集团")].strip()
+    if lowered.endswith("公司"):
+        return value[: -len("公司")].strip()
+    if lowered.endswith("有限公司"):
+        return value[: -len("有限公司")].strip()
+    return _strip_en_suffix(value)
+
+
+def _strip_en_suffix(value: str) -> str:
+    parts = [p for p in (value or "").replace(".", " ").split() if p]
+    if not parts:
+        return ""
+    suffixes = {"auto", "automotive", "group", "inc", "ltd", "co", "company", "corp", "holdings", "limited"}
+    while parts and parts[-1].casefold() in suffixes:
+        parts.pop()
+    return " ".join(parts).strip()
+
+
+def _add_knowledge_brand_alias(knowledge_db: Session, brand_id: int, alias: str) -> None:
+    if not alias:
+        return
+    exists = knowledge_db.query(KnowledgeBrandAlias.id).filter(KnowledgeBrandAlias.brand_id == brand_id, func.lower(KnowledgeBrandAlias.alias) == alias.casefold()).first()
+    if not exists:
+        knowledge_db.add(KnowledgeBrandAlias(brand_id=brand_id, alias=alias))
+
+
+def _add_knowledge_product_alias(knowledge_db: Session, product_id: int, alias: str) -> None:
+    if not alias:
+        return
+    exists = knowledge_db.query(KnowledgeProductAlias.id).filter(KnowledgeProductAlias.product_id == product_id, func.lower(KnowledgeProductAlias.alias) == alias.casefold()).first()
+    if not exists:
+        knowledge_db.add(KnowledgeProductAlias(product_id=product_id, alias=alias))
+
+
+def _delete_rejected(knowledge_db: Session, vertical_id: int, entity_type: EntityType, name: str) -> None:
+    if not name:
+        return
+    knowledge_db.query(KnowledgeRejectedEntity).filter(
+        KnowledgeRejectedEntity.vertical_id == vertical_id,
+        KnowledgeRejectedEntity.entity_type == entity_type,
+        func.lower(KnowledgeRejectedEntity.name) == name.casefold(),
+    ).delete(synchronize_session=False)

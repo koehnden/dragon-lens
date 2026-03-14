@@ -23,6 +23,7 @@ from models import (
     Vertical,
     get_db,
 )
+from models.knowledge_database import get_knowledge_db_write
 from models.db_retry import commit_with_retry, flush_with_retry
 from models.domain import PromptLanguage, RunStatus, Sentiment
 from models.schemas import (
@@ -36,9 +37,11 @@ from models.schemas import (
     RunDetailedResponse,
     RunInspectorPromptExport,
     RunResponse,
+    FeedbackCanonicalVertical,
     TrackingJobCreate,
     TrackingJobResponse,
 )
+from services.feedback_service import save_vertical_alias
 from services.translater import format_entity_label
 from services.metrics_service import calculate_and_save_metrics
 from services.run_inspector_export import build_run_inspector_export
@@ -74,6 +77,7 @@ def _provided_filters(
 async def create_tracking_job(
     job: TrackingJobCreate,
     db: Session = Depends(get_db),
+    knowledge_db: Session = Depends(get_knowledge_db_write),
 ) -> TrackingJobResponse:
     """
     Create a new tracking job.
@@ -101,6 +105,8 @@ async def create_tracking_job(
         )
         db.add(vertical)
         flush_with_retry(db)
+    canonical = job.canonical_vertical or FeedbackCanonicalVertical(name=vertical.name, is_new=True)
+    save_vertical_alias(db, knowledge_db, vertical.id, canonical)
 
     for brand_data in job.brands:
         existing_brand = (

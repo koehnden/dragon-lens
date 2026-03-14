@@ -13,12 +13,15 @@ from sqlalchemy.orm import Session
 
 from models import EntityType, Vertical
 from models.knowledge_domain import (
+    KnowledgeAIAuditReviewItem,
+    KnowledgeAIAuditReviewStatus,
+    KnowledgeAIAuditRun,
     KnowledgeBrand,
     KnowledgeBrandAlias,
     KnowledgeProduct,
     KnowledgeProductAlias,
 )
-from services.canonicalization_metrics import build_user_brand_variant_set
+from services.canonicalization_metrics import build_user_brand_variant_set, normalize_entity_key
 from services.knowledge_examples import rejected_examples
 from services.knowledge_session import knowledge_session
 from services.knowledge_verticals import resolve_knowledge_vertical_id
@@ -27,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 POSITIVE_EXAMPLES_LIMIT = 20
 NEGATIVE_EXAMPLES_LIMIT = 30
+CORRECTION_EXAMPLES_LIMIT = 5
+
+_CORRECTION_CONFIDENCE_LEVELS = {"VERY_HIGH", "HIGH"}
 
 
 def get_validated_brands_for_prompt(
@@ -90,6 +96,14 @@ def get_augmentation_context(
         - rejected_products: List of rejected product dicts
     """
     return _augmentation_context(db, vertical_id)
+
+def get_correction_examples_for_prompt(
+    db: Session,
+    vertical_id: int,
+    limit: int = CORRECTION_EXAMPLES_LIMIT,
+) -> List[Dict]:
+    """Get human/AI-approved correction examples to include in extraction prompt."""
+    return _correction_examples_for_prompt(db, vertical_id, limit)
 
 
 def _get_brand_aliases(db: Session, brand_id: int) -> List[str]:
@@ -201,6 +215,7 @@ def _augmentation_context(db: Session, vertical_id: int) -> Dict:
         "validated_products": get_validated_products_for_prompt(db, vertical_id),
         "rejected_brands": get_rejected_brands_for_prompt(db, vertical_id),
         "rejected_products": get_rejected_products_for_prompt(db, vertical_id),
+        "correction_examples": get_correction_examples_for_prompt(db, vertical_id),
     }
 
 
@@ -228,6 +243,209 @@ def _validated_products(knowledge_db: Session, vertical_id: int, limit: int) -> 
         KnowledgeProduct.vertical_id == vertical_id,
         KnowledgeProduct.is_validated == True,
     ).order_by(KnowledgeProduct.updated_at.desc()).limit(limit).all()
+
+def _correction_examples_for_prompt(db: Session, vertical_id: int, limit: int) -> List[Dict]:
+    with knowledge_session() as knowledge_db:
+        knowledge_id = _knowledge_vertical_id(knowledge_db, db, vertical_id)
+        rows = _applied_correction_rows(knowledge_db, knowledge_id)
+        return _select_correction_examples(rows, limit)
+
+
+def _applied_correction_rows(knowledge_db: Session, knowledge_vertical_id: int | None) -> list[KnowledgeAIAuditReviewItem]:
+    if not knowledge_vertical_id:
+        return []
+    return knowledge_db.query(KnowledgeAIAuditReviewItem).join(
+        KnowledgeAIAuditRun, KnowledgeAIAuditRun.id == KnowledgeAIAuditReviewItem.audit_run_id
+    ).filter(
+        KnowledgeAIAuditRun.vertical_id == knowledge_vertical_id,
+        KnowledgeAIAuditReviewItem.status == KnowledgeAIAuditReviewStatus.APPLIED,
+        KnowledgeAIAuditReviewItem.confidence_level.in_(_CORRECTION_CONFIDENCE_LEVELS),
+        KnowledgeAIAuditReviewItem.evidence_quote_zh.isnot(None),
+        KnowledgeAIAuditReviewItem.evidence_quote_zh != "",
+    ).order_by(KnowledgeAIAuditReviewItem.applied_at.desc()).limit(300).all()
+
+
+def _select_correction_examples(rows: list[KnowledgeAIAuditReviewItem], limit: int) -> List[Dict]:
+    candidates = [_candidate_or_none(r) for r in rows]
+    ordered = _order_candidates([c for c in candidates if c])
+    chosen = _choose_diverse(ordered, limit)
+    return [{"trigger": c["trigger"], "rules": c["rules"]} for c in chosen]
+
+
+def _order_candidates(candidates: list[dict]) -> list[dict]:
+    return sorted(candidates, key=_candidate_rank)
+
+
+def _candidate_rank(candidate: dict) -> tuple:
+    level = str(candidate.get("confidence_level") or "")
+    return (_level_priority(level), -float(candidate.get("confidence_score") or 0.0), -int(candidate.get("applied_at") or 0))
+
+
+def _level_priority(level: str) -> int:
+    return 0 if level == "VERY_HIGH" else 1
+
+
+def _choose_diverse(candidates: list[dict], limit: int) -> list[dict]:
+    if limit <= 0:
+        return []
+    picked, seen = [], set()
+    picked, seen = _pick_mapping_first(candidates, picked, seen, limit)
+    picked, seen = _pick_kind(candidates, picked, seen, limit, "brand")
+    picked, seen = _pick_kind(candidates, picked, seen, limit, "product")
+    return _fill_remaining(candidates, picked, seen, limit)
+
+
+def _pick_mapping_first(candidates: list[dict], picked: list[dict], seen: set, limit: int) -> tuple[list[dict], set]:
+    for c in candidates:
+        if len(picked) >= limit:
+            return picked, seen
+        if c.get("kind") == "mapping" and c["dedupe_key"] not in seen:
+            picked.append(c)
+            seen.add(c["dedupe_key"])
+            return picked, seen
+    return picked, seen
+
+
+def _pick_kind(candidates: list[dict], picked: list[dict], seen: set, limit: int, kind: str) -> tuple[list[dict], set]:
+    for c in candidates:
+        if len(picked) >= limit:
+            return picked, seen
+        if c.get("kind") == kind and c["dedupe_key"] not in seen:
+            picked.append(c)
+            seen.add(c["dedupe_key"])
+            return picked, seen
+    return picked, seen
+
+
+def _fill_remaining(candidates: list[dict], picked: list[dict], seen: set, limit: int) -> list[dict]:
+    for c in candidates:
+        if len(picked) >= limit:
+            return picked
+        if c["dedupe_key"] in seen:
+            continue
+        picked.append(c)
+        seen.add(c["dedupe_key"])
+    return picked
+
+
+def _candidate_or_none(row: KnowledgeAIAuditReviewItem) -> dict | None:
+    payload = row.feedback_payload or {}
+    trigger = (row.evidence_quote_zh or "").strip()
+    example = _payload_example(payload, trigger)
+    if not example:
+        return None
+    if not _trigger_ok(trigger, example):
+        return None
+    return {**example, "confidence_level": row.confidence_level, "confidence_score": row.confidence_score, "applied_at": _ts(row.applied_at)}
+
+
+def _ts(value) -> int:
+    return int(value.timestamp()) if value else 0
+
+
+def _payload_example(payload: dict, trigger: str) -> dict | None:
+    if item := _mapping_item(payload):
+        return _mapping_example(item, trigger)
+    if item := _brand_item(payload):
+        return _brand_example(item, trigger)
+    if item := _product_item(payload):
+        return _product_example(item, trigger)
+    return None
+
+
+def _mapping_item(payload: dict) -> dict | None:
+    items = payload.get("mapping_feedback") or []
+    return items[0] if items else None
+
+
+def _brand_item(payload: dict) -> dict | None:
+    items = payload.get("brand_feedback") or []
+    return items[0] if items else None
+
+
+def _product_item(payload: dict) -> dict | None:
+    items = payload.get("product_feedback") or []
+    return items[0] if items else None
+
+
+def _mapping_example(item: dict, trigger: str) -> dict | None:
+    product = (item.get("product_name") or "").strip()
+    brand = (item.get("brand_name") or "").strip()
+    action = (item.get("action") or "").strip()
+    if not product or not brand:
+        return None
+    rules = _mapping_rules(product, brand, action)
+    return {"kind": "mapping", "trigger": trigger, "rules": rules, "dedupe_key": _mapping_key(product, brand, action)}
+
+
+def _mapping_rules(product: str, brand: str, action: str) -> list[str]:
+    if action == "reject":
+        return [f'If you extract product "{product}", MUST NOT set parent_brand to "{brand}".']
+    return [f'If you extract product "{product}" and brand "{brand}", output {{"name":"{product}","type":"product","parent_brand":"{brand}"}}.']
+
+
+def _mapping_key(product: str, brand: str, action: str) -> str:
+    return f"mapping:{action}:{normalize_entity_key(product)}:{normalize_entity_key(brand)}"
+
+
+def _brand_example(item: dict, trigger: str) -> dict | None:
+    return _entity_example(item, trigger, "brand")
+
+
+def _product_example(item: dict, trigger: str) -> dict | None:
+    return _entity_example(item, trigger, "product")
+
+
+def _entity_example(item: dict, trigger: str, label: str) -> dict | None:
+    action = (item.get("action") or "").strip()
+    wrong = (item.get("wrong_name") or "").strip()
+    correct = (item.get("correct_name") or "").strip()
+    name = (item.get("name") or "").strip()
+    if action == "replace" and wrong and correct:
+        rules = [f'MUST NOT extract {label} "{wrong}".', f'If the text contains "{correct}" as a standalone entity, extract {label} "{correct}".']
+        return {"kind": label, "trigger": trigger, "rules": rules, "dedupe_key": _replace_key(label, wrong, correct)}
+    if action == "reject" and name:
+        return {"kind": label, "trigger": trigger, "rules": [f'MUST NOT extract {label} "{name}".'], "dedupe_key": _simple_key(label, "reject", name)}
+    if action == "validate" and name:
+        rule = f'If the text contains "{name}" as a standalone entity, extract {label} "{name}".'
+        return {"kind": label, "trigger": trigger, "rules": [rule], "dedupe_key": _simple_key(label, "validate", name)}
+    return None
+
+
+def _replace_key(label: str, wrong: str, correct: str) -> str:
+    return f"{label}:replace:{normalize_entity_key(wrong)}:{normalize_entity_key(correct)}"
+
+
+def _simple_key(label: str, action: str, name: str) -> str:
+    return f"{label}:{action}:{normalize_entity_key(name)}"
+
+
+def _trigger_ok(trigger: str, example: dict) -> bool:
+    if example.get("kind") == "mapping":
+        return _mapping_trigger_ok(trigger, example.get("rules") or [])
+    return _entity_trigger_ok(trigger, example.get("rules") or [])
+
+
+def _mapping_trigger_ok(trigger: str, rules: list[str]) -> bool:
+    text = trigger.casefold()
+    parts = [p for p in _quoted_parts(rules) if p]
+    return all(p.casefold() in text for p in parts[:2])
+
+
+def _entity_trigger_ok(trigger: str, rules: list[str]) -> bool:
+    text = trigger.casefold()
+    parts = [p for p in _quoted_parts(rules) if p]
+    return bool(parts) and parts[0].casefold() in text
+
+
+def _quoted_parts(rules: list[str]) -> list[str]:
+    return [part for r in rules for part in _extract_quoted(r)]
+
+
+def _extract_quoted(text: str) -> list[str]:
+    import re
+
+    return re.findall(r'"([^"]+)"', text or "")
 
 
 def _brand_prompt_entry(knowledge_db: Session, brand: KnowledgeBrand) -> Dict:
