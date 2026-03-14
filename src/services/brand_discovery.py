@@ -156,6 +156,13 @@ def _extract_for_discovery(
     vertical_name: Optional[str],
     vertical_description: Optional[str],
 ) -> ExtractionResult:
+    # Fetch vertical context from DB if not provided
+    if not vertical_name:
+        vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+        if vertical:
+            vertical_name = vertical.name
+            vertical_description = vertical.description
+
     return extract_entities(
         text,
         "",
