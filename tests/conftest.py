@@ -11,6 +11,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 import sys
 from pathlib import Path
+import os
+
+os.environ.setdefault("CELERY_BROKER_URL", "memory://")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
+os.environ.setdefault("ENABLE_QWEN_FILTERING", "false")
+os.environ.setdefault("ENABLE_EMBEDDING_CLUSTERING", "false")
+os.environ.setdefault("ENABLE_LLM_CLUSTERING", "false")
+os.environ.setdefault("RUN_TASKS_INLINE", "true")
 
 from api.routers import metrics, tracking, verticals
 from models import Base, get_db
