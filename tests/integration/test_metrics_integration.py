@@ -209,24 +209,24 @@ def test_latest_metrics_calculation(client: TestClient, complete_test_data):
 
     merc = next(b for b in data["brands"] if b["brand_name"] == "Mercedes-Benz")
     assert merc["mention_rate"] == pytest.approx(1.0, rel=1e-2)
-    assert merc["share_of_voice"] == pytest.approx(0.47, rel=1e-2)
+    assert merc["share_of_voice"] == pytest.approx(0.475, rel=1e-2)
     assert merc["top_spot_share"] == pytest.approx(1 / 3, rel=1e-2)
     assert merc["sentiment_index"] == pytest.approx(1.0, rel=1e-2)
-    assert merc["dragon_lens_visibility"] == pytest.approx(0.55, rel=1e-2)
+    assert merc["dragon_lens_visibility"] == pytest.approx(0.552, rel=1e-2)
 
     bmw = next(b for b in data["brands"] if b["brand_name"] == "BMW")
     assert bmw["mention_rate"] == pytest.approx(2 / 3, rel=1e-2)
-    assert bmw["share_of_voice"] == pytest.approx(0.42, rel=1e-2)
+    assert bmw["share_of_voice"] == pytest.approx(0.639, rel=1e-2)
     assert bmw["top_spot_share"] == pytest.approx(2 / 3, rel=1e-2)
     assert bmw["sentiment_index"] == pytest.approx(1.0, rel=1e-2)
-    assert bmw["dragon_lens_visibility"] == pytest.approx(0.59, rel=1e-2)
+    assert bmw["dragon_lens_visibility"] == pytest.approx(0.716, rel=1e-2)
 
     audi = next(b for b in data["brands"] if b["brand_name"] == "Audi")
     assert audi["mention_rate"] == pytest.approx(1 / 3, rel=1e-2)
-    assert audi["share_of_voice"] == pytest.approx(0.1, rel=1e-2)
+    assert audi["share_of_voice"] == pytest.approx(0.16, rel=1e-2)
     assert audi["top_spot_share"] == 0.0
     assert audi["sentiment_index"] == 0.0
-    assert audi["dragon_lens_visibility"] == pytest.approx(0.06, rel=1e-2)
+    assert audi["dragon_lens_visibility"] == pytest.approx(0.096, rel=1e-2)
 
 
 def test_latest_metrics_with_multiple_runs(client: TestClient, db_session: Session, complete_test_data):
@@ -389,7 +389,7 @@ def test_calculate_and_save_metrics_service(db_session: Session, complete_test_d
 
     merc_metrics = next(m for m in run_metrics if m.brand_id == complete_test_data["brand1_id"])
     assert merc_metrics.mention_rate == pytest.approx(1.0, rel=1e-2)
-    assert merc_metrics.share_of_voice == pytest.approx(0.47, rel=1e-2)
+    assert merc_metrics.share_of_voice == pytest.approx(0.475, rel=1e-2)
     assert merc_metrics.top_spot_share == pytest.approx(1 / 3, rel=1e-2)
     assert merc_metrics.sentiment_index == pytest.approx(1.0, rel=1e-2)
     assert merc_metrics.dragon_lens_visibility > 0
@@ -412,7 +412,7 @@ def test_run_metrics_endpoint(client: TestClient, db_session: Session, complete_
 
     merc = next(m for m in data["metrics"] if m["brand_name"] == "Mercedes-Benz")
     assert merc["mention_rate"] == pytest.approx(1.0, rel=1e-2)
-    assert merc["share_of_voice"] == pytest.approx(0.47, rel=1e-2)
+    assert merc["share_of_voice"] == pytest.approx(0.475, rel=1e-2)
     assert merc["dragon_lens_visibility"] > 0
 
 

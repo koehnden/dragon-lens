@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from metrics.metrics import AnswerMetrics, visibility_metrics
 from models import Brand, BrandMention, LLMAnswer, Prompt, Run, RunMetrics
+from models.domain import EntityType
 
 
 def calculate_and_save_metrics(db: Session, run_id: int) -> None:
@@ -13,7 +14,11 @@ def calculate_and_save_metrics(db: Session, run_id: int) -> None:
 
     vertical_id = run.vertical_id
 
-    brands = db.query(Brand).filter(Brand.vertical_id == vertical_id).all()
+    brands = (
+        db.query(Brand)
+        .filter(Brand.vertical_id == vertical_id, Brand.entity_type == EntityType.BRAND)
+        .all()
+    )
     prompts = db.query(Prompt).filter(Prompt.vertical_id == vertical_id).all()
 
     if not brands or not prompts:
