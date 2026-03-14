@@ -15,6 +15,7 @@ from models import (
 )
 from models.database import SessionLocal
 from models.domain import PromptLanguage, RunStatus, Sentiment
+from services.brand_recognition import extract_entities
 from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -83,14 +84,15 @@ def run_vertical_analysis(self: DatabaseTask, vertical_id: int, model_name: str,
             self.db.add(llm_answer)
             self.db.flush()
 
-            for brand in brands:
+            canonical_mentions = _detect_mentions(answer_zh, brands)
+            for brand_id, snippets in canonical_mentions.items():
                 mention = BrandMention(
                     llm_answer_id=llm_answer.id,
-                    brand_id=brand.id,
-                    mentioned=False,  # TODO: detect actual mention
+                    brand_id=brand_id,
+                    mentioned=True,
                     rank=None,
                     sentiment=Sentiment.NEUTRAL,
-                    evidence_snippets={"zh": [], "en": []},
+                    evidence_snippets={"zh": snippets, "en": []},
                 )
                 self.db.add(mention)
 
@@ -124,10 +126,42 @@ def translate_text(text: str, source_lang: str, target_lang: str) -> str:
 @celery_app.task
 def extract_brand_mentions(answer_text: str, brands: List[dict]) -> List[dict]:
     logger.info("Extracting brand mentions")
-    return []
+    if not brands:
+        return []
+    primary = brands[0]
+    aliases = primary.get("aliases") or {"zh": [], "en": []}
+    canonical = extract_entities(answer_text, primary.get("display_name", ""), aliases)
+    mentions = []
+    for name, surfaces in canonical.items():
+        mentions.append({"canonical": name, "mentions": surfaces})
+    return mentions
 
 
 @celery_app.task
 def classify_sentiment(text: str) -> str:
     logger.info("Classifying sentiment")
     return "neutral"
+
+
+def _detect_mentions(answer_text: str, brands: List[Brand]) -> dict[int, List[str]]:
+    if not brands:
+        return {}
+    primary = brands[0]
+    canonical = extract_entities(answer_text, primary.display_name, primary.aliases)
+    mention_map: dict[int, List[str]] = {}
+    for canonical_name, surfaces in canonical.items():
+        brand = _ensure_brand(primary.vertical_id, canonical_name, primary.aliases)
+        mention_map[brand.id] = surfaces
+    return mention_map
+
+
+def _ensure_brand(vertical_id: int, canonical_name: str, aliases: dict) -> Brand:
+    session = SessionLocal()
+    brand = session.query(Brand).filter(Brand.vertical_id == vertical_id, Brand.display_name == canonical_name).first()
+    brand = brand or Brand(vertical_id=vertical_id, display_name=canonical_name, aliases=aliases or {"zh": [], "en": []})
+    if brand.id is None:
+        session.add(brand)
+        session.commit()
+        session.refresh(brand)
+    session.close()
+    return brand
