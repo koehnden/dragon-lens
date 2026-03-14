@@ -218,12 +218,13 @@ def test_delete_api_key(client: TestClient, db: Session):
     db.add(api_key)
     db.commit()
     db.refresh(api_key)
+    key_id = api_key.id
 
-    response = client.delete(f"/api/v1/api-keys/{api_key.id}")
+    response = client.delete(f"/api/v1/api-keys/{key_id}")
     assert response.status_code == 204
 
     # Verify deletion
-    deleted_key = db.query(APIKey).filter(APIKey.id == api_key.id).first()
+    deleted_key = db.query(APIKey).filter(APIKey.id == key_id).first()
     assert deleted_key is None
 
 

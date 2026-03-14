@@ -3,7 +3,7 @@ from typing import Generator
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from src.config import settings
+from config import settings
 from models.sqlite_config import apply_sqlite_pragmas, is_sqlite_url, sqlite_connect_args
 
 PRODUCT_BRAND_MAPPING_TABLE_SQL = """

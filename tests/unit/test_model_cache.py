@@ -6,7 +6,9 @@ def test_ollama_embedding_model_name_configured():
     assert "bge-small-zh-v1.5" in OLLAMA_EMBEDDING_MODEL
 
 
-def test_ollama_service_has_get_embeddings_method():
+def test_ollama_service_has_query_entrypoint():
     from services.ollama import OllamaService
+
     service = OllamaService()
-    assert hasattr(service, "get_embeddings")
+
+    assert hasattr(service, "query_main_model")

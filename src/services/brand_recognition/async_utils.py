@@ -6,7 +6,6 @@ for running async code from synchronous contexts.
 """
 
 import asyncio
-from typing import Any
 
 
 _persistent_event_loop = None

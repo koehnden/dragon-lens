@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from models import Brand, Prompt, Run, Vertical
+from models.schemas import TrackingJobCreate
 
 
 def test_tracking_job_creates_full_structure(client: TestClient, db_session: Session):
@@ -266,7 +267,7 @@ def test_tracking_job_minimal_data(client: TestClient):
 
     assert response.status_code == 201
     data = response.json()
-    assert data["model_name"] == "qwen"  # Default model
+    assert data["model_name"] == TrackingJobCreate.model_fields["model_name"].default
     assert data["status"] == "pending"
 
 

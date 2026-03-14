@@ -1,6 +1,5 @@
 import json
 import logging
-from functools import lru_cache
 
 from src.constants.wikidata_industries import find_industry_by_keyword
 from src.models.wikidata_cache import WikidataEntity, WikidataIndustry, get_wikidata_session

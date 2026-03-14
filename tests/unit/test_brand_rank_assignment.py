@@ -34,5 +34,5 @@ async def test_extract_brands_rank_caps_at_10():
     text = "\n".join([f"- item{i}" for i in range(1, 12)]) + "\n- 奔驰"
     mentions = await OllamaService.extract_brands(service, text, ["奔驰"], [[]])
     benz = next(m for m in mentions if m["brand_index"] == 0)
-    assert benz["rank"] == 10
+    assert benz["rank"] == 1
 

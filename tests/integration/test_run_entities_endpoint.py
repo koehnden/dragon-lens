@@ -41,6 +41,8 @@ def test_get_run_entities(client: TestClient, db_session: Session):
     answer = LLMAnswer(
         run_id=run.id,
         prompt_id=prompt.id,
+        provider="qwen",
+        model_name=run.model_name,
         raw_answer_zh="Toyota RAV4",
     )
     db_session.add(answer)

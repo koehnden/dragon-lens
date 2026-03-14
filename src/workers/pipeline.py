@@ -8,7 +8,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from models import Brand, BrandMention, ExtractionDebug, LLMAnswer, Product, ProductMention, Prompt, Run
+from models import Brand, BrandMention, ExtractionDebug, LLMAnswer, Product, ProductMention, Prompt, Run, Vertical
 from models.db_retry import commit_with_retry, flush_with_retry
 from models.domain import LLMRoute, Sentiment
 from services.pricing import calculate_cost
@@ -433,6 +433,44 @@ def _translate_snippets_sync(snippets: list[str], translator) -> list[str]:
     return [translator.translate_text_sync(s, "Chinese", "English") for s in snippets]
 
 
+def _ensure_llm_answer_record(
+    db: Session,
+    result: LLMQueryResult,
+    *,
+    run_id: int,
+    provider: str,
+    model_name: str,
+    resolution,
+) -> LLMAnswer:
+    prompt = result.context.prompt
+    if result.existing_answer:
+        llm_answer = result.existing_answer
+        db.query(BrandMention).filter(BrandMention.llm_answer_id == llm_answer.id).delete()
+        db.query(ProductMention).filter(ProductMention.llm_answer_id == llm_answer.id).delete()
+        db.query(ExtractionDebug).filter(ExtractionDebug.llm_answer_id == llm_answer.id).delete()
+        return llm_answer
+
+    answer_route = resolution.route
+    if result.reused_route:
+        answer_route = result.reused_route
+    llm_answer = LLMAnswer(
+        run_id=run_id,
+        prompt_id=prompt.id,
+        provider=provider,
+        model_name=model_name,
+        route=answer_route,
+        raw_answer_zh=result.answer_zh,
+        raw_answer_en=result.answer_en,
+        tokens_in=result.tokens_in,
+        tokens_out=result.tokens_out,
+        latency=result.latency,
+        cost_estimate=result.cost_estimate,
+    )
+    db.add(llm_answer)
+    flush_with_retry(db)
+    return llm_answer
+
+
 async def extract_all_entities(
     results: list[LLMQueryResult],
     vertical_id: int,
@@ -445,16 +483,105 @@ async def extract_all_entities(
     model_name: str,
     resolution,
 ) -> list[ExtractionResult]:
+    from services.brand_discovery import discover_brands_and_products_from_result
+    from services.extraction.pipeline import ExtractionPipeline
+    from services.brand_recognition.models import ExtractionResult as BrandExtractionResult
+    from services.product_discovery import discover_and_store_products
+
     valid_results = [r for r in results if not r.error and r.answer_zh]
     logger.info(f"Extracting entities from {len(valid_results)} answers...")
+    if not valid_results:
+        return []
 
-    extraction_results = []
-    for result in valid_results:
-        ext_result = await _extract_single_result(
-            result, vertical_id, user_brands, db, ollama_service, translator,
-            run_id, provider, model_name, resolution
-        )
-        extraction_results.append(ext_result)
+    vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+    vertical_name = vertical.name if vertical else "generic"
+    vertical_description = vertical.description if vertical and vertical.description else ""
+
+    pipeline = ExtractionPipeline(
+        vertical=vertical_name,
+        vertical_description=vertical_description,
+        db=db,
+        run_id=run_id,
+    )
+
+    prepared: list[tuple[LLMQueryResult, LLMAnswer]] = []
+    extraction_results: list[ExtractionResult] = []
+    try:
+        for result in valid_results:
+            llm_answer = _ensure_llm_answer_record(
+                db,
+                result,
+                run_id=run_id,
+                provider=provider,
+                model_name=model_name,
+                resolution=resolution,
+            )
+            prepared.append((result, llm_answer))
+
+        for result, _ in prepared:
+            await pipeline.process_response(
+                result.answer_zh,
+                response_id=str(result.context.prompt.id),
+                user_brands=user_brands,
+            )
+
+        batch_result = await pipeline.finalize()
+
+        for result, llm_answer in prepared:
+            answer_zh = result.answer_zh
+            response_id = str(result.context.prompt.id)
+            extraction_result = batch_result.response_results.get(
+                response_id,
+                BrandExtractionResult(brands={}, products={}),
+            )
+            all_brands, extraction_result = discover_brands_and_products_from_result(
+                answer_zh,
+                vertical_id,
+                user_brands,
+                db,
+                extraction_result,
+                vertical_name=vertical_name,
+                vertical_description=vertical_description,
+            )
+
+            debug_info = None
+            if extraction_result.debug_info:
+                debug_info = {
+                    "raw_brands": extraction_result.debug_info.raw_brands,
+                    "raw_products": extraction_result.debug_info.raw_products,
+                    "rejected_at_light_filter": extraction_result.debug_info.rejected_at_light_filter,
+                    "final_brands": extraction_result.debug_info.final_brands,
+                    "final_products": extraction_result.debug_info.final_products,
+                }
+
+            discovered_products = discover_and_store_products(
+                db,
+                vertical_id,
+                answer_zh,
+                all_brands,
+                extraction_relationships=extraction_result.product_brand_relationships,
+            )
+
+            product_mentions = await _extract_product_mentions(
+                llm_answer, discovered_products, answer_zh, translator, all_brands, ollama_service
+            )
+            brand_mentions = await _extract_brand_mentions(
+                answer_zh, all_brands, ollama_service, translator
+            )
+
+            extraction_results.append(
+                ExtractionResult(
+                    query_result=result,
+                    llm_answer=llm_answer,
+                    discovered_brands=all_brands,
+                    discovered_products=discovered_products,
+                    brand_mentions=brand_mentions,
+                    product_mentions=product_mentions,
+                    debug_info=debug_info,
+                )
+            )
+    finally:
+        pipeline.close()
 
     success_count = sum(1 for r in extraction_results if not r.error)
     logger.info(f"Extracted entities from {success_count}/{len(valid_results)} answers")

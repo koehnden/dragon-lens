@@ -6,7 +6,6 @@ entity types based on pattern matching and heuristics.
 """
 
 import re
-from typing import Dict, List
 
 from constants import (
     PRODUCT_HINTS,

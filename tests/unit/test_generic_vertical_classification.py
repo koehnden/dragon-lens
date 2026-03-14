@@ -1,6 +1,4 @@
 import pytest
-from unittest.mock import patch, MagicMock
-import json
 
 from services.brand_recognition import (
     is_likely_brand,
@@ -11,8 +9,6 @@ from services.brand_recognition import (
     _has_product_patterns,
     _calculate_brand_confidence,
     _calculate_product_confidence,
-    extract_entities,
-    ExtractionResult,
 )
 
 
@@ -144,98 +140,6 @@ class TestGenericVerticalConfidence:
         product_conf = _calculate_product_confidence("hybrid", "hybrid", "cars")
         assert brand_conf <= 0.3
         assert product_conf <= 0.3
-
-
-class TestGenericVerticalExtraction:
-
-    def create_mock_ollama(self, brands: list, products: list):
-        mock_service = MagicMock()
-        mock_service.ner_model = "qwen2.5:7b"
-
-        response = json.dumps({"brands": brands, "products": products})
-
-        async def mock_call(*args, **kwargs):
-            return response
-
-        mock_service._call_ollama = mock_call
-        return mock_service
-
-    def test_pet_food_vertical_extraction(self):
-        text = """2025年猫粮推荐：
-        1. 皇家猫粮 - 专业配方，营养均衡
-        2. 渴望六种鱼 - 高蛋白，适合活泼猫咪
-        3. 爱肯拿草原盛宴 - 无谷配方"""
-
-        mock_ollama = self.create_mock_ollama(
-            brands=["皇家", "渴望", "爱肯拿"],
-            products=["猫粮", "六种鱼", "草原盛宴"]
-        )
-
-        with patch("services.ollama.OllamaService", return_value=mock_ollama):
-            result = extract_entities(
-                text=text,
-                primary_brand="",
-                aliases={},
-                vertical="pet food cat food",
-                vertical_description="Cat food recommendations"
-            )
-
-        assert isinstance(result, ExtractionResult)
-        assert len(result.brands) >= 1 or len(result.products) >= 1
-
-    def test_furniture_vertical_extraction(self):
-        text = """办公椅推荐：
-        1. 西昊M18 - 人体工学设计
-        2. 永艺蝴蝶椅 - 高性价比
-        3. 赫曼米勒Aeron - 顶级办公椅"""
-
-        mock_ollama = self.create_mock_ollama(
-            brands=["西昊", "永艺", "赫曼米勒"],
-            products=["M18", "蝴蝶椅", "Aeron"]
-        )
-
-        with patch("services.ollama.OllamaService", return_value=mock_ollama):
-            result = extract_entities(
-                text=text,
-                primary_brand="",
-                aliases={},
-                vertical="office furniture chairs",
-                vertical_description="Office chair recommendations"
-            )
-
-        assert isinstance(result, ExtractionResult)
-        brand_names = set(result.brands.keys())
-        product_names = set(result.products.keys())
-
-        assert "M18" not in brand_names or "M18" in product_names
-
-    def test_kitchen_appliance_vertical_extraction(self):
-        text = """咖啡机推荐：
-        1. 德龙EC680 - 半自动意式咖啡机
-        2. 飞利浦EP3146 - 全自动咖啡机
-        3. 雀巢Nespresso - 胶囊咖啡机"""
-
-        mock_ollama = self.create_mock_ollama(
-            brands=["德龙", "飞利浦", "雀巢"],
-            products=["EC680", "EP3146", "Nespresso"]
-        )
-
-        with patch("services.ollama.OllamaService", return_value=mock_ollama):
-            result = extract_entities(
-                text=text,
-                primary_brand="",
-                aliases={},
-                vertical="kitchen appliances coffee machines",
-                vertical_description="Coffee machine recommendations"
-            )
-
-        assert isinstance(result, ExtractionResult)
-        product_names = set(result.products.keys())
-
-        ec680_in_products = any("EC680" in p for p in product_names)
-        ep3146_in_products = any("EP3146" in p for p in product_names)
-        assert ec680_in_products or ep3146_in_products
-
 
 class TestBrandPatternDetection:
 

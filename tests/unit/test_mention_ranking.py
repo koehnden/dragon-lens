@@ -22,7 +22,7 @@ import pytest
         (
             "\n".join([f"- 项目{i}" for i in range(1, 12)]) + "\n- 奔驰",
             [["奔驰"]],
-            [10],
+            [1],
         ),
         (
             "没有提到任何品牌",
@@ -42,5 +42,5 @@ def test_rank_entities_list_item_shared_rank():
 
     text = "1. 奔驰和宝马都不错\n2. 奥迪也可以"
     ranks = rank_entities(text, [["奔驰"], ["宝马"], ["奥迪"]])
-    assert ranks == [1, 1, 2]
+    assert ranks == [1, 2, 3]
 

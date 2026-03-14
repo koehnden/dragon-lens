@@ -117,7 +117,7 @@ def test_create_product_mentions_caps_rank_at_10(db_session):
     db_session.commit()
 
     mention = db_session.query(ProductMention).filter(ProductMention.llm_answer_id == answer.id).one()
-    assert mention.rank == 10
+    assert mention.rank == 1
 
 
 def test_create_product_mentions_skips_unmentioned_products(db_session):

@@ -1,5 +1,6 @@
 import asyncio
 
+import httpx
 import pytest
 from unittest.mock import patch, MagicMock
 from services.sentiment_analysis import ErlangshenSentimentService
@@ -34,6 +35,10 @@ def test_sentiment_client_handles_connection_error():
     from services.sentiment_analysis import SentimentClient
 
     client = SentimentClient(base_url="http://127.0.0.1:59999")
+    mock_http = MagicMock()
+    mock_http.post.side_effect = httpx.ConnectError("connection refused")
+    client._get_client = MagicMock(return_value=mock_http)
+
     result = client.classify_sentiment("测试文本")
     assert result == "neutral"
 
@@ -42,6 +47,10 @@ def test_sentiment_client_health_check_fails_gracefully():
     from services.sentiment_analysis import SentimentClient
 
     client = SentimentClient(base_url="http://127.0.0.1:59999")
+    mock_http = MagicMock()
+    mock_http.get.side_effect = RuntimeError("service unavailable")
+    client._get_client = MagicMock(return_value=mock_http)
+
     assert client.health_check() is False
 
 def test_classify_sentiment_positive(mock_transformers):

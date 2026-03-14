@@ -4,8 +4,6 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models.knowledge_domain import (
-    KnowledgeBrand,
-    KnowledgeBrandAlias,
     KnowledgeProduct,
     KnowledgeProductAlias,
     KnowledgeProductBrandMapping,

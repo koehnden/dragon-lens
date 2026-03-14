@@ -26,9 +26,14 @@ from models.database import SessionLocal
 from models.domain import LLMRoute, RunStatus, Sentiment
 from models.db_retry import commit_with_retry, flush_with_retry
 from services.answer_reuse import find_reusable_answer
-from services.brand_discovery import discover_brands_and_products
+from services.brand_discovery import (
+    discover_brands_and_products,
+    discover_brands_and_products_from_result,
+)
 from services.brand_recognition import extract_entities
+from services.brand_recognition.models import ExtractionResult as BrandExtractionResult
 from services.entity_consolidation import consolidate_run
+from services.extraction.pipeline import ExtractionPipeline
 from services.brand_recognition.consolidation_service import run_enhanced_consolidation
 from services.brand_recognition.product_brand_mapping import (
     map_products_to_brands_for_run,
@@ -403,11 +408,14 @@ def ensure_extraction(
         ollama_service = OllamaService()
 
         answer_zh = answer.raw_answer_zh or ""
+        logger.info(f"[TASK] ensure_extraction: calling discover_brands_and_products for run={run_id}")
         all_brands, extraction_result = discover_brands_and_products(
             answer_zh, run.vertical_id, brands, self.db
         )
+        logger.info(f"[TASK] ensure_extraction: discover_brands_and_products completed, {len(all_brands)} brands found")
 
         if extraction_result.debug_info:
+            logger.info(f"[TASK] ensure_extraction: storing extraction debug info")
             self.db.query(ExtractionDebug).filter(
                 ExtractionDebug.llm_answer_id == llm_answer_id
             ).delete()
@@ -432,7 +440,9 @@ def ensure_extraction(
                 extraction_method="qwen",
             )
             self.db.add(debug_record)
+            logger.info(f"[TASK] ensure_extraction: debug record added")
 
+        logger.info(f"[TASK] ensure_extraction: calling discover_and_store_products")
         discovered_products = discover_and_store_products(
             self.db,
             run.vertical_id,
@@ -440,6 +450,7 @@ def ensure_extraction(
             all_brands,
             extraction_relationships=extraction_result.product_brand_relationships,
         )
+        logger.info(f"[TASK] ensure_extraction: discover_and_store_products completed, {len(discovered_products)} products")
         vertical = self.db.query(Vertical).filter(Vertical.id == run.vertical_id).first()
         vertical_name = vertical.name if vertical else ""
         vertical_description = vertical.description if vertical else None
@@ -864,6 +875,8 @@ def run_vertical_analysis(
                         latency=latency,
                     )
 
+        prepared_answers: list[tuple[_PromptWorkItem, LLMAnswer, str]] = []
+
         for item in work_items:
             prompt = item.prompt
             logger.info(f"Processing prompt {prompt.id}")
@@ -930,9 +943,42 @@ def run_vertical_analysis(
                 self.db.add(llm_answer)
                 flush_with_retry(self.db)
 
+            prepared_answers.append((item, llm_answer, answer_zh))
+
+        extraction_pipeline = ExtractionPipeline(
+            vertical=vertical.name,
+            vertical_description=vertical.description or "",
+            db=self.db,
+            run_id=run_id,
+        )
+        try:
+            for item, _, answer_zh in prepared_answers:
+                _run_async(
+                    extraction_pipeline.process_response(
+                        answer_zh,
+                        response_id=str(item.prompt.id),
+                        user_brands=brands,
+                    )
+                )
+            batch_extraction = _run_async(extraction_pipeline.finalize())
+        finally:
+            extraction_pipeline.close()
+
+        for item, llm_answer, answer_zh in prepared_answers:
+            prompt = item.prompt
             logger.info("Discovering all brands in response...")
-            all_brands, extraction_result = discover_brands_and_products(
-                answer_zh, vertical_id, brands, self.db
+            extraction_result = batch_extraction.response_results.get(
+                str(prompt.id),
+                BrandExtractionResult(brands={}, products={}),
+            )
+            all_brands, extraction_result = discover_brands_and_products_from_result(
+                answer_zh,
+                vertical_id,
+                brands,
+                self.db,
+                extraction_result,
+                vertical_name=vertical.name,
+                vertical_description=vertical.description,
             )
             logger.info(
                 f"Found {len(all_brands)} brands ({len(brands)} user-input, {len(all_brands) - len(brands)} discovered)"

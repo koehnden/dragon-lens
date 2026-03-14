@@ -1,0 +1,14 @@
+{
+  "vertical": "SUV Cars",
+  "vertical_description": "Chinese SUV market",
+  "user_brands": [
+    {
+      "display_name": "Volkswagen",
+      "aliases": {
+        "zh": ["大众", "大众汽车", "一汽-大众", "上汽大众"],
+        "en": ["VW", "Volkswagen"]
+      }
+    }
+  ],
+  "llm_response": "以下是预算20-30万适合二胎家庭的SUV推荐：\n\n5座SUV：\n1. 大众途观L - 空间宽敞，品质可靠\n2. 丰田RAV4荣放 - 省油耐用，保值率高\n3. 本田CR-V - 空间利用率高，动力平顺\n\n6座SUV：\n1. 别克昂科旗 - 2+2+2布局灵活\n2. 大众揽巡 - 空间大，配置丰富\n3. 奇瑞瑞虎9 - 性价比高\n\n7座SUV：\n1. 比亚迪唐DM-i - 油耗低，空间大\n2. 理想L8 - 增程式，家庭定位\n3. 丰田汉兰达 - 经典7座，空间充裕\n"
+}

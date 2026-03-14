@@ -812,10 +812,9 @@ def _ensure_knowledge_vertical_id(db: Session, vertical_id: int) -> int | None:
     name = _vertical_name(db, vertical_id)
     if not name:
         return None
-    with knowledge_session() as knowledge_db:
+    with knowledge_session(write=True) as knowledge_db:
         vertical = get_or_create_vertical(knowledge_db, name)
         ensure_vertical_alias(knowledge_db, vertical.id, name)
-        knowledge_db.commit()
         return vertical.id
 
 
@@ -882,7 +881,7 @@ def _upsert_knowledge_brand(
     knowledge_id = _ensure_knowledge_vertical_id(db, vertical_id)
     if not knowledge_id or not clean:
         return None
-    with knowledge_session() as knowledge_db:
+    with knowledge_session(write=True) as knowledge_db:
         brand = _find_knowledge_brand(knowledge_db, knowledge_id, clean)
         return _save_knowledge_brand(knowledge_db, brand, knowledge_id, clean, mention_count, source)
 
@@ -899,7 +898,7 @@ def _upsert_knowledge_product(
     knowledge_id = _ensure_knowledge_vertical_id(db, vertical_id)
     if not knowledge_id or not clean:
         return None
-    with knowledge_session() as knowledge_db:
+    with knowledge_session(write=True) as knowledge_db:
         product = _find_knowledge_product(knowledge_db, knowledge_id, clean)
         return _save_knowledge_product(knowledge_db, product, knowledge_id, brand_id, clean, mention_count, source)
 
@@ -1097,7 +1096,7 @@ def _add_knowledge_brand_alias_by_name(
     knowledge_id = _ensure_knowledge_vertical_id(db, vertical_id)
     if not knowledge_id:
         return
-    with knowledge_session() as knowledge_db:
+    with knowledge_session(write=True) as knowledge_db:
         brand = _find_knowledge_brand(knowledge_db, knowledge_id, canonical_name)
         if not brand:
             return
@@ -1115,7 +1114,7 @@ def _add_knowledge_product_alias_by_name(
     knowledge_id = _ensure_knowledge_vertical_id(db, vertical_id)
     if not knowledge_id:
         return
-    with knowledge_session() as knowledge_db:
+    with knowledge_session(write=True) as knowledge_db:
         product = _find_knowledge_product(knowledge_db, knowledge_id, canonical_name)
         if not product:
             return
@@ -1158,7 +1157,7 @@ def _add_knowledge_rejection(
     knowledge_id = _ensure_knowledge_vertical_id(db, vertical_id)
     if not knowledge_id:
         return
-    with knowledge_session() as knowledge_db:
+    with knowledge_session(write=True) as knowledge_db:
         if _knowledge_rejection_exists(knowledge_db, knowledge_id, entity_type, name):
             return
         knowledge_db.add(_knowledge_rejection(knowledge_id, entity_type, name, reason))

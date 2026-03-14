@@ -13,15 +13,11 @@ from typing import Dict, List, Optional, Set, Tuple
 from sqlalchemy.orm import Session
 
 from services.brand_recognition.models import (
-    EntityCandidate,
     ExtractionResult,
     ExtractionDebugInfo,
 )
 from services.brand_recognition.config import (
-    ENABLE_CONFIDENCE_VERIFICATION,
     ENABLE_WIKIDATA_NORMALIZATION,
-    ENABLE_BRAND_VALIDATION,
-    AMBIGUOUS_CONFIDENCE_THRESHOLD,
 )
 from services.brand_recognition.classification import (
     is_likely_brand,
@@ -29,7 +25,6 @@ from services.brand_recognition.classification import (
     _has_product_model_patterns,
     _has_product_suffix,
 )
-from services.brand_recognition.list_processor import _filter_by_list_position
 from services.brand_recognition.prompts import load_prompt
 from constants import GENERIC_TERMS, PRODUCT_HINTS
 
@@ -146,12 +141,6 @@ async def _extract_entities_with_qwen(
         logger.error(f"Qwen extraction failed: {e}")
         return ExtractionResult(brands={}, products={}, product_brand_relationships={})
 
-
-def _apply_light_filter(entities: List[str]) -> Tuple[List[str], List[str]]:
-    """Apply light filtering - only remove obvious non-entities."""
-    return _apply_light_filter_with_bypass(entities, set())
-
-
 def _apply_light_filter_with_bypass(
     entities: List[str],
     validated_names: Set[str],
@@ -199,82 +188,6 @@ def _filter_relationships(
             filtered[product] = brand
 
     return filtered
-
-
-async def _process_with_confidence_verification(
-    ollama,
-    brands: List[str],
-    products: List[str],
-    relationships: Dict[str, str],
-    text: str,
-    vertical: str,
-    vertical_description: str,
-) -> Tuple[List[str], List[str]]:
-    """Process entities with confidence verification."""
-    brand_confidences = _calculate_confidence_scores(brands, vertical, is_brand=True)
-    product_confidences = _calculate_confidence_scores(products, vertical, is_brand=False)
-    product_confidences = _boost_confidence_for_known_relationships(
-        product_confidences, relationships, brands
-    )
-
-    logger.debug(f"[Extraction] Brand confidences: {brand_confidences}")
-    logger.debug(f"[Extraction] Product confidences: {product_confidences}")
-
-    ambiguous_entities, entity_source = _identify_ambiguous_entities(
-        brand_confidences, product_confidences
-    )
-    verified_results = {}
-    if ambiguous_entities:
-        verified_results = await _verify_ambiguous_entities_with_qwen(
-            ollama, ambiguous_entities, text, vertical, vertical_description
-        )
-        logger.info(f"[Extraction] Ambiguous entities verified: {verified_results}")
-
-    corrected_brands = _process_brands_with_verification(
-        brands, verified_results, brand_confidences
-    )
-    corrected_products = _process_products_with_verification(
-        products, verified_results, product_confidences
-    )
-
-    return list(dict.fromkeys(corrected_brands)), list(dict.fromkeys(corrected_products))
-
-
-def _build_candidates_from_results(
-    normalized_brands: List[str],
-    validated_products: List[str],
-    brand_chinese_map: Dict[str, str],
-) -> List[EntityCandidate]:
-    """Build EntityCandidate list from normalized results."""
-    candidates = [
-        EntityCandidate(name=b, source="qwen", entity_type="brand")
-        for b in normalized_brands
-    ] + [
-        EntityCandidate(name=p, source="qwen", entity_type="product")
-        for p in validated_products
-    ]
-    return candidates
-
-
-def _build_clusters_from_filtered(
-    filtered: List[EntityCandidate],
-    brand_chinese_map: Dict[str, str],
-) -> Tuple[Dict[str, List[str]], Dict[str, List[str]]]:
-    """Build brand and product clusters from filtered candidates."""
-    brand_clusters: Dict[str, List[str]] = {}
-    product_clusters: Dict[str, List[str]] = {}
-
-    for c in filtered:
-        if c.entity_type == "brand":
-            chinese = brand_chinese_map.get(c.name, "")
-            brand_clusters[c.name] = [c.name]
-            if chinese:
-                brand_clusters[c.name].append(chinese)
-        elif c.entity_type == "product":
-            product_clusters[c.name] = [c.name]
-
-    return brand_clusters, product_clusters
-
 
 def _is_automotive_vertical(vertical_lower: str) -> bool:
     """Check if the vertical is automotive-related."""
@@ -398,20 +311,6 @@ def _parse_entities_format(parsed: Dict) -> Dict[str, List[str]]:
 
     return {"brands": brands, "products": products, "relationships": relationships}
 
-
-def _calculate_confidence_scores(entities: List[str], vertical: str, is_brand: bool) -> Dict[str, float]:
-    """Calculate confidence scores for entities."""
-    scores = {}
-    for entity in entities:
-        entity_lower = entity.lower()
-        if is_brand:
-            confidence = _calculate_brand_confidence(entity, entity_lower, vertical)
-        else:
-            confidence = _calculate_product_confidence(entity, entity_lower, vertical)
-        scores[entity] = max(0.1, min(0.95, confidence))
-    return scores
-
-
 def _calculate_brand_confidence(entity: str, entity_lower: str, vertical: str) -> float:
     """Calculate confidence score for a brand entity."""
     if entity_lower in GENERIC_TERMS:
@@ -481,97 +380,6 @@ def _check_wikidata_product(entity: str, vertical: str) -> bool:
     except Exception:
         return False
 
-
-def _boost_confidence_for_known_relationships(
-    product_confidences: Dict[str, float],
-    relationships: Dict[str, str],
-    brands: List[str]
-) -> Dict[str, float]:
-    """Boost confidence for products with known brand relationships."""
-    for product, parent in relationships.items():
-        if product in product_confidences and parent in brands:
-            product_confidences[product] = min(0.95, product_confidences[product] + 0.2)
-            logger.debug(f"Boosted confidence for product '{product}' (parent: {parent})")
-    return product_confidences
-
-
-def _identify_ambiguous_entities(
-    brand_confidences: Dict[str, float],
-    product_confidences: Dict[str, float]
-) -> Tuple[List[str], Dict[str, str]]:
-    """Identify entities with low confidence scores."""
-    ambiguous_entities = []
-    entity_source = {}
-    for brand, confidence in brand_confidences.items():
-        if confidence < AMBIGUOUS_CONFIDENCE_THRESHOLD:
-            ambiguous_entities.append(brand)
-            entity_source[brand] = "brand"
-    for product, confidence in product_confidences.items():
-        if confidence < AMBIGUOUS_CONFIDENCE_THRESHOLD:
-            ambiguous_entities.append(product)
-            entity_source[product] = "product"
-    return ambiguous_entities, entity_source
-
-
-async def _verify_ambiguous_entities_with_qwen(
-    ollama,
-    ambiguous_entities: List[str],
-    text: str,
-    vertical: str = "",
-    vertical_description: str = ""
-) -> Dict[str, str]:
-    """Verify ambiguous entities with Qwen."""
-    if not ambiguous_entities:
-        return {}
-
-    candidates = [EntityCandidate(name=e, source="ambiguous") for e in ambiguous_entities]
-    return await _verify_batch_with_qwen(ollama, candidates, text, vertical, vertical_description)
-
-
-def _process_brands_with_verification(
-    brands: List[str],
-    verified_results: Dict[str, str],
-    brand_confidences: Dict[str, float]
-) -> List[str]:
-    """Process brands with verification results."""
-    corrected_brands = []
-    for brand in brands:
-        if brand in verified_results:
-            if verified_results[brand] == "brand":
-                corrected_brands.append(brand)
-        else:
-            confidence = brand_confidences.get(brand, 0.5)
-            if confidence >= 0.6:
-                corrected_brands.append(brand)
-            elif confidence <= 0.4 and not _has_product_patterns(brand):
-                corrected_brands.append(brand)
-            else:
-                corrected_brands.append(brand)
-    return corrected_brands
-
-
-def _process_products_with_verification(
-    products: List[str],
-    verified_results: Dict[str, str],
-    product_confidences: Dict[str, float]
-) -> List[str]:
-    """Process products with verification results."""
-    corrected_products = []
-    for product in products:
-        if product in verified_results:
-            if verified_results[product] == "product":
-                corrected_products.append(product)
-        else:
-            confidence = product_confidences.get(product, 0.5)
-            if confidence >= 0.6:
-                corrected_products.append(product)
-            elif confidence <= 0.4 and not _has_brand_patterns(product):
-                corrected_products.append(product)
-            else:
-                corrected_products.append(product)
-    return corrected_products
-
-
 def _has_product_patterns(name: str) -> bool:
     """Check if name has product-like patterns."""
     if _has_product_model_patterns(name):
@@ -599,173 +407,6 @@ def _has_brand_patterns(name: str) -> bool:
         return True
     return False
 
-
-async def _verify_batch_with_qwen(
-    ollama,
-    batch: List[EntityCandidate],
-    text: str,
-    vertical: str = "",
-    vertical_description: str = ""
-) -> Dict[str, str]:
-    """Verify a batch of entities with Qwen."""
-    candidate_names = [c.name for c in batch]
-    text_snippet = text[:1500] if len(text) > 1500 else text
-
-    brand_results = await _verify_brands_with_qwen(
-        ollama, candidate_names, text_snippet, vertical, vertical_description
-    )
-
-    remaining = [n for n in candidate_names if brand_results.get(n) != "brand"]
-
-    product_results = {}
-    if remaining:
-        product_results = await _verify_products_with_qwen(
-            ollama, remaining, text_snippet, vertical, vertical_description
-        )
-
-    final_results: Dict[str, str] = {}
-    for name in candidate_names:
-        if brand_results.get(name) == "brand":
-            final_results[name] = "brand"
-        elif product_results.get(name) == "product":
-            final_results[name] = "product"
-        else:
-            final_results[name] = "other"
-
-    return final_results
-
-
-async def _verify_brands_with_qwen(
-    ollama,
-    candidates: List[str],
-    text: str,
-    vertical: str = "",
-    vertical_description: str = ""
-) -> Dict[str, str]:
-    """Verify brand candidates with Qwen using templates."""
-    import json
-
-    candidates_json = json.dumps(candidates, ensure_ascii=False)
-    system_prompt = load_prompt("brand_verification_system_prompt", vertical=vertical)
-    prompt = load_prompt(
-        "brand_verification_user_prompt",
-        vertical=vertical,
-        vertical_description=vertical_description,
-        text=text,
-        candidates_json=candidates_json,
-    )
-
-    try:
-        response = await ollama._call_ollama(
-            model=ollama.ner_model,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            temperature=0.0,
-        )
-        return _parse_brand_verification_response(response, candidates)
-    except Exception as e:
-        logger.warning(f"Brand verification failed: {e}")
-        return {}
-
-
-async def _verify_products_with_qwen(
-    ollama,
-    candidates: List[str],
-    text: str,
-    vertical: str = "",
-    vertical_description: str = ""
-) -> Dict[str, str]:
-    """Verify product candidates with Qwen using templates."""
-    import json
-
-    candidates_json = json.dumps(candidates, ensure_ascii=False)
-    system_prompt = load_prompt("product_verification_system_prompt", vertical=vertical)
-    prompt = load_prompt(
-        "product_verification_user_prompt",
-        vertical=vertical,
-        vertical_description=vertical_description,
-        text=text,
-        candidates_json=candidates_json,
-    )
-
-    try:
-        response = await ollama._call_ollama(
-            model=ollama.ner_model,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            temperature=0.0,
-        )
-        return _parse_product_verification_response(response, candidates)
-    except Exception as e:
-        logger.warning(f"Product verification failed: {e}")
-        return {}
-
-
-def _parse_brand_verification_response(response: str, candidates: List[str]) -> Dict[str, str]:
-    """Parse brand verification response."""
-    parsed = _parse_batch_json_response(response)
-    if not parsed:
-        return {}
-
-    results: Dict[str, str] = {}
-    for item in parsed:
-        if isinstance(item, dict) and "name" in item:
-            name = item["name"]
-            is_brand = item.get("is_brand", False)
-            if is_brand:
-                results[name] = "brand"
-
-    return results
-
-
-def _parse_product_verification_response(response: str, candidates: List[str]) -> Dict[str, str]:
-    """Parse product verification response."""
-    parsed = _parse_batch_json_response(response)
-    if not parsed:
-        return {}
-
-    results: Dict[str, str] = {}
-    for item in parsed:
-        if isinstance(item, dict) and "name" in item:
-            name = item["name"]
-            is_product = item.get("is_product", False)
-            if is_product:
-                results[name] = "product"
-
-    return results
-
-
-def _parse_batch_json_response(response: str) -> List[Dict] | None:
-    """Parse a batch JSON response."""
-    import json
-
-    response = response.strip()
-
-    if response.startswith("```json"):
-        response = response[7:]
-    if response.startswith("```"):
-        response = response[3:]
-    if response.endswith("```"):
-        response = response[:-3]
-    response = response.strip()
-
-    try:
-        result = json.loads(response)
-        if isinstance(result, list):
-            return result
-    except json.JSONDecodeError:
-        pass
-
-    array_match = re.search(r'\[[\s\S]*\]', response)
-    if array_match:
-        try:
-            result = json.loads(array_match.group(0))
-            if isinstance(result, list):
-                return result
-        except json.JSONDecodeError:
-            pass
-
-    return None
 
 
 async def _normalize_brands_unified(

@@ -31,7 +31,7 @@ class TestConsolidationAutoTrigger:
         source = inspect.getsource(tasks.run_vertical_analysis)
 
         metrics_pos = source.find("calculate_and_save_metrics")
-        consolidate_pos = source.find("consolidate_run(self.db")
+        consolidate_pos = source.find("consolidate_run(")
 
         assert metrics_pos > 0
         assert consolidate_pos > 0
@@ -41,7 +41,7 @@ class TestConsolidationAutoTrigger:
         from workers import tasks
         source = inspect.getsource(tasks.run_vertical_analysis)
 
-        consolidate_pos = source.find("consolidate_run(self.db")
+        consolidate_pos = source.find("consolidate_run(")
         completed_pos = source.find("RunStatus.COMPLETED")
 
         assert consolidate_pos > 0

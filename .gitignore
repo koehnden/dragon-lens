@@ -140,6 +140,7 @@ dragonlens.db*
 
 # Environments
 .env
+.env.*
 .envrc
 .venv
 env/

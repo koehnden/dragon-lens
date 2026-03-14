@@ -72,19 +72,47 @@ def discover_brands_and_products(
     vertical_name: Optional[str] = None,
     vertical_description: Optional[str] = None,
 ) -> Tuple[List[Brand], ExtractionResult]:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[DISCOVERY] discover_brands_and_products starting, vertical_id={vertical_id}")
+
+    logger.info(f"[DISCOVERY] calling _extract_for_discovery")
+    extraction_result = _extract_for_discovery(
+        text=text,
+        db=db,
+        vertical_id=vertical_id,
+        vertical_name=vertical_name,
+        vertical_description=vertical_description,
+    )
+    logger.info(f"[DISCOVERY] _extract_for_discovery completed")
+
+    logger.info(f"[DISCOVERY] calling discover_brands_and_products_from_result")
+    result = discover_brands_and_products_from_result(
+        text,
+        vertical_id,
+        user_brands,
+        db,
+        extraction_result,
+        vertical_name=vertical_name,
+        vertical_description=vertical_description,
+    )
+    logger.info(f"[DISCOVERY] discover_brands_and_products_from_result completed, returning")
+    return result
+
+
+def discover_brands_and_products_from_result(
+    text: str,
+    vertical_id: int,
+    user_brands: List[Brand],
+    db: Session,
+    extraction_result: ExtractionResult,
+    vertical_name: Optional[str] = None,
+    vertical_description: Optional[str] = None,
+) -> Tuple[List[Brand], ExtractionResult]:
     if not vertical_name:
         vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
         if vertical:
             vertical_name = vertical.name
-            vertical_description = vertical.description
-
-    extraction_result = extract_entities(
-        text, "", {},
-        vertical=vertical_name or "",
-        vertical_description=vertical_description or "",
-        db=db,
-        vertical_id=vertical_id,
-    )
 
     all_brands_map: Dict[str, Brand] = {}
 
@@ -119,6 +147,31 @@ def discover_brands_and_products(
         all_brands_map[normalized_key] = brand
 
     return list(all_brands_map.values()), extraction_result
+
+
+def _extract_for_discovery(
+    text: str,
+    db: Session,
+    vertical_id: int,
+    vertical_name: Optional[str],
+    vertical_description: Optional[str],
+) -> ExtractionResult:
+    # Fetch vertical context from DB if not provided
+    if not vertical_name:
+        vertical = db.query(Vertical).filter(Vertical.id == vertical_id).first()
+        if vertical:
+            vertical_name = vertical.name
+            vertical_description = vertical.description
+
+    return extract_entities(
+        text,
+        "",
+        {},
+        vertical=vertical_name or "",
+        vertical_description=vertical_description or "",
+        db=db,
+        vertical_id=vertical_id,
+    )
 
 
 def _is_brand_like(canonical_name: str, surface_forms: List[str]) -> bool:

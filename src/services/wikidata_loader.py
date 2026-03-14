@@ -16,7 +16,6 @@ from src.services.wikidata_sparql import (
     query_brands_for_industry,
     query_cosmetics_brands,
     query_luxury_brands,
-    query_products_for_brand,
     query_smartphone_brands,
     query_sportswear_brands,
     search_industries,
