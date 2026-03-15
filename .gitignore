@@ -212,8 +212,6 @@ marimo/_lsp/
 __marimo__/
 
 # ai tools
-CLAUDE.md
-AGENTS.md
 prompt.md
 .claude/
 .clinerules/
