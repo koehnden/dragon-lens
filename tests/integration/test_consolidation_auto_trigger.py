@@ -19,16 +19,16 @@ class TestConsolidationAutoTrigger:
         from workers.tasks import consolidate_run
         assert consolidate_run is not None
 
-    def test_consolidation_call_exists_in_task_code(self):
-        from workers import tasks
-        source = inspect.getsource(tasks.run_vertical_analysis)
+    def test_consolidation_call_exists_in_finalization_service(self):
+        from services.run_finalization_service import finalize_run_processing
+        source = inspect.getsource(finalize_run_processing)
 
         assert "consolidate_run" in source
-        assert "Consolidating entities" in source
+        assert "calculate_and_save_metrics" in source
 
     def test_consolidation_called_before_metrics(self):
-        from workers import tasks
-        source = inspect.getsource(tasks.run_vertical_analysis)
+        from services.run_finalization_service import finalize_run_processing
+        source = inspect.getsource(finalize_run_processing)
 
         metrics_pos = source.find("calculate_and_save_metrics")
         consolidate_pos = source.find("consolidate_run(")
@@ -38,8 +38,8 @@ class TestConsolidationAutoTrigger:
         assert consolidate_pos < metrics_pos
 
     def test_consolidation_before_completion(self):
-        from workers import tasks
-        source = inspect.getsource(tasks.run_vertical_analysis)
+        from services.run_finalization_service import finalize_run_processing
+        source = inspect.getsource(finalize_run_processing)
 
         consolidate_pos = source.find("consolidate_run(")
         completed_pos = source.find("RunStatus.COMPLETED")
