@@ -199,7 +199,9 @@ def print_metrics(label: str, m: Metrics) -> None:
 # Pipeline runner
 # ---------------------------------------------------------------------------
 
-async def run_evaluation(csv_path: Path, verbose: bool, model_override: str | None) -> None:
+async def run_evaluation(
+    csv_path: Path, verbose: bool, model_override: str | None, use_deepseek: bool = False,
+) -> None:
     # Override model before importing pipeline (settings read at import time)
     if model_override:
         os.environ["OLLAMA_MODEL_NER"] = model_override
@@ -210,9 +212,11 @@ async def run_evaluation(csv_path: Path, verbose: bool, model_override: str | No
     tmp_db.close()
     os.environ["KNOWLEDGE_DATABASE_URL"] = f"sqlite:///{tmp_db.name}"
 
-    # Disable DeepSeek for isolated benchmarking (avoids API dependency)
-    os.environ.pop("DEEPSEEK_API_KEY", None)
-    os.environ["DEEPSEEK_API_KEY"] = ""
+    if not use_deepseek:
+        os.environ.pop("DEEPSEEK_API_KEY", None)
+        os.environ["DEEPSEEK_API_KEY"] = ""
+        os.environ.pop("OPENROUTER_API_KEY", None)
+        os.environ["OPENROUTER_API_KEY"] = ""
 
     from services.extraction.pipeline import ExtractionPipeline
 
@@ -221,6 +225,7 @@ async def run_evaluation(csv_path: Path, verbose: bool, model_override: str | No
 
     labeled = [r for r in rows if r.get("gold_pairs", "").strip()]
     print(f"Evaluating {len(labeled)} labeled responses from {csv_path.name}")
+    print(f"Remote validation (DeepSeek/OpenRouter): {'ENABLED' if use_deepseek else 'DISABLED'}")
     if model_override:
         print(f"NER model: {model_override}")
     print(f"Temp knowledge DB: {tmp_db.name}\n")
@@ -395,6 +400,10 @@ def main():
         help="Show per-response mismatches",
     )
     parser.add_argument(
+        "--deepseek", action="store_true",
+        help="Enable DeepSeek normalization/validation (uses API key from .env)",
+    )
+    parser.add_argument(
         "--log-level", default="WARNING",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Pipeline log level (default: WARNING)",
@@ -403,7 +412,7 @@ def main():
 
     logging.basicConfig(level=getattr(logging, args.log_level))
 
-    asyncio.run(run_evaluation(args.csv, args.verbose, args.model))
+    asyncio.run(run_evaluation(args.csv, args.verbose, args.model, args.deepseek))
 
 
 if __name__ == "__main__":

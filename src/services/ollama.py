@@ -35,19 +35,22 @@ class OllamaService:
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
     ) -> str:
-        url = f"{self.base_url}/api/generate"
+        url = f"{self.base_url}/api/chat"
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
 
         payload = {
             "model": model,
-            "prompt": prompt,
+            "messages": messages,
             "stream": False,
+            "think": False,
             "options": {
                 "temperature": temperature,
-            }
+            },
         }
-
-        if system_prompt:
-            payload["system"] = system_prompt
 
         timeout = httpx.Timeout(
             connect=10.0,
@@ -61,7 +64,7 @@ class OllamaService:
                 response = await client.post(url, json=payload)
                 response.raise_for_status()
                 result = response.json()
-                return result.get("response", "")
+                return result.get("message", {}).get("content", "")
             except httpx.HTTPError as e:
                 logger.error(f"Ollama API error: {e}")
                 raise

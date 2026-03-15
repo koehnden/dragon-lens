@@ -89,17 +89,14 @@ def canonicalize_entities(
 ) -> Dict[str, List[str]]:
     """
     Canonicalize entities by filtering and clustering.
-    
-    This is a simplified version of the extraction pipeline focused on
-    canonicalizing already-extracted entities.
+
+    This compatibility helper now relies only on local filtering and clustering.
     """
     from services.brand_recognition.config import (
-        ENABLE_QWEN_FILTERING,
         ENABLE_EMBEDDING_CLUSTERING,
         ENABLE_LLM_CLUSTERING,
     )
     from services.brand_recognition.entity_validator import (
-        _filter_candidates_with_qwen,
         _filter_candidates_simple,
     )
     from services.brand_recognition.clustering import (
@@ -107,12 +104,8 @@ def canonicalize_entities(
         _llm_assisted_clustering,
         _simple_clustering,
     )
-    from services.brand_recognition.async_utils import _run_async
-    
-    if ENABLE_QWEN_FILTERING and text:
-        filtered_candidates = _run_async(_filter_candidates_with_qwen(candidates, text))
-    else:
-        filtered_candidates = _filter_candidates_simple(candidates)
+
+    filtered_candidates = _filter_candidates_simple(candidates)
 
     if ENABLE_EMBEDDING_CLUSTERING:
         embedding_clusters = _run_async(_cluster_with_embeddings(filtered_candidates))

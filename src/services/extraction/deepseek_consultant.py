@@ -1,8 +1,12 @@
-"""DeepSeek-backed normalization and relevance validation."""
+"""DeepSeek-backed normalization and relevance validation.
+
+Falls back to OpenRouter (qwen/qwen3.5-397b-a17b) when DeepSeek is unavailable.
+"""
 
 from __future__ import annotations
 
 import json
+import logging
 from collections import OrderedDict
 
 from sqlalchemy.orm import Session
@@ -19,6 +23,10 @@ from models.knowledge_domain import (
 from prompts.loader import load_prompt
 from services.extraction.vertical_seeder import _parse_json_response
 from services.knowledge_verticals import normalize_entity_key
+
+logger = logging.getLogger(__name__)
+
+OPENROUTER_FALLBACK_MODEL = "qwen/qwen3.5-397b-a17b"
 
 
 class DeepSeekConsultant:
@@ -59,13 +67,13 @@ class DeepSeekConsultant:
         product_brand_map.update(self._existing_product_brand_map())
         logger.info(f"[CONSULTANT] Existing map loaded")
 
-        logger.info(f"[CONSULTANT] Checking if DeepSeek normalization needed...")
-        needs_remote = self._has_deepseek() and (
+        logger.info(f"[CONSULTANT] Checking if remote normalization needed...")
+        needs_remote = self._has_remote_llm() and (
             _has_collisions(brand_aliases) or _has_collisions(product_aliases) or any(
                 product_aliases.get(product, product) not in product_brand_map for product in products
             )
         )
-        logger.info(f"[CONSULTANT] DeepSeek needed: {needs_remote}")
+        logger.info(f"[CONSULTANT] Remote normalization needed: {needs_remote}")
         if not needs_remote:
             logger.info(f"[CONSULTANT] normalize_and_map completed (no DeepSeek needed)")
             return brand_aliases, product_aliases, product_brand_map
@@ -115,8 +123,8 @@ class DeepSeekConsultant:
         rejected_products: set[str] = set()
         rejection_reasons: dict[str, str] = {}
 
-        if not self._has_deepseek():
-            logger.info(f"[CONSULTANT] No DeepSeek available, accepting all entities")
+        if not self._has_remote_llm():
+            logger.info(f"[CONSULTANT] No remote LLM available, accepting all entities")
             return valid_brands, valid_products, rejected_brands, rejected_products, rejection_reasons
 
         logger.info(f"[CONSULTANT] Loading validation prompt...")
@@ -293,12 +301,33 @@ class DeepSeekConsultant:
             return False
         return DeepSeekService(db=None).has_api_key()
 
-    async def _call_deepseek(self, prompt: str) -> str:
-        from services.remote_llms import DeepSeekService
+    def _has_openrouter(self) -> bool:
+        try:
+            from services.remote_llms import OpenRouterService
+        except ImportError:
+            return False
+        return OpenRouterService(db=None).has_api_key()
 
-        service = DeepSeekService(db=None)
-        answer, _, _, _ = await service.query(prompt)
-        return answer
+    def _has_remote_llm(self) -> bool:
+        return self._has_deepseek() or self._has_openrouter()
+
+    async def _call_deepseek(self, prompt: str) -> str:
+        if self._has_deepseek():
+            try:
+                from services.remote_llms import DeepSeekService
+                service = DeepSeekService(db=None)
+                answer, _, _, _ = await service.query(prompt)
+                return answer
+            except Exception as e:
+                logger.warning(f"DeepSeek API failed, falling back to OpenRouter: {e}")
+
+        if self._has_openrouter():
+            from services.remote_llms import OpenRouterService
+            service = OpenRouterService(db=None)
+            answer, _, _, _ = await service.query(prompt, model_name=OPENROUTER_FALLBACK_MODEL)
+            return answer
+
+        raise RuntimeError("No remote LLM available (neither DeepSeek nor OpenRouter)")
 
 
 def _has_collisions(alias_map: dict[str, str]) -> bool:

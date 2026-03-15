@@ -30,15 +30,9 @@ from services.brand_recognition.brand_extractor import (
     _has_product_patterns,
     _calculate_brand_confidence,
     _calculate_product_confidence,
-    _extract_entities_with_qwen,
-    _parse_extraction_response,
-    _build_extraction_system_prompt,
-    _build_extraction_prompt,
 )
 from services.brand_recognition.entity_validator import (
     _filter_candidates_simple,
-    _filter_candidates_with_qwen,
-    _verify_entity_with_qwen,
 )
 from services.brand_recognition.brand_extractor import (
     _check_wikidata_brand,
@@ -113,10 +107,6 @@ __all__ = [
     "_has_product_patterns",
     "_calculate_brand_confidence",
     "_calculate_product_confidence",
-    "_extract_entities_with_qwen",
-    "_parse_extraction_response",
-    "_build_extraction_system_prompt",
-    "_build_extraction_prompt",
     "_check_wikidata_brand",
     "_check_wikidata_product",
 
@@ -142,8 +132,6 @@ __all__ = [
     "_alias_hits",
     "_list_table_candidates",
     "_filter_candidates_simple",
-    "_filter_candidates_with_qwen",
-    "_verify_entity_with_qwen",
     "_simple_clustering",
     "_cluster_with_embeddings",
     "_llm_assisted_clustering",
