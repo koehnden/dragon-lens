@@ -1,6 +1,6 @@
 ---
 id: qwen_item_extraction
-version: v3
+version: v4
 requires:
   - vertical
   - items_json
@@ -54,8 +54,10 @@ Rules:
 - A product is a specific consumer-facing end product or product line relevant to this vertical.
 - Keep product names concise: preserve identifiers that are required to identify the product (for example `DM-i`, `EV`, `PLUS`, `Pro`, `Max`) when they are part of the full product name; drop standalone trim/year/edition suffixes like `2024款`, `冠军版`, `旗舰版` unless they are required to distinguish the product.
 - Reject generic categories and general feature phrases.
+- Reject single-character tokens and tokens that are just a number or size code (e.g., "S", "M", "L", "XL", "3", "42").
 - Reject standalone variant/configuration tokens that are not a full product by themselves, such as isolated sizes, colors, capacities, pack counts, years, trims, editions, or style markers.
 - Reject words or phrases that name attributes, benefits, materials, ingredients, components, technologies, certifications, or supplier/co-branded subcomponents rather than the main end product for this vertical.
+- Supplier brands and component-supplier brands (companies that make parts, materials, or technologies used inside end products) are NOT consumer-facing brands for this vertical. Only extract the brand of the finished end product the consumer buys.
 - Extract the longest valid consumer-facing brand/product span present in the item. If a token is only one part of a longer product name, extract the full product name instead of the partial token by itself.
 - For ranked, bulleted, or table items, extract the main recommended end product(s) for that item.
 - If an item genuinely recommends multiple co-equal main products, extract all of them. If one product is the main recommendation and others are mentioned only for comparison, extract only the main recommendation.
@@ -65,7 +67,6 @@ Rules:
 - If only a brand is clearly present, return the brand with `"product": null`.
 - Do not output duplicate pairs.
 - Do not output both a full product name and one of its partial substrings unless both are independently mentioned as products.
-- When uncertain whether a term is a true brand/product or merely descriptive/contextual text, do not extract it.
 
 Examples:
 - Item: "宝马 X5"
