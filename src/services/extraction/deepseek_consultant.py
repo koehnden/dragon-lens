@@ -309,25 +309,25 @@ class DeepSeekConsultant:
         return OpenRouterService(db=None).has_api_key()
 
     def _has_remote_llm(self) -> bool:
-        return self._has_deepseek() or self._has_openrouter()
+        return self._has_openrouter() or self._has_deepseek()
 
     async def _call_deepseek(self, prompt: str) -> str:
-        if self._has_deepseek():
+        if self._has_openrouter():
             try:
-                from services.remote_llms import DeepSeekService
-                service = DeepSeekService(db=None)
-                answer, _, _, _ = await service.query(prompt)
+                from services.remote_llms import OpenRouterService
+                service = OpenRouterService(db=None)
+                answer, _, _, _ = await service.query(prompt, model_name=OPENROUTER_FALLBACK_MODEL)
                 return answer
             except Exception as e:
-                logger.warning(f"DeepSeek API failed, falling back to OpenRouter: {e}")
+                logger.warning(f"OpenRouter API failed, falling back to DeepSeek: {e}")
 
-        if self._has_openrouter():
-            from services.remote_llms import OpenRouterService
-            service = OpenRouterService(db=None)
-            answer, _, _, _ = await service.query(prompt, model_name=OPENROUTER_FALLBACK_MODEL)
+        if self._has_deepseek():
+            from services.remote_llms import DeepSeekService
+            service = DeepSeekService(db=None)
+            answer, _, _, _ = await service.query(prompt)
             return answer
 
-        raise RuntimeError("No remote LLM available (neither DeepSeek nor OpenRouter)")
+        raise RuntimeError("No remote LLM available (neither OpenRouter nor DeepSeek)")
 
 
 def _has_collisions(alias_map: dict[str, str]) -> bool:

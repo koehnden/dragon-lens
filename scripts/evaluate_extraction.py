@@ -49,6 +49,11 @@ class Metrics:
         p, r = self.precision, self.recall
         return 2 * p * r / (p + r) if (p + r) > 0 else 0.0
 
+    @property
+    def f05(self) -> float:
+        p, r = self.precision, self.recall
+        return 1.25 * p * r / (0.25 * p + r) if (0.25 * p + r) > 0 else 0.0
+
     def add(self, other: Metrics) -> None:
         self.tp += other.tp
         self.fp += other.fp
@@ -154,6 +159,7 @@ def print_metrics(label: str, m: Metrics) -> None:
     print(f"    Precision: {m.precision:.1%} ({m.tp}/{m.tp + m.fp} extracted)")
     print(f"    Recall:    {m.recall:.1%} ({m.tp}/{m.tp + m.fn} gold)")
     print(f"    F1:        {m.f1:.1%}")
+    print(f"    F0.5:      {m.f05:.1%}")
 
 
 def serialize_item_result(ir) -> dict:
@@ -219,7 +225,9 @@ def load_extraction_cache(cache_path: Path) -> dict[str, dict]:
 def create_isolated_knowledge_db() -> tempfile.NamedTemporaryFile:
     tmp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     tmp_db.close()
-    os.environ["KNOWLEDGE_DATABASE_URL"] = f"sqlite:///{tmp_db.name}"
+    db_url = f"sqlite:///{tmp_db.name}"
+    os.environ["DATABASE_URL"] = db_url
+    os.environ["KNOWLEDGE_DATABASE_URL"] = db_url
     return tmp_db
 
 
@@ -360,9 +368,10 @@ def print_top_unmatched(overall_brand, overall_product):
                 print(f"    {name}: {count}x")
 
 
-def print_run_header(labeled, csv_path, use_deepseek, load_extraction, save_extraction, model_override, tmp_db):
+def print_run_header(labeled, csv_path, use_deepseek, load_extraction, save_extraction, model_override, tmp_db, seed=False):
     print(f"Evaluating {len(labeled)} labeled responses from {csv_path.name}")
     print(f"Remote validation (DeepSeek/OpenRouter): {'ENABLED' if use_deepseek else 'DISABLED'}")
+    print(f"Knowledge DB seeding: {'ENABLED' if seed else 'DISABLED'}")
     if load_extraction:
         print(f"Mode: consolidation-only (loading extraction from {load_extraction})")
     elif save_extraction:
@@ -375,18 +384,23 @@ def print_run_header(labeled, csv_path, use_deepseek, load_extraction, save_extr
 async def run_evaluation(
     csv_path: Path, verbose: bool, model_override: str | None, use_deepseek: bool = False,
     save_extraction: Path | None = None, load_extraction: Path | None = None,
+    seed: bool = False,
 ) -> None:
     if model_override:
         os.environ["OLLAMA_MODEL_NER"] = model_override
 
     tmp_db = create_isolated_knowledge_db()
-    if not use_deepseek:
+    if not use_deepseek and not seed:
         disable_remote_validation()
 
     from services.extraction.pipeline import ExtractionPipeline
+    from models.database import init_db
+    from models.knowledge_database import init_knowledge_db
+    init_db()
+    init_knowledge_db()
 
     labeled = load_labeled_rows(csv_path)
-    print_run_header(labeled, csv_path, use_deepseek, load_extraction, save_extraction, model_override, tmp_db)
+    print_run_header(labeled, csv_path, use_deepseek, load_extraction, save_extraction, model_override, tmp_db, seed=seed)
 
     by_vertical = group_by_vertical(labeled)
     cached_extraction = load_extraction_cache(load_extraction) if load_extraction else None
@@ -443,6 +457,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--deepseek", action="store_true")
+    parser.add_argument("--seed", action="store_true", help="Enable KB seeding via DeepSeek before extraction")
     parser.add_argument("--save-extraction", type=Path, default=None)
     parser.add_argument("--load-extraction", type=Path, default=None)
     parser.add_argument("--log-level", default="WARNING", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
@@ -456,6 +471,7 @@ def main():
         args.csv, args.verbose, args.model, args.deepseek,
         save_extraction=args.save_extraction,
         load_extraction=args.load_extraction,
+        seed=args.seed,
     ))
 
 

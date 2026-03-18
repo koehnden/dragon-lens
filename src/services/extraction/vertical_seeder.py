@@ -1,5 +1,6 @@
 """Step -1: Cold start seeding for verticals with sparse knowledge bases."""
 
+import asyncio
 import json
 import logging
 import re
@@ -23,6 +24,7 @@ from services.knowledge_verticals import normalize_entity_key
 logger = logging.getLogger(__name__)
 
 SEED_PROMPT_PATH = Path(__file__).parent.parent.parent / "prompts" / "extraction" / "deepseek_seed_vertical.md"
+OPENROUTER_SEED_MODEL = "qwen/qwen3.5-397b-a17b"
 
 MIN_VALIDATED_BRANDS = 10
 
@@ -137,35 +139,72 @@ class VerticalSeeder:
         return seeded
 
     async def seed_from_deepseek(self, db: Session) -> int:
-        """Ask DeepSeek for top brands/products for this vertical.
+        """Ask a remote LLM for top brands/products for this vertical.
 
+        Tries OpenRouter (Qwen 397B) first, falls back to DeepSeek.
         Stores everything with is_validated=False, source="seed".
         Returns count of brands seeded.
         """
-        try:
-            from services.remote_llms import DeepSeekService
-        except ImportError:
-            logger.warning("DeepSeekService not available, skipping seed")
-            return 0
-
-        deepseek = DeepSeekService(db=None)
-        if not deepseek.has_api_key():
-            logger.info("No DeepSeek API key, skipping seed for '%s'", self.vertical)
-            return 0
-
         prompt = self._build_seed_prompt()
-        logger.info(f"[SEEDER] Calling DeepSeek API for seed...")
-        try:
-            answer, _, _, _ = await deepseek.query(prompt)
-            logger.info(f"[SEEDER] DeepSeek API returned successfully, answer length={len(answer)}")
-        except Exception:
-            logger.exception("DeepSeek seed call failed for '%s'", self.vertical)
+        answer = await self._call_remote_llm(prompt)
+        if not answer:
             return 0
 
         logger.info(f"[SEEDER] Calling _store_seed_response...")
         result = self._store_seed_response(db, answer)
         logger.info(f"[SEEDER] _store_seed_response completed, result={result}")
         return result
+
+    async def _call_remote_llm(self, prompt: str) -> str | None:
+        answer = await self._try_deepseek(prompt)
+        if answer:
+            return answer
+        answer = await self._try_openrouter(prompt)
+        if answer:
+            return answer
+        for attempt in range(2):
+            logger.warning("[SEEDER] Retrying OpenRouter in 30s (attempt %d/2)...", attempt + 1)
+            await asyncio.sleep(30)
+            answer = await self._try_openrouter(prompt)
+            if answer:
+                return answer
+        logger.warning("[SEEDER] All seed attempts failed for '%s', continuing without seeding", self.vertical)
+        return None
+
+    async def _try_openrouter(self, prompt: str) -> str | None:
+        try:
+            from services.remote_llms import OpenRouterService
+        except ImportError:
+            return None
+        service = OpenRouterService(db=None)
+        if not service.has_api_key():
+            return None
+        try:
+            logger.info("[SEEDER] Calling OpenRouter API for seed...")
+            answer, _, _, _ = await service.query(prompt, model_name=OPENROUTER_SEED_MODEL)
+            logger.info(f"[SEEDER] OpenRouter returned successfully, answer length={len(answer)}")
+            return answer
+        except Exception:
+            logger.exception("OpenRouter seed call failed for '%s'", self.vertical)
+            return None
+
+    async def _try_deepseek(self, prompt: str) -> str | None:
+        try:
+            from services.remote_llms import DeepSeekService
+        except ImportError:
+            return None
+        service = DeepSeekService(db=None)
+        if not service.has_api_key():
+            logger.info("No DeepSeek API key, skipping seed for '%s'", self.vertical)
+            return None
+        try:
+            logger.info("[SEEDER] Calling DeepSeek API for seed...")
+            answer, _, _, _ = await service.query(prompt)
+            logger.info(f"[SEEDER] DeepSeek returned successfully, answer length={len(answer)}")
+            return answer
+        except Exception:
+            logger.exception("DeepSeek seed call failed for '%s'", self.vertical)
+            return None
 
     async def ensure_seeded(
         self,

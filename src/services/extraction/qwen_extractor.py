@@ -19,7 +19,7 @@ from services.extraction.models import BrandProductPair, ItemExtractionResult, R
 
 MAX_BATCH_ITEMS = 10
 MAX_REJECTED_PER_TYPE = 20
-MAX_VALIDATED_PER_TYPE = 20
+MAX_VALIDATED_PER_TYPE = 50
 
 
 class QwenBatchExtractor:
@@ -150,6 +150,7 @@ class QwenBatchExtractor:
                 KnowledgeBrand.vertical_id == self.vertical_id,
                 KnowledgeBrand.is_validated == True,
             )
+            .order_by(KnowledgeBrand.updated_at.desc())
             .limit(MAX_VALIDATED_PER_TYPE)
             .all()
         )
@@ -159,6 +160,7 @@ class QwenBatchExtractor:
                 KnowledgeProduct.vertical_id == self.vertical_id,
                 KnowledgeProduct.is_validated == True,
             )
+            .order_by(KnowledgeProduct.updated_at.desc())
             .limit(MAX_VALIDATED_PER_TYPE)
             .all()
         )

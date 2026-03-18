@@ -440,6 +440,7 @@ test-smoke: check-deps ## Run smoke tests only
 
 EVAL_CSV ?= data/gold_pairs_chatgpt.csv
 EVAL_CACHE ?= data/extraction_cache.json
+EVAL_CACHE_SEEDED ?= data/extraction_cache_seeded.json
 
 eval-extraction: ## Run extraction evaluation and cache results (slow, requires Ollama)
 	@echo "$(YELLOW)Running extraction evaluation...$(NC)"
@@ -447,6 +448,13 @@ eval-extraction: ## Run extraction evaluation and cache results (slow, requires 
 	@echo ""
 	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
 		--csv $(EVAL_CSV) --save-extraction $(EVAL_CACHE) $(EVAL_ARGS)
+
+eval-extraction-seeded: ## Run extraction with KB seeding (slow, requires Ollama + DeepSeek)
+	@echo "$(YELLOW)Running extraction evaluation with KB seeding...$(NC)"
+	@echo "$(YELLOW)DeepSeek seeds top brands/products before Qwen extraction runs.$(NC)"
+	@echo ""
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
+		--csv $(EVAL_CSV) --save-extraction $(EVAL_CACHE_SEEDED) --seed $(EVAL_ARGS)
 
 eval-consolidation: ## Run consolidation evaluation on cached extraction (fast, requires DeepSeek/OpenRouter)
 	@if [ ! -f $(EVAL_CACHE) ]; then \
@@ -458,6 +466,17 @@ eval-consolidation: ## Run consolidation evaluation on cached extraction (fast, 
 	@echo ""
 	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
 		--csv $(EVAL_CSV) --load-extraction $(EVAL_CACHE) --deepseek $(EVAL_ARGS)
+
+eval-consolidation-seeded: ## Run consolidation on seeded extraction cache (fast, requires DeepSeek/OpenRouter)
+	@if [ ! -f $(EVAL_CACHE_SEEDED) ]; then \
+		echo "$(RED)Error: No seeded extraction cache found at $(EVAL_CACHE_SEEDED)$(NC)"; \
+		echo "$(YELLOW)Run 'make eval-extraction-seeded' first to generate the cache.$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)Running consolidation evaluation on seeded extraction...$(NC)"
+	@echo ""
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
+		--csv $(EVAL_CSV) --load-extraction $(EVAL_CACHE_SEEDED) --seed --deepseek $(EVAL_ARGS)
 
 test-coverage: check-deps ## Run tests with coverage report
 	@echo "$(YELLOW)Running tests with coverage...$(NC)"
