@@ -127,13 +127,18 @@ class DeepSeekConsultant:
             logger.info(f"[CONSULTANT] No remote LLM available, accepting all entities")
             return valid_brands, valid_products, rejected_brands, rejected_products, rejection_reasons
 
+        known_brands, known_products, known_rejected = self._load_validation_context(brands, products)
+
         logger.info(f"[CONSULTANT] Loading validation prompt...")
         prompt = load_prompt(
-            "extraction/deepseek_validate",
+            "extraction/consolidation_validate",
             vertical=self.vertical,
             vertical_description=self.vertical_description,
             brands_json=json.dumps(sorted(set(brands)), ensure_ascii=False),
             products_json=json.dumps(sorted(set(products)), ensure_ascii=False),
+            known_brands=known_brands,
+            known_products=known_products,
+            known_rejected=known_rejected,
         )
         logger.info(f"[CONSULTANT] Calling DeepSeek API for validation...")
         response = await self._call_deepseek(prompt)
@@ -203,6 +208,52 @@ class DeepSeekConsultant:
                         reason=rejection_reasons.get(name, "not relevant to vertical"),
                     )
                 )
+
+    def _load_validation_context(
+        self,
+        candidate_brands: list[str],
+        candidate_products: list[str],
+    ) -> tuple[list[str], list[str], list[dict]]:
+        if self.knowledge_db is None or self.vertical_id is None:
+            return [], [], []
+
+        candidate_brand_keys = {normalize_entity_key(b) for b in candidate_brands}
+        candidate_product_keys = {normalize_entity_key(p) for p in candidate_products}
+
+        known_brands = [
+            row.display_name
+            for row in self.knowledge_db.query(KnowledgeBrand)
+            .filter(
+                KnowledgeBrand.vertical_id == self.vertical_id,
+                KnowledgeBrand.is_validated == True,
+            )
+            .limit(30)
+            .all()
+            if normalize_entity_key(row.display_name) not in candidate_brand_keys
+        ]
+
+        known_products = [
+            row.display_name
+            for row in self.knowledge_db.query(KnowledgeProduct)
+            .filter(
+                KnowledgeProduct.vertical_id == self.vertical_id,
+                KnowledgeProduct.is_validated == True,
+            )
+            .limit(30)
+            .all()
+            if normalize_entity_key(row.display_name) not in candidate_product_keys
+        ]
+
+        known_rejected = [
+            {"name": row.name, "reason": row.reason}
+            for row in self.knowledge_db.query(KnowledgeRejectedEntity)
+            .filter(KnowledgeRejectedEntity.vertical_id == self.vertical_id)
+            .order_by(KnowledgeRejectedEntity.created_at.desc())
+            .limit(20)
+            .all()
+        ]
+
+        return known_brands, known_products, known_rejected
 
     def _normalize_entities(
         self,

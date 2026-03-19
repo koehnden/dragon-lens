@@ -20,6 +20,7 @@ from models.knowledge_domain import (
 from services.brand_recognition.models import ExtractionDebugInfo, ExtractionResult
 from services.extraction.deepseek_consultant import DeepSeekConsultant
 from services.extraction.item_parser import extract_intro_context, parse_response_into_items
+from services.extraction.latin_extractor import extract_latin_tokens
 from services.extraction.models import BatchExtractionResult, BrandProductPair, ItemExtractionResult, PipelineDebugInfo
 from services.extraction.qwen_extractor import QwenBatchExtractor
 from services.extraction.rule_extractor import KnowledgeBaseMatcher
@@ -126,6 +127,8 @@ class ExtractionPipeline:
                         self.debug_info.step2_qwen_extracted_brands.append(pair.brand)
                     if pair.product:
                         self.debug_info.step2_qwen_extracted_products.append(pair.product)
+
+        item_results = _enrich_with_latin_tokens(item_results)
 
         if response_id is None:
             response_id = f"response-{len(self._response_results)}"
@@ -572,6 +575,33 @@ def _ordered_unique(values: Iterable[str]) -> list[str]:
         seen.add(value)
         ordered.append(value)
     return ordered
+
+
+def _enrich_with_latin_tokens(
+    item_results: list[ItemExtractionResult],
+) -> list[ItemExtractionResult]:
+    for result in item_results:
+        latin_tokens = extract_latin_tokens(result.item.text)
+        existing = {
+            name.lower()
+            for pair in result.pairs
+            for name in (pair.brand, pair.product)
+            if name
+        }
+        for token in latin_tokens:
+            if token.lower() in existing:
+                continue
+            if _is_substring_of_existing(token, existing):
+                continue
+            result.pairs.append(
+                BrandProductPair(brand=token, product=None, brand_source="latin", product_source="")
+            )
+    return item_results
+
+
+def _is_substring_of_existing(token: str, existing: set[str]) -> bool:
+    token_lower = token.lower()
+    return any(token_lower in name for name in existing)
 
 
 def _preferred_validation_source(existing_source: str | None) -> str:

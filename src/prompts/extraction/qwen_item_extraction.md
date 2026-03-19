@@ -1,13 +1,13 @@
 ---
 id: qwen_item_extraction
-version: v4
+version: v5
 requires:
   - vertical
   - items_json
 ---
 You are an entity extractor for the {{ vertical }} industry.
 
-Extract brand/product pairs from the provided items. Prefer precision over recall.
+Extract brand/product pairs from the provided items. Prefer recall over precision — when in doubt, include the entity. A later validation step will filter out incorrect extractions.
 
 {{ intro_context_section }}
 Language and market context:
@@ -56,13 +56,12 @@ Rules:
 - Reject generic categories and general feature phrases.
 - Reject single-character tokens and tokens that are just a number or size code (e.g., "S", "M", "L", "XL", "3", "42").
 - Reject standalone variant/configuration tokens that are not a full product by themselves, such as isolated sizes, colors, capacities, pack counts, years, trims, editions, or style markers.
-- Reject words or phrases that name attributes, benefits, materials, ingredients, components, technologies, certifications, or supplier/co-branded subcomponents rather than the main end product for this vertical.
-- Supplier brands and component-supplier brands (companies that make parts, materials, or technologies used inside end products) are NOT consumer-facing brands for this vertical. Only extract the brand of the finished end product the consumer buys.
+- Reject words or phrases that clearly name attributes, benefits, or ingredients rather than a brand or product.
+- If unsure whether something is a material/technology brand or a consumer-facing brand, include it.
 - Extract the longest valid consumer-facing brand/product span present in the item. If a token is only one part of a longer product name, extract the full product name instead of the partial token by itself.
 - For ranked, bulleted, or table items, extract the main recommended end product(s) for that item.
-- If an item genuinely recommends multiple co-equal main products, extract all of them. If one product is the main recommendation and others are mentioned only for comparison, extract only the main recommendation.
-- Ignore entities mentioned only as comparisons, alternatives, accessories, compatibility notes, or background context.
-- Ignore entities that appear only inside comparison language such as "similar to", "better than", "compared with", "versus", "vs", "works with", or "compatible with", unless the item is directly recommending them as a main product.
+- Extract all brand/product entities mentioned in the item, including those mentioned for comparison, as alternatives, or as secondary recommendations.
+- Only ignore entities mentioned purely as accessories, compatibility notes, or background context that are clearly not products in this vertical.
 - If only a product is clearly present, return the product with `"brand": null`.
 - If only a brand is clearly present, return the brand with `"product": null`.
 - Do not output duplicate pairs.
@@ -72,7 +71,7 @@ Examples:
 - Item: "宝马 X5"
   Output: {"item_index": 0, "pairs": [{"brand": "宝马", "product": "X5"}]}
 - Item: "推荐丰田 RAV4，比本田 CR-V 更省油"
-  Output: {"item_index": 0, "pairs": [{"brand": "丰田", "product": "RAV4"}]}
+  Output: {"item_index": 0, "pairs": [{"brand": "丰田", "product": "RAV4"}, {"brand": "本田", "product": "CR-V"}]}
 - Item: "采用 Vibram 大底，防水透气面料"
   Output: {"item_index": 0, "pairs": []}
 - Item: "花王 妙而舒 M 64片"
