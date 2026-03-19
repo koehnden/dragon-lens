@@ -1,6 +1,6 @@
 """Tests for Latin-alphabet token extraction from Chinese text."""
 
-from services.extraction.latin_extractor import extract_latin_tokens
+from services.extraction.latin_extractor import extract_latin_tokens, is_cjk_dominant
 
 
 def test_extracts_brand_from_chinese_text():
@@ -23,7 +23,7 @@ def test_extracts_hyphenated_names():
 
 
 def test_ignores_stopwords():
-    text = "推荐 the best for Nike"
+    text = "推荐这款跑鞋非常好，the best for Nike 运动鞋系列"
     tokens = extract_latin_tokens(text)
     assert "the" not in tokens
     assert "for" not in tokens
@@ -83,3 +83,22 @@ def test_alphanumeric_product_codes():
     tokens = extract_latin_tokens(text)
     assert "RAV4" in tokens
     assert "CR-V" in tokens
+
+
+def test_skips_english_text():
+    text = "This is a great product with excellent design and breathable materials"
+    tokens = extract_latin_tokens(text)
+    assert tokens == []
+
+
+def test_skips_english_text_with_brands():
+    text = "Nike and Adidas are great brands for running shoes with good value"
+    tokens = extract_latin_tokens(text)
+    assert tokens == []
+
+
+def test_cjk_dominant_mixed_text():
+    assert is_cjk_dominant("推荐 Nike 跑鞋") is True
+    assert is_cjk_dominant("This is English text") is False
+    assert is_cjk_dominant("这是纯中文") is True
+    assert is_cjk_dominant("") is False

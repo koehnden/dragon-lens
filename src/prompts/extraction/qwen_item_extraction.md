@@ -1,6 +1,6 @@
 ---
 id: qwen_item_extraction
-version: v5
+version: v6
 requires:
   - vertical
   - items_json
@@ -53,10 +53,10 @@ Rules:
 - A brand is a consumer-facing company/manufacturer relevant to this vertical.
 - A product is a specific consumer-facing end product or product line relevant to this vertical.
 - Keep product names concise: preserve identifiers that are required to identify the product (for example `DM-i`, `EV`, `PLUS`, `Pro`, `Max`) when they are part of the full product name; drop standalone trim/year/edition suffixes like `2024款`, `冠军版`, `旗舰版` unless they are required to distinguish the product.
-- Reject generic categories and general feature phrases.
+- Only extract proper nouns — named brands and named products. Never extract common vocabulary words, adjectives, verbs, or descriptive phrases (e.g., "breathable", "suitable", "design", "value", "soft", "comfortable", "lightweight", "waterproof").
+- Reject generic categories and general feature phrases (e.g., "SUV", "running shoes", "hiking boots", "diapers").
 - Reject single-character tokens and tokens that are just a number or size code (e.g., "S", "M", "L", "XL", "3", "42").
 - Reject standalone variant/configuration tokens that are not a full product by themselves, such as isolated sizes, colors, capacities, pack counts, years, trims, editions, or style markers.
-- Reject words or phrases that clearly name attributes, benefits, or ingredients rather than a brand or product.
 - If unsure whether something is a material/technology brand or a consumer-facing brand, include it.
 - Extract the longest valid consumer-facing brand/product span present in the item. If a token is only one part of a longer product name, extract the full product name instead of the partial token by itself.
 - For ranked, bulleted, or table items, extract the main recommended end product(s) for that item.

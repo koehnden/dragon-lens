@@ -97,10 +97,10 @@ class DeepSeekConsultant:
         logger.info(f"[CONSULTANT] Merging DeepSeek results...")
         for alias, canonical in (parsed.get("brand_aliases") or {}).items():
             if alias:
-                brand_aliases[alias] = canonical or alias
+                brand_aliases[alias] = _ensure_str(canonical) or alias
         for alias, canonical in (parsed.get("product_aliases") or {}).items():
             if alias:
-                product_aliases[alias] = canonical or alias
+                product_aliases[alias] = _ensure_str(canonical) or alias
         for product, brand in (parsed.get("product_brand_map") or {}).items():
             if product and brand:
                 product_brand_map[product_aliases.get(product, product)] = brand_aliases.get(brand, brand)
@@ -379,6 +379,14 @@ class DeepSeekConsultant:
             return answer
 
         raise RuntimeError("No remote LLM available (neither DeepSeek nor OpenRouter)")
+
+
+def _ensure_str(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return value[0] if value else None
+    return str(value)
 
 
 def _has_collisions(alias_map: dict[str, str]) -> bool:

@@ -15,10 +15,25 @@ STOPWORDS = frozenset({
     "app", "http", "https", "www", "com", "cn", "org",
 })
 
+CJK_PATTERN = re.compile(r"[\u4e00-\u9fff]")
+LATIN_CHAR_PATTERN = re.compile(r"[A-Za-z]")
 MIN_TOKEN_LENGTH = 2
+MIN_CJK_RATIO = 0.15
+
+
+def is_cjk_dominant(text: str) -> bool:
+    if not text:
+        return False
+    non_space = re.sub(r"\s", "", text)
+    if not non_space:
+        return False
+    cjk_count = len(CJK_PATTERN.findall(non_space))
+    return cjk_count / len(non_space) >= MIN_CJK_RATIO
 
 
 def extract_latin_tokens(text: str) -> list[str]:
+    if not is_cjk_dominant(text):
+        return []
     raw_matches = LATIN_WORD_PATTERN.findall(text)
     seen: set[str] = set()
     tokens: list[str] = []

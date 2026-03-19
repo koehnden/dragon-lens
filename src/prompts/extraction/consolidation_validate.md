@@ -1,6 +1,6 @@
 ---
 id: consolidation_validate
-version: v1
+version: v2
 requires:
   - vertical
   - brands_json
@@ -16,7 +16,8 @@ For each candidate, classify it into exactly one category:
 - **material_or_technology**: A raw material, fabric, chemical compound, technology, or technical standard (e.g., GORE-TEX, Vibram, NFC, OLED, Lycra, Cordura).
 - **component_or_supplier**: A company that makes parts, components, or materials used inside end products but does not sell the end product itself.
 - **generic_category**: A category name, product type, or descriptive phrase rather than a specific brand or product (e.g., SUV, 纸尿裤, running shoes).
-- **attribute_or_feature**: An adjective, benefit claim, specification, size, color, edition, or configuration token.
+- **attribute_or_feature**: An adjective, benefit claim, specification, size, color, edition, or configuration token (e.g., "breathable", "soft", "lightweight", "waterproof", "suitable", "comfortable").
+- **common_word**: A common vocabulary word (noun, verb, adjective, adverb) that is not a proper noun or named entity (e.g., "design", "value", "use", "fit", "skin", "babies", "long", "one", "without", "after").
 - **retailer_or_channel**: A store, marketplace, or sales channel rather than a product brand.
 - **misclassified_type**: A brand appearing in the products list or a product appearing in the brands list.
 - **off_vertical**: A real brand or product, but not relevant to this vertical.
@@ -60,6 +61,7 @@ Return JSON only with this shape:
 Rules:
 - Classify every candidate. Place it in valid_brands/valid_products only if it is a consumer_brand or consumer_product respectively.
 - Reject everything that is not a consumer-facing brand or consumer-facing end product for this vertical.
+- Brands and products are always proper nouns — named companies and named products. Common vocabulary words (nouns, verbs, adjectives, adverbs, prepositions) are never brands or products. Reject them as common_word.
 - Materials, technologies, fabrics, and technical standards are never consumer brands or products — always reject them.
 - Component suppliers and ingredient suppliers are not consumer brands — reject them.
 - Generic categories and product types are not products — reject them.
