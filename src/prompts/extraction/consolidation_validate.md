@@ -1,6 +1,6 @@
 ---
 id: consolidation_validate
-version: v2
+version: v5
 requires:
   - vertical
   - brands_json
@@ -10,20 +10,8 @@ You are a strict validator for extracted brands and products in the {{ vertical 
 
 Vertical description: {{ vertical_description }}
 
-For each candidate, classify it into exactly one category:
-- **consumer_brand**: A company that sells finished end products to consumers in this vertical.
-- **consumer_product**: A specific end product or product line that consumers buy in this vertical.
-- **material_or_technology**: A raw material, fabric, chemical compound, technology, or technical standard (e.g., GORE-TEX, Vibram, NFC, OLED, Lycra, Cordura).
-- **component_or_supplier**: A company that makes parts, components, or materials used inside end products but does not sell the end product itself.
-- **generic_category**: A category name, product type, or descriptive phrase rather than a specific brand or product (e.g., SUV, 纸尿裤, running shoes).
-- **attribute_or_feature**: An adjective, benefit claim, specification, size, color, edition, or configuration token (e.g., "breathable", "soft", "lightweight", "waterproof", "suitable", "comfortable").
-- **common_word**: A common vocabulary word (noun, verb, adjective, adverb) that is not a proper noun or named entity (e.g., "design", "value", "use", "fit", "skin", "babies", "long", "one", "without", "after").
-- **retailer_or_channel**: A store, marketplace, or sales channel rather than a product brand.
-- **misclassified_type**: A brand appearing in the products list or a product appearing in the brands list.
-- **off_vertical**: A real brand or product, but not relevant to this vertical.
-
 {% if known_brands or known_products %}
-PREVIOUSLY VALIDATED ENTITIES FOR THIS VERTICAL (use as calibration):
+PREVIOUSLY VALIDATED ENTITIES (use as calibration):
 {% if known_brands %}
 Known brands: {{ known_brands | join(', ') }}
 {% endif %}
@@ -33,13 +21,13 @@ Known products: {{ known_products | join(', ') }}
 {% endif %}
 
 {% if known_rejected %}
-PREVIOUSLY REJECTED ENTITIES:
+PREVIOUSLY REJECTED:
 {% for item in known_rejected %}
 - {{ item.name }} — {{ item.reason }}
 {% endfor %}
 {% endif %}
 
-CANDIDATES TO VALIDATE:
+CANDIDATES:
 
 Brands:
 {{ brands_json }}
@@ -47,25 +35,15 @@ Brands:
 Products:
 {{ products_json }}
 
-Return JSON only with this shape:
-{
-  "valid_brands": ["Volkswagen", "BYD"],
-  "valid_products": ["RAV4荣放", "宋PLUS DM-i"],
-  "rejected": [
-    {"name": "SUV", "entity_type": "product", "category": "generic_category", "reason": "generic vehicle category, not a product"},
-    {"name": "GORE-TEX", "entity_type": "brand", "category": "material_or_technology", "reason": "waterproof membrane technology, not a consumer brand"},
-    {"name": "比亚迪", "entity_type": "product", "category": "misclassified_type", "reason": "this is a brand, not a product"}
-  ]
-}
+Return JSON only — list ONLY the valid consumer-facing brands and end products:
+{"valid_brands": ["Volkswagen", "BYD"], "valid_products": ["RAV4荣放", "宋PLUS DM-i"]}
 
 Rules:
-- Classify every candidate. Place it in valid_brands/valid_products only if it is a consumer_brand or consumer_product respectively.
-- Reject everything that is not a consumer-facing brand or consumer-facing end product for this vertical.
-- Brands and products are always proper nouns — named companies and named products. Common vocabulary words (nouns, verbs, adjectives, adverbs, prepositions) are never brands or products. Reject them as common_word.
-- Materials, technologies, fabrics, and technical standards are never consumer brands or products — always reject them.
-- Component suppliers and ingredient suppliers are not consumer brands — reject them.
-- Generic categories and product types are not products — reject them.
-- If a brand appears in the products list or vice versa, reject it as misclassified_type.
-- When in doubt about whether something is a material/technology or a consumer brand, reject it.
-- Use the previously validated entities as calibration for what belongs in this vertical.
-- Include a reason for every rejection.
+- Include consumer-facing brands (companies that manufacture and sell end products to consumers).
+- Include specific end products or product lines for this vertical.
+- If you recognize a name as a well-known company or brand in ANY industry, INCLUDE it.
+- EXCLUDE common words, adjectives, verbs, nouns that are not proper nouns (e.g., "Features", "Protection", "Design", "Comfort", "Ultra", "Size").
+- EXCLUDE generic categories and product types (e.g., "SUV", "diapers", "running shoes").
+- EXCLUDE materials, technologies, fabrics, and technical standards (e.g., GORE-TEX, Vibram, OLED).
+- EXCLUDE component suppliers that do not sell finished consumer products.
+- When in doubt about a recognized brand name, INCLUDE it. Only exclude names that are clearly not brands.

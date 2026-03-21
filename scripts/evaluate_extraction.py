@@ -66,9 +66,14 @@ def extract_english_from_parenthetical(name: str) -> str:
     return name
 
 
+def strip_possessive(name: str) -> str:
+    return re.sub(r"[''']s$", "", name)
+
+
 def normalize(name: str) -> str:
     name = extract_english_from_parenthetical(name.strip())
-    name = re.sub(r"[''\"\"()]", "", name)
+    name = strip_possessive(name)
+    name = re.sub(r"[''\"\"()\-.]", "", name)
     return name.strip().lower()
 
 
@@ -78,7 +83,25 @@ def fuzzy_match(a: str, b: str) -> bool:
         return False
     if na == nb:
         return True
-    return len(na) >= 3 and len(nb) >= 3 and (na in nb or nb in na)
+    if len(na) >= 3 and len(nb) >= 3 and (na in nb or nb in na):
+        return True
+    if len(na) >= 4 and len(nb) >= 4:
+        return _edit_distance_ratio(na, nb) >= 0.85
+    return False
+
+
+def _edit_distance_ratio(a: str, b: str) -> float:
+    if not a or not b:
+        return 0.0
+    m, n = len(a), len(b)
+    dp = list(range(n + 1))
+    for i in range(1, m + 1):
+        prev, dp[0] = dp[0], i
+        for j in range(1, n + 1):
+            temp = dp[j]
+            dp[j] = prev if a[i - 1] == b[j - 1] else 1 + min(dp[j], dp[j - 1], prev)
+            prev = temp
+    return 1.0 - dp[n] / max(m, n)
 
 
 def parse_gold_pairs(text: str) -> list[tuple[str, str]]:
@@ -302,15 +325,26 @@ async def run_extraction_for_vertical(pipeline, vert_rows, vertical):
         print(f" ({time.time() - start:.1f}s)")
 
 
+def evaluate_vertical_level_brands(
+    all_extracted_brands: set[str],
+    all_gold_brands: set[str],
+) -> Metrics:
+    extracted = sorted(all_extracted_brands)
+    gold = sorted(all_gold_brands)
+    return compare_sets(extracted, gold)
+
+
 async def finalize_and_evaluate_vertical(
     pipeline, vert_rows, vertical, verbose,
-) -> tuple[Metrics, Metrics, Metrics]:
+) -> tuple[Metrics, Metrics, Metrics, Metrics]:
     print("  Finalizing...", end="", flush=True)
     start = time.time()
     batch = await pipeline.finalize()
     print(f" ({time.time() - start:.1f}s)\n")
 
     brand_total, product_total, pair_total = Metrics(), Metrics(), Metrics()
+    all_extracted_brands: set[str] = set()
+    all_gold_brands: set[str] = set()
     for i, row in enumerate(vert_rows):
         response_id = f"{vertical}-{i}"
         extraction = batch.response_results.get(response_id)
@@ -321,7 +355,11 @@ async def finalize_and_evaluate_vertical(
         brand_total.add(brand_m)
         product_total.add(product_m)
         pair_total.add(pair_m)
-    return brand_total, product_total, pair_total
+        all_extracted_brands.update(extraction.brands.keys())
+        gold_pairs = parse_gold_pairs(row["gold_pairs"])
+        all_gold_brands.update(b for b, _ in gold_pairs if b)
+    vertical_brands = evaluate_vertical_level_brands(all_extracted_brands, all_gold_brands)
+    return brand_total, product_total, pair_total, vertical_brands
 
 
 def print_overall_summary(total_elapsed, overall_brand, overall_product, overall_pair):
@@ -341,6 +379,9 @@ def print_vertical_summary(vertical_metrics):
         print_metrics("Brands", vertical_metrics[vertical]["brand"])
         print_metrics("Products", vertical_metrics[vertical]["product"])
         print_metrics("Pairs", vertical_metrics[vertical]["pair"])
+        vb = vertical_metrics[vertical].get("vertical_brands")
+        if vb:
+            print_metrics("Unique Brands (vertical-level)", vb)
 
 
 def print_top_unmatched(overall_brand, overall_product):
@@ -375,6 +416,7 @@ def print_run_header(labeled, csv_path, use_deepseek, load_extraction, save_extr
 async def run_evaluation(
     csv_path: Path, verbose: bool, model_override: str | None, use_deepseek: bool = False,
     save_extraction: Path | None = None, load_extraction: Path | None = None,
+    exclude_verticals: list[str] | None = None,
 ) -> None:
     if model_override:
         os.environ["OLLAMA_MODEL_NER"] = model_override
@@ -397,6 +439,9 @@ async def run_evaluation(
     total_start = time.time()
 
     for vertical in sorted(by_vertical):
+        if exclude_verticals and vertical in exclude_verticals:
+            print(f"Skipping {vertical} (excluded)")
+            continue
         vert_rows = by_vertical[vertical]
         description = VERTICAL_DESCRIPTIONS.get(vertical, vertical)
 
@@ -415,8 +460,8 @@ async def run_evaluation(
             if save_extraction:
                 pipelines_for_cache[vertical] = pipeline
 
-            brand_m, product_m, pair_m = await finalize_and_evaluate_vertical(pipeline, vert_rows, vertical, verbose)
-            vertical_metrics[vertical] = {"brand": brand_m, "product": product_m, "pair": pair_m}
+            brand_m, product_m, pair_m, vert_brands = await finalize_and_evaluate_vertical(pipeline, vert_rows, vertical, verbose)
+            vertical_metrics[vertical] = {"brand": brand_m, "product": product_m, "pair": pair_m, "vertical_brands": vert_brands}
             overall_brand.add(brand_m)
             overall_product.add(product_m)
             overall_pair.add(pair_m)
@@ -446,6 +491,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-extraction", type=Path, default=None)
     parser.add_argument("--load-extraction", type=Path, default=None)
     parser.add_argument("--log-level", default="WARNING", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    parser.add_argument("--exclude-vertical", type=str, action="append", default=[])
     return parser.parse_args()
 
 
@@ -456,6 +502,7 @@ def main():
         args.csv, args.verbose, args.model, args.deepseek,
         save_extraction=args.save_extraction,
         load_extraction=args.load_extraction,
+        exclude_verticals=args.exclude_vertical,
     ))
 
 

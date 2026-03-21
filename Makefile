@@ -459,6 +459,17 @@ eval-consolidation: ## Run consolidation evaluation on cached extraction (fast, 
 	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
 		--csv $(EVAL_CSV) --load-extraction $(EVAL_CACHE) --deepseek $(EVAL_ARGS)
 
+eval-consolidation-no-diapers: ## Run consolidation evaluation excluding Diapers vertical
+	@if [ ! -f $(EVAL_CACHE) ]; then \
+		echo "$(RED)Error: No extraction cache found at $(EVAL_CACHE)$(NC)"; \
+		echo "$(YELLOW)Run 'make eval-extraction' first to generate the cache.$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)Running consolidation evaluation (excluding Diapers)...$(NC)"
+	@echo ""
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
+		--csv $(EVAL_CSV) --load-extraction $(EVAL_CACHE) --deepseek --exclude-vertical Diapers $(EVAL_ARGS)
+
 test-coverage: check-deps ## Run tests with coverage report
 	@echo "$(YELLOW)Running tests with coverage...$(NC)"
 	@poetry run pytest tests/ --cov=src --cov-report=html --cov-report=term

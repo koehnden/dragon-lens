@@ -408,6 +408,7 @@ def _merge_item_results(
     return merged
 
 
+
 def _finalize_item_results(
     item_results: list[ItemExtractionResult],
     *,
