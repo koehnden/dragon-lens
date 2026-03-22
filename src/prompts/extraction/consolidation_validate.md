@@ -39,10 +39,10 @@ Return JSON only — list ONLY the valid consumer-facing brands and end products
 {"valid_brands": ["Volkswagen", "BYD"], "valid_products": ["RAV4荣放", "宋PLUS DM-i"]}
 
 Rules:
-- Include ONLY consumer-facing brands (companies selling end products to consumers in this vertical).
-- Include ONLY specific consumer-facing end products or product lines for this vertical.
+- Include consumer-facing brands (companies selling end products to consumers in this vertical). When in doubt about a brand, INCLUDE it — false negatives are worse than false positives for brands.
+- Include specific consumer-facing end products or product lines for this vertical.
 - EXCLUDE common words, adjectives, verbs, nouns that are not proper nouns (e.g., "Features", "Protection", "Design", "Comfort", "Ultra", "Size").
 - EXCLUDE generic categories and product types (e.g., "SUV", "diapers", "running shoes").
 - EXCLUDE materials, technologies, fabrics, and technical standards (e.g., GORE-TEX, Vibram, OLED).
 - EXCLUDE component suppliers and retailers.
-- When in doubt, exclude it.
+- For products: when in doubt, exclude it. For brands: when in doubt, include it.
