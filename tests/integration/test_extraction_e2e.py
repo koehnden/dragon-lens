@@ -17,7 +17,7 @@ from models.knowledge_domain import (
     KnowledgeProductBrandMapping,
     KnowledgeVertical,
 )
-from services.extraction.deepseek_consultant import DeepSeekConsultant
+from services.extraction.consultant import ExtractionConsultant
 from services.extraction.pipeline import ExtractionPipeline
 
 
@@ -251,7 +251,7 @@ async def test_e2e_extraction_suv_mini_partial_kb(knowledge_db_session: Session)
         "services.ollama.OllamaService._call_ollama",
         new=AsyncMock(return_value=_QWEN_EXTRACTION_RESPONSE),
     ) as mock_qwen, patch.object(
-        DeepSeekConsultant,
+        ExtractionConsultant,
         "normalize_and_map",
         new=AsyncMock(
             return_value=(
@@ -261,7 +261,13 @@ async def test_e2e_extraction_suv_mini_partial_kb(knowledge_db_session: Session)
             )
         ),
     ) as mock_normalize, patch.object(
-        DeepSeekConsultant,
+        ExtractionConsultant,
+        "consolidate_products",
+        new=AsyncMock(
+            side_effect=lambda pa, pbm, ba: (pa, pbm)
+        ),
+    ) as mock_consolidate, patch.object(
+        ExtractionConsultant,
         "validate_relevance",
         new=AsyncMock(
             return_value=(
@@ -273,7 +279,7 @@ async def test_e2e_extraction_suv_mini_partial_kb(knowledge_db_session: Session)
             )
         ),
     ) as mock_validate, patch.object(
-        DeepSeekConsultant,
+        ExtractionConsultant,
         "store_rejections",
     ) as mock_store_rejections:
         await pipeline.process_response(fixture["llm_response"], response_id="r1")
@@ -366,14 +372,14 @@ async def test_e2e_kb_only_extraction_avoids_llm_calls(knowledge_db_session: Ses
         "services.ollama.OllamaService._call_ollama",
         new=AsyncMock(return_value="[]"),
     ) as mock_qwen, patch.object(
-        DeepSeekConsultant,
-        "_has_deepseek",
+        ExtractionConsultant,
+        "_has_remote_llm",
         return_value=False,
     ), patch.object(
-        DeepSeekConsultant,
-        "_call_deepseek",
+        ExtractionConsultant,
+        "_call_llm",
         new=AsyncMock(),
-    ) as mock_deepseek:
+    ) as mock_remote:
         await pipeline.process_response(fixture["llm_response"], response_id="r1")
         batch = await pipeline.finalize()
 
@@ -383,7 +389,7 @@ async def test_e2e_kb_only_extraction_avoids_llm_calls(knowledge_db_session: Ses
     assert result.product_brand_relationships["揽巡"] == "Volkswagen"
     assert pipeline.debug_info.step2_qwen_batch_count == 0
     assert mock_qwen.await_count == 0
-    assert mock_deepseek.await_count == 0
+    assert mock_remote.await_count == 0
     pipeline.close()
 
 
@@ -397,15 +403,15 @@ async def test_e2e_cold_start_with_user_brands(knowledge_db_session: Session):
         run_id=103,
     )
 
-    with patch("services.remote_llms.DeepSeekService") as mock_deepseek_cls, patch(
+    with patch("services.remote_llms.OpenRouterService") as mock_openrouter_cls, patch(
         "services.ollama.OllamaService._call_ollama",
         new=AsyncMock(return_value="[]"),
     ) as mock_qwen, patch.object(
-        DeepSeekConsultant,
-        "_has_deepseek",
+        ExtractionConsultant,
+        "_has_remote_llm",
         return_value=False,
     ):
-        mock_service = mock_deepseek_cls.return_value
+        mock_service = mock_openrouter_cls.return_value
         mock_service.has_api_key.return_value = True
         mock_service.query = AsyncMock(return_value=(_COLD_START_SEED_RESPONSE, 100, 300, 0.4))
 
@@ -438,7 +444,7 @@ async def test_e2e_cold_start_with_user_brands(knowledge_db_session: Session):
     }
 
     assert knowledge_vertical.seeded_at is not None
-    assert knowledge_vertical.seed_version == "deepseek_v1"
+    assert knowledge_vertical.seed_version == "openrouter_v1"
     assert volkswagen.is_validated is True
     assert volkswagen.validation_source == "user"
     assert {"大众", "大众汽车", "一汽-大众", "上汽大众"} <= vw_aliases

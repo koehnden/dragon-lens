@@ -247,8 +247,6 @@ def create_isolated_knowledge_db() -> tempfile.NamedTemporaryFile:
 
 
 def disable_remote_validation():
-    os.environ.pop("DEEPSEEK_API_KEY", None)
-    os.environ["DEEPSEEK_API_KEY"] = ""
     os.environ.pop("OPENROUTER_API_KEY", None)
     os.environ["OPENROUTER_API_KEY"] = ""
 
@@ -325,26 +323,15 @@ async def run_extraction_for_vertical(pipeline, vert_rows, vertical):
         print(f" ({time.time() - start:.1f}s)")
 
 
-def evaluate_vertical_level_brands(
-    all_extracted_brands: set[str],
-    all_gold_brands: set[str],
-) -> Metrics:
-    extracted = sorted(all_extracted_brands)
-    gold = sorted(all_gold_brands)
-    return compare_sets(extracted, gold)
-
-
 async def finalize_and_evaluate_vertical(
     pipeline, vert_rows, vertical, verbose,
-) -> tuple[Metrics, Metrics, Metrics, Metrics]:
+) -> tuple[Metrics, Metrics, Metrics]:
     print("  Finalizing...", end="", flush=True)
     start = time.time()
     batch = await pipeline.finalize()
     print(f" ({time.time() - start:.1f}s)\n")
 
     brand_total, product_total, pair_total = Metrics(), Metrics(), Metrics()
-    all_extracted_brands: set[str] = set()
-    all_gold_brands: set[str] = set()
     for i, row in enumerate(vert_rows):
         response_id = f"{vertical}-{i}"
         extraction = batch.response_results.get(response_id)
@@ -355,11 +342,7 @@ async def finalize_and_evaluate_vertical(
         brand_total.add(brand_m)
         product_total.add(product_m)
         pair_total.add(pair_m)
-        all_extracted_brands.update(extraction.brands.keys())
-        gold_pairs = parse_gold_pairs(row["gold_pairs"])
-        all_gold_brands.update(b for b, _ in gold_pairs if b)
-    vertical_brands = evaluate_vertical_level_brands(all_extracted_brands, all_gold_brands)
-    return brand_total, product_total, pair_total, vertical_brands
+    return brand_total, product_total, pair_total
 
 
 def print_overall_summary(total_elapsed, overall_brand, overall_product, overall_pair):
@@ -379,9 +362,6 @@ def print_vertical_summary(vertical_metrics):
         print_metrics("Brands", vertical_metrics[vertical]["brand"])
         print_metrics("Products", vertical_metrics[vertical]["product"])
         print_metrics("Pairs", vertical_metrics[vertical]["pair"])
-        vb = vertical_metrics[vertical].get("vertical_brands")
-        if vb:
-            print_metrics("Unique Brands (vertical-level)", vb)
 
 
 def print_top_unmatched(overall_brand, overall_product):
@@ -403,7 +383,7 @@ def print_top_unmatched(overall_brand, overall_product):
 
 def print_run_header(labeled, csv_path, use_deepseek, load_extraction, save_extraction, model_override, tmp_db):
     print(f"Evaluating {len(labeled)} labeled responses from {csv_path.name}")
-    print(f"Remote validation (DeepSeek/OpenRouter): {'ENABLED' if use_deepseek else 'DISABLED'}")
+    print(f"Remote validation (OpenRouter): {'ENABLED' if use_deepseek else 'DISABLED'}")
     if load_extraction:
         print(f"Mode: consolidation-only (loading extraction from {load_extraction})")
     elif save_extraction:
@@ -460,8 +440,8 @@ async def run_evaluation(
             if save_extraction:
                 pipelines_for_cache[vertical] = pipeline
 
-            brand_m, product_m, pair_m, vert_brands = await finalize_and_evaluate_vertical(pipeline, vert_rows, vertical, verbose)
-            vertical_metrics[vertical] = {"brand": brand_m, "product": product_m, "pair": pair_m, "vertical_brands": vert_brands}
+            brand_m, product_m, pair_m = await finalize_and_evaluate_vertical(pipeline, vert_rows, vertical, verbose)
+            vertical_metrics[vertical] = {"brand": brand_m, "product": product_m, "pair": pair_m}
             overall_brand.add(brand_m)
             overall_product.add(product_m)
             overall_pair.add(pair_m)

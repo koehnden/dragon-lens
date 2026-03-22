@@ -22,7 +22,7 @@ from services.knowledge_verticals import normalize_entity_key
 
 logger = logging.getLogger(__name__)
 
-SEED_PROMPT_PATH = Path(__file__).parent.parent.parent / "prompts" / "extraction" / "deepseek_seed_vertical.md"
+SEED_PROMPT_PATH = Path(__file__).parent.parent.parent / "prompts" / "extraction" / "seed_vertical.md"
 
 MIN_VALIDATED_BRANDS = 10
 
@@ -136,36 +136,29 @@ class VerticalSeeder:
             )
         return seeded
 
-    async def seed_from_deepseek(self, db: Session) -> int:
-        """Ask DeepSeek for top brands/products for this vertical.
-
-        Stores everything with is_validated=False, source="seed".
-        Returns count of brands seeded.
-        """
+    async def seed_from_remote_llm(self, db: Session) -> int:
+        from services.extraction.consultant import OPENROUTER_PRIMARY_MODEL
         try:
-            from services.remote_llms import DeepSeekService
+            from services.remote_llms import OpenRouterService
         except ImportError:
-            logger.warning("DeepSeekService not available, skipping seed")
+            logger.warning("OpenRouterService not available, skipping seed")
             return 0
 
-        deepseek = DeepSeekService(db=None)
-        if not deepseek.has_api_key():
-            logger.info("No DeepSeek API key, skipping seed for '%s'", self.vertical)
+        service = OpenRouterService(db=None)
+        if not service.has_api_key():
+            logger.info("No OpenRouter API key, skipping seed for '%s'", self.vertical)
             return 0
 
         prompt = self._build_seed_prompt()
-        logger.info(f"[SEEDER] Calling DeepSeek API for seed...")
+        logger.info(f"[SEEDER] Calling OpenRouter for seed...")
         try:
-            answer, _, _, _ = await deepseek.query(prompt)
-            logger.info(f"[SEEDER] DeepSeek API returned successfully, answer length={len(answer)}")
+            answer, _, _, _ = await service.query(prompt, model_name=OPENROUTER_PRIMARY_MODEL)
+            logger.info(f"[SEEDER] OpenRouter returned successfully, answer length={len(answer)}")
         except Exception:
-            logger.exception("DeepSeek seed call failed for '%s'", self.vertical)
+            logger.exception("Remote LLM seed call failed for '%s'", self.vertical)
             return 0
 
-        logger.info(f"[SEEDER] Calling _store_seed_response...")
-        result = self._store_seed_response(db, answer)
-        logger.info(f"[SEEDER] _store_seed_response completed, result={result}")
-        return result
+        return self._store_seed_response(db, answer)
 
     async def ensure_seeded(
         self,
@@ -176,8 +169,8 @@ class VerticalSeeder:
 
         Order:
         1. Insert user brands first (ground truth, validated=True)
-        2. If still < 10 validated, call DeepSeek for market knowledge
-        3. DeepSeek results stored as unvalidated seeds
+        2. If still < 10 validated, call remote LLM for market knowledge
+        3. LLM results stored as unvalidated seeds
         """
         if user_brands:
             self.seed_from_user_brands(db, user_brands)
@@ -190,16 +183,15 @@ class VerticalSeeder:
             return
 
         if self.should_seed(db):
-            seeded = await self.seed_from_deepseek(db)
+            seeded = await self.seed_from_remote_llm(db)
             if seeded:
-                self._mark_seeded(db, "deepseek_v1")
+                self._mark_seeded(db, "openrouter_v1")
         elif self._validated_brand_count(db) >= MIN_VALIDATED_BRANDS:
             self._mark_seeded(db, "user_only")
 
         db.flush()
 
     def _build_seed_prompt(self) -> str:
-        """Build the DeepSeek seed prompt from template."""
         template = SEED_PROMPT_PATH.read_text(encoding="utf-8")
         return template.replace(
             "{{ vertical }}", _sanitize_prompt_value(self.vertical)
@@ -208,11 +200,10 @@ class VerticalSeeder:
         )
 
     def _store_seed_response(self, db: Session, response_text: str) -> int:
-        """Parse DeepSeek JSON response and store brands/products."""
         logger.info(f"[SEEDER] _store_seed_response starting, parsing response...")
         data = _parse_json_response(response_text)
         if not data or "brands" not in data:
-            logger.warning("Could not parse DeepSeek seed response")
+            logger.warning("Could not parse seed response")
             return 0
         logger.info(f"[SEEDER] Parsed {len(data.get('brands', []))} brands from response")
 
@@ -251,7 +242,7 @@ class VerticalSeeder:
                 db.flush()
                 logger.info(f"[SEEDER] Flush completed")
             logger.info(
-                "Seeded %d brands from DeepSeek for vertical '%s'",
+                "Seeded %d brands from remote LLM for vertical '%s'",
                 seeded, self.vertical,
             )
         logger.info(f"[SEEDER] _store_seed_response completed")

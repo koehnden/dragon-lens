@@ -92,4 +92,4 @@ class PipelineDebugInfo:
     step3_rejected_brands: list[str] = field(default_factory=list)
     step3_rejected_products: list[str] = field(default_factory=list)
     knowledge_seeded: bool = False
-    deepseek_call_count: int = 0
+    remote_llm_call_count: int = 0

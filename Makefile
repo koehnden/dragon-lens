@@ -448,7 +448,7 @@ eval-extraction: ## Run extraction evaluation and cache results (slow, requires 
 	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
 		--csv $(EVAL_CSV) --save-extraction $(EVAL_CACHE) $(EVAL_ARGS)
 
-eval-consolidation: ## Run consolidation evaluation on cached extraction (fast, requires DeepSeek/OpenRouter)
+eval-consolidation: ## Run consolidation evaluation on cached extraction (fast, requires OpenRouter)
 	@if [ ! -f $(EVAL_CACHE) ]; then \
 		echo "$(RED)Error: No extraction cache found at $(EVAL_CACHE)$(NC)"; \
 		echo "$(YELLOW)Run 'make eval-extraction' first to generate the cache.$(NC)"; \

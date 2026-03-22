@@ -1,7 +1,4 @@
-"""DeepSeek-backed normalization and relevance validation.
-
-Falls back to OpenRouter (qwen/qwen3.5-397b-a17b) when DeepSeek is unavailable.
-"""
+"""LLM-backed normalization and relevance validation via OpenRouter."""
 
 from __future__ import annotations
 
@@ -26,11 +23,12 @@ from services.knowledge_verticals import normalize_entity_key
 
 logger = logging.getLogger(__name__)
 
-OPENROUTER_FALLBACK_MODEL = "qwen/qwen3.5-397b-a17b"
+OPENROUTER_PRIMARY_MODEL = "qwen/qwen3.5-397b-a17b"
+OPENROUTER_BACKUP_MODEL = "baidu/ernie-4.5-300b-a47b"
 VALIDATION_BATCH_SIZE = 200
 
 
-class DeepSeekConsultant:
+class ExtractionConsultant:
     """Normalize brands/products and validate relevance for a full run."""
 
     def __init__(
@@ -78,12 +76,12 @@ class DeepSeekConsultant:
         )
         logger.info(f"[CONSULTANT] Remote normalization needed: {needs_remote}")
         if not needs_remote:
-            logger.info(f"[CONSULTANT] normalize_and_map completed (no DeepSeek needed)")
+            logger.info(f"[CONSULTANT] normalize_and_map completed (local only)")
             return brand_aliases, product_aliases, product_brand_map
 
         logger.info(f"[CONSULTANT] Loading prompt...")
         prompt = load_prompt(
-            "extraction/deepseek_normalize_map",
+            "extraction/consolidation_normalize_map",
             vertical=self.vertical,
             vertical_description=self.vertical_description,
             brands_json=json.dumps(brands, ensure_ascii=False),
@@ -91,17 +89,17 @@ class DeepSeekConsultant:
             item_pairs_json=json.dumps(item_pairs, ensure_ascii=False),
             existing_product_brand_map_json=json.dumps(product_brand_map, ensure_ascii=False),
         )
-        logger.info(f"[CONSULTANT] Calling DeepSeek API...")
+        logger.info(f"[CONSULTANT] Calling remote LLM for normalization...")
         try:
-            response = await self._call_deepseek(prompt)
+            response = await self._call_llm(prompt)
         except Exception as e:
             logger.error(f"[CONSULTANT] Remote normalization failed, using local only: {e}")
             return brand_aliases, product_aliases, product_brand_map
-        logger.info(f"[CONSULTANT] DeepSeek API returned, parsing response...")
+        logger.info(f"[CONSULTANT] Remote LLM returned, parsing response...")
         parsed = _parse_json_response(response) or {}
         logger.info(f"[CONSULTANT] Response parsed")
 
-        logger.info(f"[CONSULTANT] Merging DeepSeek results...")
+        logger.info(f"[CONSULTANT] Merging remote normalization results...")
         for alias, canonical in (parsed.get("brand_aliases") or {}).items():
             if alias:
                 brand_aliases[alias] = _ensure_str(canonical) or alias
@@ -115,30 +113,66 @@ class DeepSeekConsultant:
         logger.info(f"[CONSULTANT] normalize_and_map completed successfully")
         return brand_aliases, product_aliases, product_brand_map
 
+    async def consolidate_products(
+        self,
+        product_aliases: dict[str, str],
+        product_brand_map: dict[str, str],
+        brand_aliases: dict[str, str],
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        reverse_brand_map = _build_reverse_brand_map(brand_aliases)
+        product_aliases, product_brand_map = _strip_brand_prefixes(
+            product_aliases, product_brand_map, reverse_brand_map,
+        )
+        product_aliases = _merge_suffix_variants(product_aliases)
+        if self._has_remote_llm():
+            product_aliases, product_brand_map = await self._group_product_variants(
+                product_aliases, product_brand_map, brand_aliases,
+            )
+        return product_aliases, product_brand_map
+
+    async def _group_product_variants(
+        self,
+        product_aliases: dict[str, str],
+        product_brand_map: dict[str, str],
+        brand_aliases: dict[str, str],
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        products_by_brand, unmapped = _partition_products_by_brand(
+            product_aliases, product_brand_map,
+        )
+        if not products_by_brand and not unmapped:
+            return product_aliases, product_brand_map
+        prompt = load_prompt(
+            "extraction/consolidation_group_variants",
+            vertical=self.vertical,
+            vertical_description=self.vertical_description,
+            products_by_brand_json=json.dumps(products_by_brand, ensure_ascii=False),
+            unmapped_products_json=json.dumps(unmapped, ensure_ascii=False),
+        )
+        try:
+            response = await self._call_llm(prompt)
+        except Exception as e:
+            logger.error(f"[CONSULTANT] Variant grouping failed: {e}")
+            return product_aliases, product_brand_map
+        return _merge_variant_results(
+            response, product_aliases, product_brand_map, brand_aliases,
+        )
+
     async def validate_relevance(
         self,
         brands: list[str],
         products: list[str],
     ) -> tuple[set[str], set[str], set[str], set[str], dict[str, str]]:
         logger.info(f"[CONSULTANT] validate_relevance: {len(brands)} brands, {len(products)} products")
-        if not self._has_remote_llm():
-            logger.info("[CONSULTANT] No remote LLM available, accepting all entities")
-            return set(brands), set(products), set(), set(), {}
-
         brand_candidates, product_candidates, rej_brands, rej_products, rej_reasons = (
             _apply_pre_filter(brands, products)
         )
-        pre_valid_brands = self._find_prevalidated(brand_candidates, "brand")
-        pre_valid_products = self._find_prevalidated(product_candidates, "product")
-        new_brands = [b for b in brand_candidates if b not in pre_valid_brands]
-        new_products = [p for p in product_candidates if p not in pre_valid_products]
-        logger.info(f"[CONSULTANT] Auto-accepted: {len(pre_valid_brands)} brands, {len(pre_valid_products)} products")
+        if not self._has_remote_llm():
+            logger.info("[CONSULTANT] No remote LLM available, accepting pre-filtered entities")
+            return set(brand_candidates), set(product_candidates), rej_brands, rej_products, rej_reasons
         known = self._load_validation_context(brands, products)
         v_brands, v_products, r_brands, r_products, reasons = await self._validate_in_batches(
-            new_brands, new_products, *known,
+            brand_candidates, product_candidates, *known,
         )
-        v_brands.update(pre_valid_brands)
-        v_products.update(pre_valid_products)
         rej_brands.update(r_brands)
         rej_products.update(r_products)
         rej_reasons.update(reasons)
@@ -202,7 +236,7 @@ class DeepSeekConsultant:
             known_rejected=known_rejected,
         )
         try:
-            response = await self._call_deepseek(prompt)
+            response = await self._call_llm(prompt)
         except Exception as e:
             logger.error(f"[CONSULTANT] Batch validation API call failed: {e}")
             return set(), set(), set(brands), set(products), {n: "api_error" for n in brands + products}
@@ -242,22 +276,6 @@ class DeepSeekConsultant:
                         reason=rejection_reasons.get(name, "not relevant to vertical"),
                     )
                 )
-
-    def _find_prevalidated(
-        self,
-        candidates: list[str],
-        entity_type: str,
-    ) -> set[str]:
-        if self.knowledge_db is None or self.vertical_id is None:
-            return set()
-        model = KnowledgeBrand if entity_type == "brand" else KnowledgeProduct
-        validated_keys = {
-            normalize_entity_key(row.display_name)
-            for row in self.knowledge_db.query(model)
-            .filter(model.vertical_id == self.vertical_id, model.is_validated == True)
-            .all()
-        }
-        return {c for c in candidates if normalize_entity_key(c) in validated_keys}
 
     def _load_validation_context(
         self,
@@ -323,10 +341,11 @@ class DeepSeekConsultant:
             entity = (entity or "").strip()
             if not entity:
                 continue
-            alias_key = normalize_entity_key(entity)
+            cleaned = _strip_possessive(entity)
+            alias_key = normalize_entity_key(cleaned)
             canonical = existing_map.get(alias_key)
             if not canonical:
-                canonical = canonical_by_key.setdefault(alias_key, entity)
+                canonical = canonical_by_key.setdefault(alias_key, cleaned)
             normalized[entity] = canonical
         return normalized
 
@@ -395,51 +414,33 @@ class DeepSeekConsultant:
         )
         return {product: brand for product, brand in rows if product and brand}
 
-    def _has_deepseek(self) -> bool:
-        try:
-            from services.remote_llms import DeepSeekService
-        except ImportError:
-            return False
-        return DeepSeekService(db=None).has_api_key()
-
-    def _has_openrouter(self) -> bool:
+    def _has_remote_llm(self) -> bool:
         try:
             from services.remote_llms import OpenRouterService
         except ImportError:
             return False
         return OpenRouterService(db=None).has_api_key()
 
-    def _has_remote_llm(self) -> bool:
-        return self._has_deepseek() or self._has_openrouter()
-
-    async def _call_deepseek(self, prompt: str, retries: int = 2, temperature: float | None = None) -> str:
+    async def _call_llm(self, prompt: str, retries: int = 2, temperature: float | None = None) -> str:
+        from services.remote_llms import OpenRouterService
         last_error = None
-        for attempt in range(retries):
-            if self._has_deepseek():
+        for model in [OPENROUTER_PRIMARY_MODEL, OPENROUTER_BACKUP_MODEL]:
+            for attempt in range(retries):
                 try:
-                    from services.remote_llms import DeepSeekService
-                    service = DeepSeekService(db=None)
-                    if temperature is not None:
-                        service.temperature = temperature
-                    answer, _, _, _ = await service.query(prompt)
-                    return answer
-                except Exception as e:
-                    logger.warning(f"DeepSeek API failed (attempt {attempt+1}): {e}")
-                    last_error = e
-
-            if self._has_openrouter():
-                try:
-                    from services.remote_llms import OpenRouterService
                     service = OpenRouterService(db=None)
                     if temperature is not None:
                         service.temperature = temperature
-                    answer, _, _, _ = await service.query(prompt, model_name=OPENROUTER_FALLBACK_MODEL)
+                    answer, _, _, _ = await service.query(prompt, model_name=model)
                     return answer
                 except Exception as e:
-                    logger.warning(f"OpenRouter API failed (attempt {attempt+1}): {e}")
+                    logger.warning(f"OpenRouter {model} failed (attempt {attempt+1}): {e}")
                     last_error = e
-
         raise RuntimeError(f"All LLM attempts failed: {last_error}")
+
+
+def _strip_possessive(name: str) -> str:
+    import re
+    return re.sub(r"[''']s$", "", name.strip())
 
 
 def _ensure_str(value: object) -> str | None:
@@ -515,7 +516,8 @@ COMMON_WORD_BLOCKLIST = {
     "distance", "speed", "weight", "capacity", "coverage", "system",
     "overall", "summary", "comparison", "review", "rating", "analysis",
     "option", "choice", "alternative", "preference", "category",
-    "on", "gtx", "wp",
+    "on", "gtx", "wp", "scenarios", "outsole", "membrane", "midsole",
+    "insole", "upper", "sole", "lining", "footbed", "shank",
 }
 
 
@@ -529,7 +531,23 @@ def _is_likely_common_word(entity: str) -> bool:
         return False
     if cleaned.lower() in COMMON_WORD_BLOCKLIST:
         return True
+    if len(cleaned) <= 2 and cleaned.isalpha():
+        return True
+    if _ends_with_material_suffix(cleaned):
+        return True
     return not any(c.isupper() for c in cleaned)
+
+
+MATERIAL_SUFFIX_BLOCKLIST = {
+    "outsole", "membrane", "midsole", "insole", "upper", "sole",
+    "lining", "footbed", "shank", "foam", "rubber", "mesh",
+    "technology", "system", "material", "compound", "cushioning",
+}
+
+
+def _ends_with_material_suffix(text: str) -> bool:
+    parts = text.lower().split()
+    return len(parts) >= 2 and parts[-1] in MATERIAL_SUFFIX_BLOCKLIST
 
 
 def _pre_filter_entities(entities: list[str]) -> tuple[list[str], set[str]]:
@@ -601,3 +619,143 @@ def _merge_validation_results(
         r_products.update(rp)
         reasons.update(r)
     return v_brands, v_products, r_brands, r_products, reasons
+
+
+def _build_reverse_brand_map(brand_aliases: dict[str, str]) -> dict[str, str]:
+    reverse: dict[str, str] = {}
+    for alias, canonical in brand_aliases.items():
+        reverse[alias] = canonical
+        reverse[canonical] = canonical
+    return reverse
+
+
+def _strip_brand_prefixes(
+    product_aliases: dict[str, str],
+    product_brand_map: dict[str, str],
+    reverse_brand_map: dict[str, str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    updated_aliases = dict(product_aliases)
+    updated_map = dict(product_brand_map)
+    brand_names = sorted(reverse_brand_map.keys(), key=len, reverse=True)
+
+    canonical_products = set(updated_aliases.values())
+    for product in canonical_products:
+        stripped, brand = _try_strip_brand(product, brand_names, reverse_brand_map)
+        if not stripped:
+            continue
+        if len(stripped) < 2:
+            continue
+        updated_aliases[product] = stripped
+        updated_map.setdefault(stripped, brand)
+
+    return updated_aliases, updated_map
+
+
+def _try_strip_brand(
+    product: str,
+    brand_names: list[str],
+    reverse_brand_map: dict[str, str],
+) -> tuple[str | None, str | None]:
+    for brand_name in brand_names:
+        if len(brand_name) < 2:
+            continue
+        if not product.startswith(brand_name):
+            continue
+        remainder = product[len(brand_name):].lstrip(" -·")
+        if not remainder or remainder == product:
+            continue
+        if not _is_valid_product_remainder(remainder):
+            continue
+        return remainder, reverse_brand_map[brand_name]
+    return None, None
+
+
+def _is_valid_product_remainder(remainder: str) -> bool:
+    if len(remainder) < 3:
+        return False
+    return any(c.isalpha() for c in remainder[:3])
+
+
+PRODUCT_SUFFIX_TOKENS = {
+    "gtx", "wp", "waterproof", "mid", "low", "all-wthr",
+    "pro", "plus", "max", "evo", "lite",
+}
+
+
+def _strip_product_suffix(name: str) -> str | None:
+    import re
+    parts = re.split(r'\s+', name.strip())
+    if len(parts) < 2:
+        return None
+    while len(parts) > 1 and parts[-1].lower() in PRODUCT_SUFFIX_TOKENS:
+        parts.pop()
+    result = " ".join(parts)
+    if result == name.strip() or len(result) < 2:
+        return None
+    return result
+
+
+def _merge_suffix_variants(product_aliases: dict[str, str]) -> dict[str, str]:
+    updated = dict(product_aliases)
+    canonical_set = set(updated.values())
+    base_to_canonical: dict[str, str] = {}
+
+    for canonical in sorted(canonical_set, key=len):
+        base = _strip_product_suffix(canonical)
+        if not base:
+            continue
+        if base in canonical_set:
+            base_to_canonical[canonical] = base
+        elif base in base_to_canonical:
+            base_to_canonical[canonical] = base_to_canonical[base]
+        else:
+            base_to_canonical.setdefault(base, canonical)
+
+    remap: dict[str, str] = {}
+    for variant, target in base_to_canonical.items():
+        if variant != target and target in canonical_set:
+            remap[variant] = target
+
+    if not remap:
+        return updated
+    for alias, canonical in updated.items():
+        if canonical in remap:
+            updated[alias] = remap[canonical]
+    return updated
+
+
+def _partition_products_by_brand(
+    product_aliases: dict[str, str],
+    product_brand_map: dict[str, str],
+) -> tuple[dict[str, list[str]], list[str]]:
+    canonical_products = sorted(set(product_aliases.values()))
+    by_brand: dict[str, list[str]] = {}
+    unmapped: list[str] = []
+    for product in canonical_products:
+        brand = product_brand_map.get(product)
+        if brand:
+            by_brand.setdefault(brand, []).append(product)
+        else:
+            unmapped.append(product)
+    return by_brand, unmapped
+
+
+def _merge_variant_results(
+    response: str,
+    product_aliases: dict[str, str],
+    product_brand_map: dict[str, str],
+    brand_aliases: dict[str, str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    parsed = _parse_json_response(response) or {}
+    updated_aliases = dict(product_aliases)
+    updated_map = dict(product_brand_map)
+
+    for alias, canonical in (parsed.get("product_aliases") or {}).items():
+        if alias and canonical:
+            updated_aliases[alias] = str(canonical)
+    for product, brand in (parsed.get("product_brand_map") or {}).items():
+        if product and brand:
+            canonical_brand = brand_aliases.get(brand, brand)
+            updated_map[product] = canonical_brand
+
+    return updated_aliases, updated_map

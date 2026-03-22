@@ -18,7 +18,7 @@ from models.knowledge_domain import (
     KnowledgeProductBrandMapping,
 )
 from services.brand_recognition.models import ExtractionDebugInfo, ExtractionResult
-from services.extraction.deepseek_consultant import DeepSeekConsultant
+from services.extraction.consultant import ExtractionConsultant
 from services.extraction.item_parser import extract_intro_context, parse_response_into_items
 from services.extraction.latin_extractor import extract_latin_tokens
 from services.extraction.models import BatchExtractionResult, BrandProductPair, ItemExtractionResult, PipelineDebugInfo
@@ -143,13 +143,13 @@ class ExtractionPipeline:
         logger = logging.getLogger(__name__)
         logger.info(f"[EXTRACTION] finalize() starting for vertical={self.vertical}")
 
-        consultant = DeepSeekConsultant(
+        consultant = ExtractionConsultant(
             self.vertical,
             self.vertical_description,
             vertical_id=self.knowledge_vertical_id,
             knowledge_db=self.knowledge_db,
         )
-        logger.info(f"[EXTRACTION] DeepSeekConsultant created")
+        logger.info(f"[EXTRACTION] ExtractionConsultant created")
 
         all_results = [item for results in self._response_results.values() for item in results]
         raw_pairs = [pair for item in all_results for pair in item.pairs]
@@ -164,6 +164,12 @@ class ExtractionPipeline:
             [(pair.brand, pair.product) for pair in raw_pairs],
         )
         logger.info(f"[EXTRACTION] normalize_and_map completed: {len(brand_aliases)} brand aliases, {len(product_aliases)} product aliases")
+
+        logger.info(f"[EXTRACTION] Consolidating products...")
+        product_aliases, product_brand_map = await consultant.consolidate_products(
+            product_aliases, product_brand_map, brand_aliases,
+        )
+        logger.info(f"[EXTRACTION] Product consolidation completed: {len(product_aliases)} aliases, {len(product_brand_map)} mappings")
 
         logger.info(f"[EXTRACTION] Calling validate_relevance...")
         valid_brands, valid_products, rejected_brands, rejected_products, rejection_reasons = (
@@ -420,30 +426,58 @@ def _finalize_item_results(
 ) -> list[ItemExtractionResult]:
     finalized: list[ItemExtractionResult] = []
     for result in item_results:
-        pairs: list[BrandProductPair] = []
-        for pair in result.pairs:
-            canonical_brand = brand_aliases.get(pair.brand, pair.brand) if pair.brand else None
-            canonical_product = product_aliases.get(pair.product, pair.product) if pair.product else None
-            if canonical_product and canonical_product in product_brand_map:
-                canonical_brand = product_brand_map[canonical_product]
-
-            if canonical_brand and canonical_brand not in valid_brands:
-                canonical_brand = None
-            if canonical_product and canonical_product not in valid_products:
-                canonical_product = None
-            if not canonical_brand and not canonical_product:
-                continue
-
-            pairs.append(
-                BrandProductPair(
-                    brand=canonical_brand,
-                    product=canonical_product,
-                    brand_source=pair.brand_source,
-                    product_source=pair.product_source,
-                )
-            )
+        raw_pairs = _resolve_pairs(result.pairs, brand_aliases, product_aliases, product_brand_map, valid_brands, valid_products)
+        pairs = _deduplicate_pairs(_keep_only_paired(raw_pairs))
         finalized.append(ItemExtractionResult(item=result.item, pairs=pairs))
     return finalized
+
+
+def _resolve_pairs(
+    pairs: list[BrandProductPair],
+    brand_aliases: dict[str, str],
+    product_aliases: dict[str, str],
+    product_brand_map: dict[str, str],
+    valid_brands: set[str],
+    valid_products: set[str],
+) -> list[BrandProductPair]:
+    resolved: list[BrandProductPair] = []
+    for pair in pairs:
+        canonical_brand = brand_aliases.get(pair.brand, pair.brand) if pair.brand else None
+        canonical_product = product_aliases.get(pair.product, pair.product) if pair.product else None
+        if canonical_product and canonical_product in product_brand_map:
+            canonical_brand = product_brand_map[canonical_product]
+        if canonical_brand and canonical_brand not in valid_brands:
+            canonical_brand = None
+        if canonical_product and canonical_product not in valid_products:
+            canonical_product = None
+        if not canonical_brand and not canonical_product:
+            continue
+
+        resolved.append(
+            BrandProductPair(
+                brand=canonical_brand,
+                product=canonical_product,
+                brand_source=pair.brand_source,
+                product_source=pair.product_source,
+            )
+        )
+    return resolved
+
+
+def _keep_only_paired(pairs: list[BrandProductPair]) -> list[BrandProductPair]:
+    return [p for p in pairs if p.product]
+
+
+def _deduplicate_pairs(pairs: list[BrandProductPair]) -> list[BrandProductPair]:
+    seen: set[tuple[str | None, str | None]] = set()
+    deduped: list[BrandProductPair] = []
+    for pair in pairs:
+        key = (pair.brand, pair.product)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(pair)
+    return deduped
 
 
 def _upsert_brand(db: Session, vertical_id: int, canonical_name: str) -> KnowledgeBrand:
