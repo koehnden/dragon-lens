@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from typing import Iterable
 
@@ -26,6 +27,8 @@ from services.extraction.qwen_extractor import QwenBatchExtractor
 from services.extraction.rule_extractor import KnowledgeBaseMatcher
 from services.extraction.vertical_seeder import VerticalSeeder
 from services.knowledge_verticals import get_or_create_vertical, normalize_entity_key
+
+logger = logging.getLogger(__name__)
 
 
 class ExtractionPipeline:
@@ -72,8 +75,6 @@ class ExtractionPipeline:
         response_id: str | None = None,
         user_brands: list | None = None,
     ) -> ExtractionResult:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.info(f"[PIPELINE] process_response starting, response_id={response_id}")
 
         if not self._seed_checked:
@@ -139,8 +140,6 @@ class ExtractionPipeline:
         return result
 
     async def finalize(self) -> BatchExtractionResult:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.info(f"[EXTRACTION] finalize() starting for vertical={self.vertical}")
 
         consultant = ExtractionConsultant(
