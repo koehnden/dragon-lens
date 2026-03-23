@@ -426,7 +426,7 @@ def _finalize_item_results(
     finalized: list[ItemExtractionResult] = []
     for result in item_results:
         raw_pairs = _resolve_pairs(result.pairs, brand_aliases, product_aliases, product_brand_map, valid_brands, valid_products)
-        pairs = _deduplicate_pairs(_keep_only_paired(raw_pairs))
+        pairs = _deduplicate_pairs(raw_pairs)
         finalized.append(ItemExtractionResult(item=result.item, pairs=pairs))
     return finalized
 
@@ -462,9 +462,6 @@ def _resolve_pairs(
         )
     return resolved
 
-
-def _keep_only_paired(pairs: list[BrandProductPair]) -> list[BrandProductPair]:
-    return [p for p in pairs if p.product]
 
 
 def _deduplicate_pairs(pairs: list[BrandProductPair]) -> list[BrandProductPair]:
