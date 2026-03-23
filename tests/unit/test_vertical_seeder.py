@@ -14,7 +14,8 @@ from models.knowledge_domain import (
     KnowledgeProductBrandMapping,
     KnowledgeVertical,
 )
-from services.extraction.vertical_seeder import VerticalSeeder, _parse_json_response
+from services.extraction.normalizer import parse_json_response
+from services.extraction.vertical_seeder import VerticalSeeder
 
 
 @pytest.fixture
@@ -208,13 +209,13 @@ class TestSeedFromUserBrands:
             assert len(alias.alias_key) > 0
 
 
-class TestSeedFromDeepSeek:
+class TestSeedFromRemoteLlm:
     @pytest.mark.asyncio
     async def test_stores_brands_products_aliases(
         self, seeder: VerticalSeeder, knowledge_db_session: Session, vertical: KnowledgeVertical
     ):
         with patch(
-            "services.remote_llms.DeepSeekService"
+            "services.remote_llms.OpenRouterService"
         ) as mock_ds_cls:
             mock_ds = mock_ds_cls.return_value
             mock_ds.has_api_key.return_value = True
@@ -222,7 +223,7 @@ class TestSeedFromDeepSeek:
                 return_value=(DEEPSEEK_SEED_RESPONSE, 100, 500, 0.5)
             )
 
-            count = await seeder.seed_from_deepseek(knowledge_db_session)
+            count = await seeder.seed_from_remote_llm(knowledge_db_session)
 
         assert count == 3
 
@@ -287,27 +288,27 @@ class TestSeedFromDeepSeek:
         self, seeder: VerticalSeeder, knowledge_db_session: Session
     ):
         with patch(
-            "services.remote_llms.DeepSeekService"
+            "services.remote_llms.OpenRouterService"
         ) as mock_ds_cls:
             mock_ds = mock_ds_cls.return_value
             mock_ds.has_api_key.return_value = False
 
-            count = await seeder.seed_from_deepseek(knowledge_db_session)
+            count = await seeder.seed_from_remote_llm(knowledge_db_session)
 
         assert count == 0
 
     @pytest.mark.asyncio
-    async def test_deepseek_error_returns_zero(
+    async def test_remote_llm_error_returns_zero(
         self, seeder: VerticalSeeder, knowledge_db_session: Session
     ):
         with patch(
-            "services.remote_llms.DeepSeekService"
+            "services.remote_llms.OpenRouterService"
         ) as mock_ds_cls:
             mock_ds = mock_ds_cls.return_value
             mock_ds.has_api_key.return_value = True
             mock_ds.query = AsyncMock(side_effect=Exception("API error"))
 
-            count = await seeder.seed_from_deepseek(knowledge_db_session)
+            count = await seeder.seed_from_remote_llm(knowledge_db_session)
 
         assert count == 0
 
@@ -316,7 +317,7 @@ class TestSeedFromDeepSeek:
         self, seeder: VerticalSeeder, knowledge_db_session: Session
     ):
         with patch(
-            "services.remote_llms.DeepSeekService"
+            "services.remote_llms.OpenRouterService"
         ) as mock_ds_cls:
             mock_ds = mock_ds_cls.return_value
             mock_ds.has_api_key.return_value = True
@@ -324,7 +325,7 @@ class TestSeedFromDeepSeek:
                 return_value=(json.dumps({"brands": []}), 10, 20, 0.1)
             )
 
-            count = await seeder.seed_from_deepseek(knowledge_db_session)
+            count = await seeder.seed_from_remote_llm(knowledge_db_session)
 
         assert count == 0
 
@@ -333,7 +334,7 @@ class TestSeedFromDeepSeek:
         self, seeder: VerticalSeeder, knowledge_db_session: Session, vertical: KnowledgeVertical
     ):
         with patch(
-            "services.remote_llms.DeepSeekService"
+            "services.remote_llms.OpenRouterService"
         ) as mock_ds_cls:
             mock_ds = mock_ds_cls.return_value
             mock_ds.has_api_key.return_value = True
@@ -341,7 +342,7 @@ class TestSeedFromDeepSeek:
                 return_value=(DEEPSEEK_SEED_RESPONSE, 100, 500, 0.5)
             )
 
-            await seeder.seed_from_deepseek(knowledge_db_session)
+            await seeder.seed_from_remote_llm(knowledge_db_session)
 
         products = (
             knowledge_db_session.query(KnowledgeProduct)
@@ -354,11 +355,11 @@ class TestSeedFromDeepSeek:
 
 class TestEnsureSeeded:
     @pytest.mark.asyncio
-    async def test_seeds_user_brands_then_deepseek(
+    async def test_seeds_user_brands_then_remote_llm(
         self, seeder: VerticalSeeder, knowledge_db_session: Session, vertical: KnowledgeVertical
     ):
         with patch(
-            "services.remote_llms.DeepSeekService"
+            "services.remote_llms.OpenRouterService"
         ) as mock_ds_cls:
             mock_ds = mock_ds_cls.return_value
             mock_ds.has_api_key.return_value = True
@@ -373,7 +374,7 @@ class TestEnsureSeeded:
             .filter(KnowledgeBrand.vertical_id == vertical.id)
             .all()
         )
-        # 2 user brands + 3 DeepSeek brands = 5
+        # 2 user brands + 3 seeded brands = 5
         assert len(brands) == 5
 
         user_brands = [b for b in brands if b.validation_source == "user"]
@@ -382,7 +383,7 @@ class TestEnsureSeeded:
         assert len(seed_brands) == 3
 
     @pytest.mark.asyncio
-    async def test_skips_deepseek_if_enough_user_brands(
+    async def test_skips_remote_llm_if_enough_user_brands(
         self, seeder: VerticalSeeder, knowledge_db_session: Session, vertical: KnowledgeVertical
     ):
         # Create 10 validated user brands
@@ -392,13 +393,13 @@ class TestEnsureSeeded:
         ]
 
         with patch(
-            "services.remote_llms.DeepSeekService"
+            "services.remote_llms.OpenRouterService"
         ) as mock_ds_cls:
             mock_ds = mock_ds_cls.return_value
 
             await seeder.ensure_seeded(knowledge_db_session, many_brands)
 
-            # DeepSeek should never be called
+            # Remote LLM should never be called
             mock_ds.query.assert_not_called()
 
     @pytest.mark.asyncio
@@ -419,16 +420,16 @@ class TestEnsureSeeded:
         knowledge_db_session.flush()
 
         with patch(
-            "services.remote_llms.DeepSeekService"
+            "services.remote_llms.OpenRouterService"
         ) as mock_ds_cls:
             await seeder.ensure_seeded(knowledge_db_session, USER_BRANDS)
             mock_ds_cls.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_marks_vertical_seeded_after_deepseek(
+    async def test_marks_vertical_seeded_after_remote_llm(
         self, seeder: VerticalSeeder, knowledge_db_session: Session, vertical: KnowledgeVertical
     ):
-        with patch("services.remote_llms.DeepSeekService") as mock_ds_cls:
+        with patch("services.remote_llms.OpenRouterService") as mock_ds_cls:
             mock_ds = mock_ds_cls.return_value
             mock_ds.has_api_key.return_value = True
             mock_ds.query = AsyncMock(
@@ -439,13 +440,13 @@ class TestEnsureSeeded:
 
         knowledge_db_session.refresh(vertical)
         assert vertical.seeded_at is not None
-        assert vertical.seed_version == "deepseek_v1"
+        assert vertical.seed_version == "openrouter_v1"
 
     @pytest.mark.asyncio
     async def test_does_not_reseed_after_seed_marker(
         self, seeder: VerticalSeeder, knowledge_db_session: Session, vertical: KnowledgeVertical
     ):
-        with patch("services.remote_llms.DeepSeekService") as mock_ds_cls:
+        with patch("services.remote_llms.OpenRouterService") as mock_ds_cls:
             mock_ds = mock_ds_cls.return_value
             mock_ds.has_api_key.return_value = True
             mock_ds.query = AsyncMock(
@@ -494,25 +495,25 @@ class TestEnsureSeeded:
 
 class TestParseJsonResponse:
     def test_parses_clean_json(self):
-        result = _parse_json_response('{"brands": []}')
+        result = parse_json_response('{"brands": []}')
         assert result == {"brands": []}
 
     def test_parses_markdown_fenced_json(self):
         text = '```json\n{"brands": []}\n```'
-        result = _parse_json_response(text)
+        result = parse_json_response(text)
         assert result == {"brands": []}
 
     def test_parses_json_with_surrounding_text(self):
         text = 'Here are the brands:\n{"brands": []}\nThat is all.'
-        result = _parse_json_response(text)
+        result = parse_json_response(text)
         assert result == {"brands": []}
 
     def test_returns_none_for_invalid_json(self):
-        result = _parse_json_response("not json at all")
+        result = parse_json_response("not json at all")
         assert result is None
 
     def test_returns_none_for_empty(self):
-        result = _parse_json_response("")
+        result = parse_json_response("")
         assert result is None
 
 
