@@ -221,6 +221,8 @@ Access the application:
 
 Out of the box, DragonLens uses **Qwen 2.5 7B via Ollama** for tracking—no API keys required. To use remote LLMs (DeepSeek, Kimi, or OpenRouter models), you need to add API keys.
 
+> **Recommended:** An OpenRouter API key is strongly recommended. The extraction pipeline uses OpenRouter (Qwen 3.5 / ERNIE 4.5) for vertical seeding, entity normalization, product consolidation, and relevance validation. Without it, these steps fall back to local-only heuristics with lower extraction quality.
+
 ### Option 1: Via UI (Recommended)
 
 1. Start the application with `make run`
