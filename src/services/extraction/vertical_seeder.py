@@ -10,6 +10,8 @@ from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
+from services.extraction.normalizer import parse_json_response
+
 from models.knowledge_domain import (
     KnowledgeBrand,
     KnowledgeBrandAlias,
@@ -201,7 +203,7 @@ class VerticalSeeder:
 
     def _store_seed_response(self, db: Session, response_text: str) -> int:
         logger.info(f"[SEEDER] _store_seed_response starting, parsing response...")
-        data = _parse_json_response(response_text)
+        data = parse_json_response(response_text)
         if not data or "brands" not in data:
             logger.warning("Could not parse seed response")
             return 0
@@ -698,25 +700,6 @@ class VerticalSeeder:
         if product_cache is not None:
             product_cache.mapping_pairs.add(mapping_key)
 
-
-def _parse_json_response(text: str) -> Optional[dict[str, Any]]:
-    """Extract JSON from a response that may contain markdown fences."""
-    text = (text or "").strip()
-    fenced_match = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, flags=re.DOTALL)
-    if fenced_match:
-        text = fenced_match.group(1).strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        # Try to find JSON object in the text
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start >= 0 and end > start:
-            try:
-                return json.loads(text[start:end])
-            except json.JSONDecodeError:
-                return None
-        return None
 
 
 def _sanitize_prompt_value(value: str) -> str:

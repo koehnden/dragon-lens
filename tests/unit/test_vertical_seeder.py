@@ -14,7 +14,8 @@ from models.knowledge_domain import (
     KnowledgeProductBrandMapping,
     KnowledgeVertical,
 )
-from services.extraction.vertical_seeder import VerticalSeeder, _parse_json_response
+from services.extraction.normalizer import parse_json_response
+from services.extraction.vertical_seeder import VerticalSeeder
 
 
 @pytest.fixture
@@ -494,25 +495,25 @@ class TestEnsureSeeded:
 
 class TestParseJsonResponse:
     def test_parses_clean_json(self):
-        result = _parse_json_response('{"brands": []}')
+        result = parse_json_response('{"brands": []}')
         assert result == {"brands": []}
 
     def test_parses_markdown_fenced_json(self):
         text = '```json\n{"brands": []}\n```'
-        result = _parse_json_response(text)
+        result = parse_json_response(text)
         assert result == {"brands": []}
 
     def test_parses_json_with_surrounding_text(self):
         text = 'Here are the brands:\n{"brands": []}\nThat is all.'
-        result = _parse_json_response(text)
+        result = parse_json_response(text)
         assert result == {"brands": []}
 
     def test_returns_none_for_invalid_json(self):
-        result = _parse_json_response("not json at all")
+        result = parse_json_response("not json at all")
         assert result is None
 
     def test_returns_none_for_empty(self):
-        result = _parse_json_response("")
+        result = parse_json_response("")
         assert result is None
 
 
