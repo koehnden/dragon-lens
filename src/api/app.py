@@ -13,26 +13,11 @@ from models.migrations import upgrade_db
 logger = logging.getLogger(__name__)
 
 
-def _log_embedding_model_config() -> None:
-    from services.brand_recognition.config import (
-        ENABLE_EMBEDDING_CLUSTERING,
-        OLLAMA_EMBEDDING_MODEL,
-    )
-
-    if ENABLE_EMBEDDING_CLUSTERING:
-        logging.info("Using Ollama embedding model: %s", OLLAMA_EMBEDDING_MODEL)
-        logging.info("Ensure model is pulled with: ollama pull qllama/bge-small-zh-v1.5")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     upgrade_db()
     init_knowledge_db()
-    _log_embedding_model_config()
     yield
-
-
-_log_embedding_model_config()
 
 app = FastAPI(
     title=settings.app_name,

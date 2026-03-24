@@ -1,9 +1,7 @@
 """
 Main orchestration for brand recognition pipeline.
 
-This module coordinates the overall entity extraction pipeline, bringing together
-all the specialized modules for candidate generation, extraction, validation,
-normalization, and clustering.
+This module coordinates the overall entity extraction pipeline.
 """
 
 import logging
@@ -12,7 +10,6 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from services.brand_recognition.models import (
-    EntityCandidate,
     ExtractionResult,
     ExtractionQuality,
 )
@@ -78,46 +75,6 @@ def extract_entities(
         return result
     finally:
         pipeline.close()
-
-
-def canonicalize_entities(
-    candidates: List[EntityCandidate],
-    primary_brand: str,
-    aliases: Dict[str, List[str]],
-    alias_table: Dict[str, str] | None = None,
-    text: str = "",
-) -> Dict[str, List[str]]:
-    """
-    Canonicalize entities by filtering and clustering.
-
-    This compatibility helper now relies only on local filtering and clustering.
-    """
-    from services.brand_recognition.config import (
-        ENABLE_EMBEDDING_CLUSTERING,
-        ENABLE_LLM_CLUSTERING,
-    )
-    from services.brand_recognition.entity_validator import (
-        _filter_candidates_simple,
-    )
-    from services.brand_recognition.clustering import (
-        _cluster_with_embeddings,
-        _llm_assisted_clustering,
-        _simple_clustering,
-    )
-
-    filtered_candidates = _filter_candidates_simple(candidates)
-
-    if ENABLE_EMBEDDING_CLUSTERING:
-        embedding_clusters = _run_async(_cluster_with_embeddings(filtered_candidates))
-    else:
-        embedding_clusters = {c.name: [c] for c in filtered_candidates}
-
-    if ENABLE_LLM_CLUSTERING:
-        final_clusters = _run_async(_llm_assisted_clustering(embedding_clusters, primary_brand, aliases))
-    else:
-        final_clusters = _simple_clustering(embedding_clusters, primary_brand, aliases)
-
-    return final_clusters
 
 
 def _assess_extraction_quality(

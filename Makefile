@@ -1,4 +1,4 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen download-embeddings test test-unit test-integration test-smoke run start-db start-redis flush-redis start-sentiment start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi wikidata wikidata-status wikidata-clear wikidata-industry wikidata-search logs-sentiment eval-extraction eval-consolidation
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen test test-unit test-integration test-smoke run start-db start-redis flush-redis start-sentiment start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi logs-sentiment eval-extraction eval-consolidation
 
 # Default target
 .DEFAULT_GOAL := help
@@ -94,11 +94,7 @@ install-ollama: ## Install Ollama if not already installed (macOS only)
 install-deps: check-deps ## Install Python dependencies with Poetry
 	@echo "$(YELLOW)Installing Python dependencies...$(NC)"
 	@poetry install
-	@$(MAKE) download-embeddings
 	@echo "$(GREEN)✓ Python dependencies installed$(NC)"
-
-download-embeddings:
-	@poetry run python -m scripts.prefetch_embedding_model
 
 pull-qwen: ## Pull Qwen model for Ollama (if not already pulled)
 	@echo "$(YELLOW)Checking if Qwen model is already pulled...$(NC)"
@@ -124,46 +120,6 @@ setup: ## Complete setup - Install all dependencies and models
 	@echo "  1. Copy .env.example to .env and configure if needed"
 	@echo "  2. Run 'make run' to start all services"
 	@echo ""
-
-# =============================================================================
-# Wikidata Cache Management
-# =============================================================================
-
-wikidata: ## Load all predefined industries from Wikidata (runs once, cached locally)
-	@echo "$(YELLOW)Loading Wikidata cache for all predefined industries...$(NC)"
-	@echo "$(YELLOW)This may take several minutes due to rate limiting.$(NC)"
-	@echo ""
-	@poetry run python scripts/load_wikidata.py all
-	@echo ""
-	@echo "$(GREEN)✓ Wikidata cache loaded!$(NC)"
-	@echo "$(YELLOW)Run 'make wikidata-status' to see cache statistics$(NC)"
-
-wikidata-status: ## Show Wikidata cache status
-	@poetry run python scripts/load_wikidata.py status
-
-wikidata-clear: ## Clear Wikidata cache (separate from main database)
-	@echo "$(YELLOW)Clearing Wikidata cache...$(NC)"
-	@poetry run python scripts/load_wikidata.py clear --force
-	@echo "$(GREEN)✓ Wikidata cache cleared$(NC)"
-
-wikidata-industry: ## Load a specific predefined industry (usage: make wikidata-industry INDUSTRY=automotive)
-	@if [ -z "$(INDUSTRY)" ]; then \
-		echo "$(RED)Error: INDUSTRY not specified$(NC)"; \
-		echo "$(YELLOW)Usage: make wikidata-industry INDUSTRY=<name>$(NC)"; \
-		echo "$(YELLOW)Available industries: automotive, consumer_electronics, cosmetics, home_appliances, sportswear, food_beverage, luxury_goods$(NC)"; \
-		exit 1; \
-	fi
-	@echo "$(YELLOW)Loading Wikidata cache for $(INDUSTRY)...$(NC)"
-	@poetry run python scripts/load_wikidata.py predefined $(INDUSTRY)
-	@echo "$(GREEN)✓ $(INDUSTRY) loaded!$(NC)"
-
-wikidata-search: ## Search Wikidata for industries (usage: make wikidata-search QUERY=luxury)
-	@if [ -z "$(QUERY)" ]; then \
-		echo "$(RED)Error: QUERY not specified$(NC)"; \
-		echo "$(YELLOW)Usage: make wikidata-search QUERY=<search_term>$(NC)"; \
-		exit 1; \
-	fi
-	@poetry run python scripts/load_wikidata.py search "$(QUERY)"
 
 # =============================================================================
 # Services

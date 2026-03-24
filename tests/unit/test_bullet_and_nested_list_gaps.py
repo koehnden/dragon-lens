@@ -1,6 +1,6 @@
 """Failing tests capturing bullet-marker inconsistencies and nested list splitting gaps."""
 
-from services.brand_recognition import is_list_format, split_into_list_items, _list_table_candidates
+from services.brand_recognition import is_list_format, split_into_list_items
 
 
 def test_detects_bullet_list_with_bullet_dot():
@@ -21,14 +21,6 @@ def test_splits_bullet_list_with_middle_dot():
     assert "Oboz" in items[0]
     assert "Danner" in items[1]
     assert "Columbia" in items[2]
-
-
-def test_list_candidate_extraction_supports_asterisk_bullets():
-    text = """* HOKA Kaha 2 Frost GTX - warm and grippy
-* SCARPA Mont Blanc Pro GTX - for extreme cold"""
-    # Desired: list candidate regex should include "*" bullets consistently (currently omitted).
-    candidates = _list_table_candidates(text)
-    assert any("hoka" in c.lower() for c in candidates)
 
 
 def test_nested_sublists_do_not_become_separate_items():

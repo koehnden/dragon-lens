@@ -21,13 +21,6 @@ from src.constants.text_patterns import (
     CHINESE_COUNT_PATTERNS,
     COMPILED_CHINESE_COUNT_PATTERNS,
 )
-from src.constants.wikidata_industries import (
-    PREDEFINED_INDUSTRIES,
-    find_industry_by_keyword,
-    get_industry_keywords,
-    get_all_industry_keys,
-)
-
 __all__ = [
     "PRODUCT_HINTS",
     "KNOWN_PRODUCTS",
@@ -51,8 +44,4 @@ __all__ = [
     "CHINESE_NUMBERS",
     "CHINESE_COUNT_PATTERNS",
     "COMPILED_CHINESE_COUNT_PATTERNS",
-    "PREDEFINED_INDUSTRIES",
-    "find_industry_by_keyword",
-    "get_industry_keywords",
-    "get_all_industry_keys",
 ]
