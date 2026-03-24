@@ -8,24 +8,18 @@ st.set_page_config(
 
 page = st.sidebar.radio(
     "Navigate",
-    ["Setup & Start", "View Results", "Run Inspector", "Runs History", "Feedback", "API Keys"],
+    ["Dashboard", "New Run", "Run History", "Settings"],
 )
 
-if page == "Setup & Start":
-    from ui.pages import setup
+if page == "Dashboard":
+    from ui.views import dashboard
+    dashboard.show()
+elif page == "New Run":
+    from ui.views import setup
     setup.show()
-elif page == "View Results":
-    from ui.pages import results
-    results.show()
-elif page == "Run Inspector":
-    from ui.pages import run_inspector
-    run_inspector.show()
-elif page == "Runs History":
-    from ui.pages import history
-    history.show()
-elif page == "Feedback":
-    from ui.pages import feedback
-    feedback.show()
-elif page == "API Keys":
-    from ui.pages import api_keys
-    api_keys.show()
+elif page == "Run History":
+    from ui.views import run_history
+    run_history.show()
+elif page == "Settings":
+    from ui.views import settings
+    settings.show()
