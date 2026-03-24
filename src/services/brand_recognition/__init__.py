@@ -13,11 +13,7 @@ from services.brand_recognition.models import (
     ExtractionResult,
     ExtractionQuality,
 )
-from services.brand_recognition.orchestrator import (
-    extract_entities,
-    canonicalize_entities,
-)
-from services.brand_recognition.candidate_generator import generate_candidates
+from services.brand_recognition.orchestrator import extract_entities
 from services.brand_recognition.classification import (
     is_likely_brand,
     is_likely_product,
@@ -34,27 +30,6 @@ from services.brand_recognition.brand_extractor import (
     _parse_extraction_response,
     _build_extraction_system_prompt,
     _build_extraction_prompt,
-)
-from services.brand_recognition.entity_validator import (
-    _filter_candidates_simple,
-    _filter_candidates_with_qwen,
-    _verify_entity_with_qwen,
-)
-from services.brand_recognition.brand_extractor import (
-    _check_wikidata_brand,
-    _check_wikidata_product,
-)
-from services.brand_recognition.clustering import (
-    _simple_clustering,
-    _cluster_with_embeddings,
-    _llm_assisted_clustering,
-    _split_clusters_by_type,
-)
-from services.brand_recognition.candidate_generator import (
-    _regex_candidates,
-    _default_alias_table,
-    _alias_hits,
-    _list_table_candidates,
 )
 from constants import GENERIC_TERMS, KNOWN_PRODUCTS, PRODUCT_HINTS
 from services.brand_recognition.text_utils import (
@@ -78,16 +53,9 @@ from services.brand_recognition.list_processor import (
 from services.brand_recognition.config import (
     ENABLE_QWEN_FILTERING,
     ENABLE_QWEN_EXTRACTION,
-    ENABLE_EMBEDDING_CLUSTERING,
-    ENABLE_LLM_CLUSTERING,
-    ENABLE_WIKIDATA_NORMALIZATION,
-    ENABLE_BRAND_VALIDATION,
-    ENABLE_CONFIDENCE_VERIFICATION,
     AMBIGUOUS_CONFIDENCE_THRESHOLD,
-    OLLAMA_EMBEDDING_MODEL,
 )
 
-# Backward-compatible compatibility hook for older tests and scripts.
 KNOWN_BRANDS: set[str] = set()
 
 __all__ = [
@@ -100,8 +68,6 @@ __all__ = [
 
     # Main API functions
     "extract_entities",
-    "canonicalize_entities",
-    "generate_candidates",
 
     # Classification functions
     "is_likely_brand",
@@ -117,8 +83,6 @@ __all__ = [
     "_parse_extraction_response",
     "_build_extraction_system_prompt",
     "_build_extraction_prompt",
-    "_check_wikidata_brand",
-    "_check_wikidata_product",
 
     # Text utilities
     "normalize_text_for_ner",
@@ -137,17 +101,6 @@ __all__ = [
     "extract_primary_entities_from_list_item",
     "parse_expected_count",
     "get_list_item_count",
-    "_regex_candidates",
-    "_default_alias_table",
-    "_alias_hits",
-    "_list_table_candidates",
-    "_filter_candidates_simple",
-    "_filter_candidates_with_qwen",
-    "_verify_entity_with_qwen",
-    "_simple_clustering",
-    "_cluster_with_embeddings",
-    "_llm_assisted_clustering",
-    "_split_clusters_by_type",
     "GENERIC_TERMS",
     "KNOWN_BRANDS",
     "KNOWN_PRODUCTS",
@@ -156,11 +109,5 @@ __all__ = [
     # Configuration
     "ENABLE_QWEN_FILTERING",
     "ENABLE_QWEN_EXTRACTION",
-    "ENABLE_EMBEDDING_CLUSTERING",
-    "ENABLE_LLM_CLUSTERING",
-    "ENABLE_WIKIDATA_NORMALIZATION",
-    "ENABLE_BRAND_VALIDATION",
-    "ENABLE_CONFIDENCE_VERIFICATION",
     "AMBIGUOUS_CONFIDENCE_THRESHOLD",
-    "OLLAMA_EMBEDDING_MODEL",
 ]
