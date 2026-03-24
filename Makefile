@@ -1,4 +1,4 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen test test-unit test-integration test-smoke run start-db start-redis flush-redis start-sentiment start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi logs-sentiment
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen test test-unit test-integration test-smoke run start-db start-redis flush-redis start-sentiment start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi logs-sentiment eval-extraction eval-consolidation
 
 # Default target
 .DEFAULT_GOAL := help
@@ -44,7 +44,7 @@ NC := \033[0m # No Color
 help: ## Show this help message
 	@echo "$(GREEN)DragonLens - Available Make Targets$(NC)"
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-25s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 
 check-deps: ## Check if all dependencies are installed
@@ -389,6 +389,42 @@ test-integration: check-deps ## Run integration tests only
 test-smoke: check-deps ## Run smoke tests only
 	@echo "$(YELLOW)Running smoke tests...$(NC)"
 	@poetry run pytest tests/smoke/ -v -s
+
+# =============================================================================
+# Extraction Evaluation
+# =============================================================================
+
+EVAL_CSV ?= data/gold_pairs_chatgpt.csv
+EVAL_CACHE ?= data/extraction_cache.json
+
+eval-extraction: ## Run extraction evaluation and cache results (slow, requires Ollama)
+	@echo "$(YELLOW)Running extraction evaluation...$(NC)"
+	@echo "$(YELLOW)This runs the full Qwen extraction pipeline and saves results for consolidation experiments.$(NC)"
+	@echo ""
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
+		--csv $(EVAL_CSV) --save-extraction $(EVAL_CACHE) $(EVAL_ARGS)
+
+eval-consolidation: ## Run consolidation evaluation on cached extraction (fast, requires OpenRouter)
+	@if [ ! -f $(EVAL_CACHE) ]; then \
+		echo "$(RED)Error: No extraction cache found at $(EVAL_CACHE)$(NC)"; \
+		echo "$(YELLOW)Run 'make eval-extraction' first to generate the cache.$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)Running consolidation evaluation on cached extraction...$(NC)"
+	@echo ""
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
+		--csv $(EVAL_CSV) --load-extraction $(EVAL_CACHE) --deepseek $(EVAL_ARGS)
+
+eval-consolidation-no-diapers: ## Run consolidation evaluation excluding Diapers vertical
+	@if [ ! -f $(EVAL_CACHE) ]; then \
+		echo "$(RED)Error: No extraction cache found at $(EVAL_CACHE)$(NC)"; \
+		echo "$(YELLOW)Run 'make eval-extraction' first to generate the cache.$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)Running consolidation evaluation (excluding Diapers)...$(NC)"
+	@echo ""
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
+		--csv $(EVAL_CSV) --load-extraction $(EVAL_CACHE) --deepseek --exclude-vertical Diapers $(EVAL_ARGS)
 
 test-coverage: check-deps ## Run tests with coverage report
 	@echo "$(YELLOW)Running tests with coverage...$(NC)"

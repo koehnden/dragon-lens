@@ -26,10 +26,6 @@ from services.brand_recognition.brand_extractor import (
     _has_product_patterns,
     _calculate_brand_confidence,
     _calculate_product_confidence,
-    _extract_entities_with_qwen,
-    _parse_extraction_response,
-    _build_extraction_system_prompt,
-    _build_extraction_prompt,
 )
 from constants import GENERIC_TERMS, KNOWN_PRODUCTS, PRODUCT_HINTS
 from services.brand_recognition.text_utils import (

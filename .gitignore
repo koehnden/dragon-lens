@@ -134,6 +134,7 @@ celerybeat.pid
 # DragonLens runtime files
 *.pid
 dragonlens.db*
+data/extraction_cache.json
 
 # SageMath parsed files
 *.sage.py
@@ -212,8 +213,6 @@ marimo/_lsp/
 __marimo__/
 
 # ai tools
-CLAUDE.md
-AGENTS.md
 prompt.md
 .claude/
 .clinerules/
