@@ -1,0 +1,35 @@
+{
+  "vertical_name": "Premium Skincare",
+  "vertical_description": "Chinese consumer skincare purchase-intent prompts (anti-aging, sensitive skin, budget tiers, ingredient-focused, seasonal, demographic-specific, wedding prep, men's skincare)",
+  "brands": [
+    {
+      "display_name": "Estée Lauder",
+      "aliases": {
+        "zh": ["雅诗兰黛", "雅诗兰黛（Estée Lauder）"],
+        "en": ["Estée Lauder", "Estee Lauder", "EL"]
+      }
+    }
+  ],
+  "prompts": [
+    {"text_zh": "我刚25，同事说该开始抗初老了，但我完全不懂从哪入手——入门级抗老精华推荐哪些？请给TOP10并说说适合什么肤质。", "language_original": "zh"},
+    {"text_zh": "过了30明显感觉皮肤没以前紧了，法令纹也出来了，抗皱紧致的面霜或精华哪些真的有效？请推荐TOP10。", "language_original": "zh"},
+    {"text_zh": "我妈40多了，脸上松弛下垂挺明显的，想给她挑点提拉紧致的护肤品——哪些效果最好？请推荐TOP10并说说多久能看到变化。", "language_original": "zh"},
+    {"text_zh": "我是敏感肌，换个护肤品就容易泛红刺痛，踩过太多雷了——有哪些真正温和不刺激的护肤品？请推荐TOP10。", "language_original": "zh"},
+    {"text_zh": "一到换季我脸就爆干起皮，普通保湿根本不够用——保湿修护效果最强的面霜/精华推荐哪些？请给TOP10。", "language_original": "zh"},
+    {"text_zh": "夏天我T区出油能煎蛋，毛孔也越来越粗——控油缩毛孔的护肤品有什么好用的？请推荐TOP10。", "language_original": "zh"},
+    {"text_zh": "我是成分党，最近想试A醇/视黄醇但怕烂脸，哪些精华浓度合适、比较温和？请推荐TOP10并说说怎么建立耐受。", "language_original": "zh"},
+    {"text_zh": "脸上有些痘印和暗沉，听说烟酰胺美白淡斑挺好——哪些烟酰胺精华效果最明显？请给TOP10。", "language_original": "zh"},
+    {"text_zh": "刚毕业工资不高，想配一套完整的护肤流程（水+精华+乳+霜），预算1000以内能搞定吗？请推荐TOP10方案。", "language_original": "zh"},
+    {"text_zh": "年终奖到了想犒劳自己，入手一套贵妇级护肤品——哪些高端面霜/精华是真的好、不是交智商税？请推荐TOP10。", "language_original": "zh"},
+    {"text_zh": "下个月结婚了，想这一个月突击护肤让皮肤状态拉满——密集护理用什么产品最有效？请给TOP10并说说使用顺序。", "language_original": "zh"},
+    {"text_zh": "生完宝宝以后皮肤暗沉还长了好多斑，但在哺乳期怕用的东西不安全——哪些护肤品哺乳期能放心用又有效？请给TOP10。", "language_original": "zh"},
+    {"text_zh": "我男朋友脸经常出油冒痘但从来不护肤，想帮他搞一套简单的——三步搞定的男士护肤品推荐TOP10。", "language_original": "zh"},
+    {"text_zh": "最近天天加班到半夜，脸色又暗又黄同事都说我气色差——提亮肤色最有效的护肤品推荐哪些？请给TOP10。", "language_original": "zh"},
+    {"text_zh": "我痘痘反反复复好几年了，好了又冒太崩溃了——祛痘控痘的护肤品推荐TOP10，哪些适合什么类型的痘痘？", "language_original": "zh"},
+    {"text_zh": "我黑眼圈重到遮瑕都盖不住，眼角还开始有细纹了——眼霜/眼部精华哪些真的管用？请给TOP10。", "language_original": "zh"},
+    {"text_zh": "我知道防晒很重要但用过的不是搓泥就是闷痘——有没有好用的防晒霜推荐？请给TOP10并说说适合什么肤质。", "language_original": "zh"},
+    {"text_zh": "每年一到秋冬我皮肤就作妖，又干又敏感——换季维稳修护用什么精华/面霜最靠谱？请推荐TOP10。", "language_original": "zh"},
+    {"text_zh": "我还在上学没什么钱，200块以下有没有好用的护肤品？请给TOP10并说说学生党怎么护肤最省钱有效。", "language_original": "zh"},
+    {"text_zh": "闺蜜说现在国货护肤品不比国际大牌差，真的吗？请分别推荐TOP5最值得买的国货和TOP5国际品牌，帮我对比一下。", "language_original": "zh"}
+  ]
+}

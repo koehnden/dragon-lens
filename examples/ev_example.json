@@ -1,0 +1,35 @@
+{
+  "vertical_name": "Electric Cars",
+  "vertical_description": "Chinese consumer EV purchase-intent prompts (family use, commute range, budget tiers, charging, winter performance, safety, tech features, resale value)",
+  "brands": [
+    {
+      "display_name": "Tesla",
+      "aliases": {
+        "zh": ["特斯拉", "TESLA"],
+        "en": ["Tesla", "TESLA"]
+      }
+    }
+  ],
+  "prompts": [
+    {"text_zh": "我家在郊区，每天通勤来回40公里，周末带娃去公园，预算20万左右想买台纯电车，你觉得哪些比较合适？请推荐TOP10并说明理由。", "language_original": "zh"},
+    {"text_zh": "手里有30万出头的预算，想换一台有品质感、坐着舒服的电动车，不想买完就后悔——你推荐哪些？请给TOP10。", "language_original": "zh"},
+    {"text_zh": "预算不太受限，想买台真正高端的纯电车犒劳自己，哪些开出去有面子、体验也确实好？请推荐TOP10并说清楚各自亮点。", "language_original": "zh"},
+    {"text_zh": "我一直开油车，第一次考虑换电车，说实话有点怕踩坑——哪些电动车最适合电车小白入手？请给TOP10并说说为什么适合新手。", "language_original": "zh"},
+    {"text_zh": "家里老人腿脚不好上下车费劲，小孩要装安全座椅，后排空间和舒适性对我来说排第一，哪些电动车后排体验最好？请推荐TOP10。", "language_original": "zh"},
+    {"text_zh": "我每天单程通勤55公里，冬天开暖风续航还得打折，哪些电动车续航比较实在、冬天也扛得住？请推荐TOP10并说说真实续航。", "language_original": "zh"},
+    {"text_zh": "我在哈尔滨，冬天零下二三十度是常态，最怕电车趴窝——哪些电动车冬季衰减少、热管理靠谱？请给TOP10并说明原因。", "language_original": "zh"},
+    {"text_zh": "我住的小区物业不让装充电桩，只能靠外面公共桩，哪些电动车充电快、补能方便、不用排太久队？请推荐TOP10。", "language_original": "zh"},
+    {"text_zh": "我纠结了好久到底买纯电还是插混，两种各有什么坑？能不能纯电和插混分别推荐TOP5最值得买的，帮我理清楚。", "language_original": "zh"},
+    {"text_zh": "家里有小孩，安全是我买车的底线——哪些电动车碰撞成绩好、主动安全配置齐全？请推荐TOP10。", "language_original": "zh"},
+    {"text_zh": "我经常堵车通勤，想要辅助驾驶真正好用、不是花架子的电动车，哪些实际体验最靠谱？请推荐TOP10并说说各自的水平。", "language_original": "zh"},
+    {"text_zh": "我比较在意车机体验，讨厌卡顿和语音助手听不懂——哪些电动车的智能座舱做得好？请给TOP10并说明体验。", "language_original": "zh"},
+    {"text_zh": "我是女生，主要在市区代步接送孩子，想要好停车、颜值在线、开起来轻松的电动车，有什么推荐？请给TOP10。", "language_original": "zh"},
+    {"text_zh": "刚工作两年攒了点钱，想买第一台车，喜欢科技感和推背感——哪些电动车开起来最爽？请推荐TOP10。", "language_original": "zh"},
+    {"text_zh": "我经常周末跑高速去周边城市玩，最怕半路没电干等充电——哪些电动车高速续航扎实、服务区充电快？请推荐TOP10。", "language_original": "zh"},
+    {"text_zh": "我计划开个三五年就换车，听说电车贬值快，哪些电动车保值率还不错、到时候好出手？请给TOP10并分析原因。", "language_original": "zh"},
+    {"text_zh": "我不懂修车，就怕买了电车以后小毛病不断、去一趟售后心累——哪些品牌质量口碑好、售后省心？请给TOP10。", "language_original": "zh"},
+    {"text_zh": "最近迷上露营自驾，想买台能外放电、后备箱能装下帐篷和装备的电动车，有什么好推荐？请给TOP10。", "language_original": "zh"},
+    {"text_zh": "我跟老婆共用一台车，工作日通勤、周末带全家出去玩，需要一台什么都能干的电动车——推荐TOP10最全能的。", "language_original": "zh"},
+    {"text_zh": "最近新车扎堆上市看花眼了，2024到2025年的新款电动车里，哪些最值得等、最值得买？请给TOP10并说说各自核心卖点。", "language_original": "zh"}
+  ]
+}
