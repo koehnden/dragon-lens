@@ -1,8 +1,8 @@
 import httpx
 import streamlit as st
 
-from config import settings
 from ui.prompt_parser import parse_prompt_entries
+from ui.api import api_url
 
 
 def show():
@@ -169,7 +169,7 @@ def show():
         try:
             with st.spinner("Creating tracking job..."):
                 response = httpx.post(
-                    f"http://localhost:{settings.api_port}/api/v1/tracking/jobs",
+                    api_url("/api/v1/tracking/jobs"),
                     json=payload,
                     timeout=30.0,
                 )

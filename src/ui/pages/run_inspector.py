@@ -4,7 +4,7 @@ import logging
 import httpx
 import streamlit as st
 
-from config import settings
+from ui.api import api_url
 from ui.utils.run_formatting import format_run_option_label
 
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 def _fetch_available_models(vertical_id: int) -> list[str]:
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/verticals/{vertical_id}/models",
+            api_url(f"/api/v1/verticals/{vertical_id}/models"),
             timeout=10.0,
         )
         response.raise_for_status()
@@ -124,7 +124,7 @@ def _render_run_details(run_details: dict) -> None:
 
 def _fetch_run_export(run_id: int) -> list[dict]:
     response = httpx.get(
-        f"http://localhost:{settings.api_port}/api/v1/tracking/runs/{run_id}/inspector-export",
+        api_url(f"/api/v1/tracking/runs/{run_id}/inspector-export"),
         timeout=30.0,
     )
     response.raise_for_status()
@@ -133,7 +133,7 @@ def _fetch_run_export(run_id: int) -> list[dict]:
 
 def _fetch_vertical_export(vertical_id: int) -> list[dict]:
     response = httpx.get(
-        f"http://localhost:{settings.api_port}/api/v1/verticals/{vertical_id}/inspector-export",
+        api_url(f"/api/v1/verticals/{vertical_id}/inspector-export"),
         timeout=60.0,
     )
     response.raise_for_status()
@@ -146,7 +146,7 @@ def show():
 
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/verticals",
+            api_url("/api/v1/verticals"),
             timeout=10.0,
         )
         response.raise_for_status()
@@ -194,7 +194,7 @@ def show():
             params["model_name"] = model_param
 
         runs_response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/tracking/runs",
+            api_url("/api/v1/tracking/runs"),
             params=params,
             timeout=10.0,
         )
@@ -225,7 +225,7 @@ def show():
 
         with st.spinner("Loading run details..."):
             details_response = httpx.get(
-                f"http://localhost:{settings.api_port}/api/v1/tracking/runs/{selected_run_id}/details",
+                api_url(f"/api/v1/tracking/runs/{selected_run_id}/details"),
                 timeout=30.0,
             )
             details_response.raise_for_status()

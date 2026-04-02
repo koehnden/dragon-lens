@@ -1,17 +1,33 @@
 import streamlit as st
 
+from config import settings
+
 st.set_page_config(
     page_title="DragonLens - Brand Visibility Tracker",
     page_icon="🐉",
     layout="wide",
 )
 
-page = st.sidebar.radio(
-    "Navigate",
-    ["Setup & Start", "View Results", "Run Inspector", "Runs History", "Feedback", "API Keys"],
-)
+public_pages = ["Demo Overview", "View Results", "Run Inspector", "Runs History"]
+local_pages = [
+    "Setup & Start",
+    "View Results",
+    "Run Inspector",
+    "Runs History",
+    "Feedback",
+    "API Keys",
+]
+pages = public_pages if settings.is_public_demo else local_pages
 
-if page == "Setup & Start":
+page = st.sidebar.radio("Navigate", pages)
+
+if settings.is_public_demo:
+    st.sidebar.caption("Public demo mode")
+
+if page == "Demo Overview":
+    from ui.pages import demo
+    demo.show()
+elif page == "Setup & Start":
     from ui.pages import setup
     setup.show()
 elif page == "View Results":

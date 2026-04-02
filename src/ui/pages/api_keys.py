@@ -1,8 +1,8 @@
 import httpx
 import streamlit as st
 
-from config import settings
 from models.domain import LLMProvider
+from ui.api import api_url
 
 
 def show():
@@ -14,7 +14,7 @@ def show():
     # Check if API keys are available
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/api-keys",
+            api_url("/api/v1/api-keys"),
             timeout=10.0,
         )
         if response.status_code == 200:
@@ -57,7 +57,7 @@ def show():
         try:
             with st.spinner("Saving API key..."):
                 response = httpx.post(
-                    f"http://localhost:{settings.api_port}/api/v1/api-keys",
+                    api_url("/api/v1/api-keys"),
                     json=payload,
                     timeout=30.0,
                 )
@@ -96,7 +96,7 @@ def show():
                                 "is_active": not key["is_active"],
                             }
                             response = httpx.put(
-                                f"http://localhost:{settings.api_port}/api/v1/api-keys/{key['id']}",
+                                api_url(f"/api/v1/api-keys/{key['id']}"),
                                 json=update_payload,
                                 timeout=30.0,
                             )
@@ -109,7 +109,7 @@ def show():
                     if st.button("🗑️ Delete", key=f"delete_{key['id']}"):
                         try:
                             response = httpx.delete(
-                                f"http://localhost:{settings.api_port}/api/v1/api-keys/{key['id']}",
+                                api_url(f"/api/v1/api-keys/{key['id']}"),
                                 timeout=30.0,
                             )
                             response.raise_for_status()

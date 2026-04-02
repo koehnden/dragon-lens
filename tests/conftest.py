@@ -45,6 +45,7 @@ os.environ.setdefault("ENCRYPTION_SECRET_KEY", "test-secret-key")
 def _routers():
     try:
         from api.routers import (
+            admin,
             api_keys,
             consolidation,
             feedback,
@@ -55,6 +56,7 @@ def _routers():
         )
     except ImportError:
         from src.api.routers import (
+            admin,
             api_keys,
             consolidation,
             feedback,
@@ -63,7 +65,16 @@ def _routers():
             tracking,
             verticals,
         )
-    return api_keys, consolidation, feedback, knowledge, metrics, tracking, verticals
+    return (
+        admin,
+        api_keys,
+        consolidation,
+        feedback,
+        knowledge,
+        metrics,
+        tracking,
+        verticals,
+    )
 
 
 def _models():
@@ -144,46 +155,16 @@ def db(db_session: Session) -> Session:
 
 @pytest.fixture(scope="function")
 def test_app():
-    Base, get_db = _models()
-    KnowledgeBase, get_knowledge_db, get_knowledge_db_write, _ = _knowledge_models()
-    api_keys, consolidation, feedback, knowledge, metrics, tracking, verticals = (
-        _routers()
-    )
+    try:
+        from api.app import create_app
+    except ImportError:
+        from src.api.app import create_app
 
     @asynccontextmanager
     async def test_lifespan(app: FastAPI) -> AsyncGenerator:
         yield
 
-    app = FastAPI(
-        title="DragonLens Test",
-        description="Track brand visibility in Chinese LLMs",
-        version="0.1.0",
-        lifespan=test_lifespan,
-    )
-
-    app.include_router(verticals.router, prefix="/api/v1/verticals", tags=["verticals"])
-    app.include_router(tracking.router, prefix="/api/v1/tracking", tags=["tracking"])
-    app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
-    app.include_router(api_keys.router, prefix="/api/v1", tags=["api-keys"])
-    app.include_router(
-        consolidation.router, prefix="/api/v1/consolidation", tags=["consolidation"]
-    )
-    app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"])
-    app.include_router(knowledge.router, prefix="/api/v1", tags=["knowledge"])
-
-    @app.get("/")
-    async def root():
-        return {
-            "name": "DragonLens",
-            "version": "0.1.0",
-            "status": "running",
-        }
-
-    @app.get("/health")
-    async def health():
-        return {"status": "healthy"}
-
-    return app
+    return create_app(app_lifespan=test_lifespan)
 
 
 @pytest.fixture(scope="function")

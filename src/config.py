@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     app_name: str = "DragonLens"
     debug: bool = False
+    app_mode: Literal["local_admin", "public_demo"] = "local_admin"
+    backend_api_base_url: Optional[str] = None
 
     database_url: str = (
         "postgresql+psycopg://dragonlens:dragonlens@localhost:5432/dragonlens"
@@ -69,6 +71,12 @@ class Settings(BaseSettings):
     streamlit_port: int = 8501
 
     encryption_secret_key: str = "ENCRYPTION_SECRET_KEY_NOT_SET_PLEASE_SET_IN_ENV"
+    admin_api_token: Optional[str] = None
+    knowledge_sync_enabled: bool = False
+    knowledge_sync_url: Optional[str] = None
+    knowledge_sync_token: Optional[str] = None
+    demo_publish_url: Optional[str] = None
+    demo_publish_token: Optional[str] = None
 
     parallel_llm_enabled: bool = True
     remote_llm_concurrency: int = 3
@@ -79,6 +87,20 @@ class Settings(BaseSettings):
 
     batch_translation_enabled: bool = True
     batch_translation_max_size: int = 20
+
+    @property
+    def is_public_demo(self) -> bool:
+        return self.app_mode == "public_demo"
+
+    @property
+    def resolved_backend_api_base_url(self) -> str:
+        if self.backend_api_base_url:
+            return self.backend_api_base_url.rstrip("/")
+        return f"http://localhost:{self.api_port}"
+
+    @property
+    def resolved_knowledge_database_url(self) -> str:
+        return (self.knowledge_database_url or self.database_url).strip()
 
 
 settings = Settings()

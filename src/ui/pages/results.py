@@ -2,7 +2,6 @@ import httpx
 import pandas as pd
 import streamlit as st
 
-from config import settings
 from ui.components.charts import (
     render_metrics_comparison_bar,
     render_positioning_matrix,
@@ -12,12 +11,13 @@ from ui.components.charts import (
     render_sov_treemap,
 )
 from ui.components.insights import render_insights, render_opportunity_analysis
+from ui.api import api_url
 
 
 def _fetch_available_models(vertical_id: int) -> list[str]:
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/verticals/{vertical_id}/models",
+            api_url(f"/api/v1/verticals/{vertical_id}/models"),
             timeout=10.0,
         )
         response.raise_for_status()
@@ -33,7 +33,7 @@ def _fetch_metrics(vertical_id: int, model_name: str, view_mode: str) -> dict | 
 
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}{endpoint}",
+            api_url(endpoint),
             params={"vertical_id": vertical_id, "model_name": model_name},
             timeout=30.0,
         )
@@ -46,7 +46,7 @@ def _fetch_metrics(vertical_id: int, model_name: str, view_mode: str) -> dict | 
 def _fetch_latest_completed_run(vertical_id: int, model_name: str) -> dict | None:
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/tracking/runs",
+            api_url("/api/v1/tracking/runs"),
             params={"vertical_id": vertical_id, "model_name": model_name, "limit": 50},
             timeout=10.0,
         )
@@ -63,7 +63,7 @@ def _fetch_latest_completed_run(vertical_id: int, model_name: str) -> dict | Non
 def _fetch_run_brand_metrics(run_id: int) -> dict | None:
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}",
+            api_url(f"/api/v1/metrics/run/{run_id}"),
             timeout=30.0,
         )
         response.raise_for_status()
@@ -76,7 +76,7 @@ def _fetch_run_brand_metrics(run_id: int) -> dict | None:
 def _fetch_run_product_metrics(run_id: int) -> dict | None:
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}/products",
+            api_url(f"/api/v1/metrics/run/{run_id}/products"),
             timeout=30.0,
         )
         response.raise_for_status()
@@ -88,7 +88,7 @@ def _fetch_run_product_metrics(run_id: int) -> dict | None:
 def _fetch_run_comparison(run_id: int, include_snippets: bool) -> dict | None:
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}/comparison",
+            api_url(f"/api/v1/metrics/run/{run_id}/comparison"),
             params={
                 "include_snippets": include_snippets,
                 "limit_entities": 50,
@@ -105,7 +105,7 @@ def _fetch_run_comparison(run_id: int, include_snippets: bool) -> dict | None:
 def _fetch_run_comparison_summary(run_id: int, include_prompt_details: bool) -> dict | None:
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/metrics/run/{run_id}/comparison/summary",
+            api_url(f"/api/v1/metrics/run/{run_id}/comparison/summary"),
             params={
                 "include_prompt_details": include_prompt_details,
                 "limit_prompts": 100,
@@ -121,7 +121,7 @@ def _fetch_run_comparison_summary(run_id: int, include_prompt_details: bool) -> 
 def _fetch_user_brands(vertical_id: int) -> list[str]:
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/verticals/{vertical_id}/brands",
+            api_url(f"/api/v1/verticals/{vertical_id}/brands"),
             params={"user_input_only": True},
             timeout=10.0,
         )
@@ -495,7 +495,7 @@ def show():
 
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/verticals",
+            api_url("/api/v1/verticals"),
             timeout=10.0,
         )
         response.raise_for_status()

@@ -2,7 +2,7 @@ import httpx
 import pandas as pd
 import streamlit as st
 
-from config import settings
+from ui.api import api_url
 
 
 def show():
@@ -14,7 +14,7 @@ def show():
     with col1:
         try:
             response = httpx.get(
-                f"http://localhost:{settings.api_port}/api/v1/verticals",
+                api_url("/api/v1/verticals"),
                 timeout=10.0,
             )
             response.raise_for_status()
@@ -43,7 +43,7 @@ def show():
             params["model_name"] = model_filter
 
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/tracking/runs",
+            api_url("/api/v1/tracking/runs"),
             params=params,
             timeout=30.0,
         )
@@ -119,7 +119,7 @@ def show():
         if st.button("Load Run Details"):
             try:
                 response = httpx.get(
-                    f"http://localhost:{settings.api_port}/api/v1/tracking/runs/{run_id}",
+                    api_url(f"/api/v1/tracking/runs/{run_id}"),
                     timeout=10.0,
                 )
                 response.raise_for_status()
