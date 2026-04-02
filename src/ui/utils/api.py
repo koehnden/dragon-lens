@@ -29,15 +29,13 @@ def fetch_available_models(vertical_id: int) -> list[str]:
     return fetch_json(f"/api/v1/verticals/{vertical_id}/models", timeout=10.0) or []
 
 
-def fetch_user_brands(vertical_id: int) -> list[str]:
+def fetch_user_brands(vertical_id: int) -> list[dict]:
     brands = fetch_json(
         f"/api/v1/verticals/{vertical_id}/brands",
         params={"user_input_only": True},
         timeout=10.0,
     )
-    if not brands:
-        return []
-    return [b["display_name"] for b in brands]
+    return brands or []
 
 _MODEL_SHORT_NAMES: dict[str, str] = {
     "qwen2.5:7b-instruct-q4_0": "Qwen 7B",

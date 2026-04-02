@@ -4,7 +4,7 @@ import streamlit as st
 from ui.utils.api import fetch_json
 
 
-def _build_prompt_coverage(run_details: dict, user_brand: str) -> pd.DataFrame:
+def _build_prompt_coverage(run_details: dict, brand_id: int) -> pd.DataFrame:
     rows: list[dict] = []
     for answer in run_details.get("answers") or []:
         prompt_text = answer.get("prompt_text_en") or answer.get("prompt_text_zh") or ""
@@ -14,7 +14,7 @@ def _build_prompt_coverage(run_details: dict, user_brand: str) -> pd.DataFrame:
         mentions = answer.get("mentions") or []
         brand_mentions = [
             m for m in mentions
-            if m.get("brand_name") == user_brand and m.get("mentioned")
+            if m.get("brand_id") == brand_id and m.get("mentioned")
         ]
 
         if brand_mentions:
@@ -45,8 +45,8 @@ def _build_prompt_coverage(run_details: dict, user_brand: str) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def render_prompt_gaps(run_id: int, user_brand: str | None) -> None:
-    if not user_brand:
+def render_prompt_gaps(run_id: int, brand_id: int | None) -> None:
+    if not brand_id:
         st.info("Select a brand to see prompt coverage.")
         return
 
@@ -55,7 +55,7 @@ def render_prompt_gaps(run_id: int, user_brand: str | None) -> None:
         st.info("Run details not available.")
         return
 
-    df = _build_prompt_coverage(run_details, user_brand)
+    df = _build_prompt_coverage(run_details, brand_id)
     if df.empty:
         st.info("No prompt data available for this run.")
         return

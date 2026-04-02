@@ -218,6 +218,7 @@ def _render_dashboard_content(
     run_id: int | None,
     vertical_id: int | None = None,
     available_models: list[str] | None = None,
+    user_brand_id: int | None = None,
 ) -> None:
     _render_executive_scorecard(df, name_col, user_brand)
     st.markdown("---")
@@ -237,7 +238,7 @@ def _render_dashboard_content(
 
     if run_id:
         with st.expander("Prompt Coverage Analysis", expanded=False):
-            render_prompt_gaps(run_id, user_brand)
+            render_prompt_gaps(run_id, user_brand_id)
 
     if comparison or comparison_summary:
         with st.expander("Comparison Details"):
@@ -265,8 +266,9 @@ def show() -> None:
         view_mode = st.radio("View Mode", ["Brand", "Product"], horizontal=True)
 
     model_param = "all" if selected_model == "All" else selected_model
-    user_brands = fetch_user_brands(selected_vertical_id)
-    user_brand = user_brands[0] if user_brands else None
+    user_brand_records = fetch_user_brands(selected_vertical_id)
+    user_brand = user_brand_records[0]["display_name"] if user_brand_records else None
+    user_brand_id = user_brand_records[0]["id"] if user_brand_records else None
 
     comparison = None
     comparison_summary = None
@@ -314,8 +316,9 @@ def show() -> None:
     df = pd.DataFrame(items)
     name_col = "brand_name" if view_mode == "Brand" else "product_name"
 
-    if view_mode == "Product" and user_brands:
-        user_products = df[df["brand_name"].isin(user_brands)]["product_name"].tolist()
+    user_brand_names = [b["display_name"] for b in user_brand_records]
+    if view_mode == "Product" and user_brand_names:
+        user_products = df[df["brand_name"].isin(user_brand_names)]["product_name"].tolist()
         user_entity = user_products[0] if user_products else None
     else:
         user_entity = user_brand
@@ -323,4 +326,5 @@ def show() -> None:
     _render_dashboard_content(
         df, name_col, user_entity, comparison, comparison_summary, run_id,
         vertical_id=selected_vertical_id, available_models=available_models,
+        user_brand_id=user_brand_id,
     )
