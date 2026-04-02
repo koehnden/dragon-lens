@@ -41,7 +41,7 @@ class KimiService(OpenAICompatibleService):
     temperature = 0.6
     max_tokens = 2000
     system_prompt = "你是一个中文助手，请用中文回答所有问题。"
-    SUPPORTED_MODELS = [
+    KNOWN_MODELS = [
         "kimi-k2.5",
         "kimi-k2-turbo-preview",
         "moonshot-v1-8k",
@@ -57,8 +57,8 @@ class KimiService(OpenAICompatibleService):
         return any(k2 in model_name.lower() for k2 in ["kimi-k2", "k2-"])
 
     def validate_model(self, model: str) -> None:
-        if model not in self.SUPPORTED_MODELS:
-            raise ValueError(f"Unsupported Kimi model: {model}")
+        if model not in self.KNOWN_MODELS:
+            logger.warning(f"Passing through unrecognized Kimi model ID: {model}")
 
     async def query(
         self,
