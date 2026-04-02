@@ -72,10 +72,11 @@ class TrackingJobCreate(BaseModel):
     brands: List[BrandCreate] = Field(default_factory=list)
     prompts: List[PromptCreate]
     provider: str = Field(
-        default="qwen", description="LLM provider (qwen, deepseek, kimi, openrouter)"
+        default="deepseek",
+        description="LLM provider (deepseek, kimi, openrouter, or qwen for internal/test use)",
     )
     model_name: str = Field(
-        default="qwen2.5:7b-instruct-q4_0",
+        default="deepseek-chat",
         description="Specific model name or OpenRouter model ID",
     )
     reuse_answers: bool = Field(

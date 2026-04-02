@@ -40,11 +40,17 @@ def fetch_user_brands(vertical_id: int) -> list[str]:
 _MODEL_SHORT_NAMES: dict[str, str] = {
     "qwen2.5:7b-instruct-q4_0": "Qwen 7B",
     "qwen/qwen-2.5-72b-instruct": "Qwen 72B",
-    "deepseek-chat": "DeepSeek",
-    "kimi-k2-turbo-preview": "Kimi",
-    "baidu/ernie-4.5-300b-a47b": "ERNIE",
-    "bytedance-seed/seed-1.6": "Seed",
-    "minimax/minimax-m2.1": "MiniMax",
+    "qwen/qwen3.5-plus-02-15": "Qwen 3.5 Plus",
+    "deepseek-chat": "DeepSeek V3.2",
+    "kimi-k2.5": "Kimi K2.5",
+    "kimi-k2-turbo-preview": "Kimi K2 Turbo",
+    "moonshotai/kimi-k2.5": "Kimi K2.5",
+    "baidu/ernie-4.5-300b-a47b": "ERNIE 4.5 300B",
+    "baidu/ernie-4.5-21b-a3b": "ERNIE 4.5",
+    "bytedance-seed/seed-1.6": "Seed 1.6",
+    "bytedance-seed/seed-2.0-lite": "Seed 2.0",
+    "minimax/minimax-m2.1": "MiniMax M2.1",
+    "minimax/minimax-m2.5": "MiniMax M2.5",
 }
 
 

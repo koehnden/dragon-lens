@@ -68,7 +68,7 @@ class TestKimiService:
         assert KimiService.provider == LLMProvider.KIMI
 
     def test_has_default_model(self):
-        assert KimiService.default_model == "moonshot-v1-8k"
+        assert KimiService.default_model == "kimi-k2.5"
 
     def test_inherits_openai_compatible_service(self):
         assert issubclass(KimiService, OpenAICompatibleService)
@@ -88,6 +88,22 @@ class TestKimiService:
         assert messages[0]["role"] == "system"
         assert messages[1]["role"] == "user"
         assert messages[1]["content"] == "测试提示"
+
+    def test_validates_current_and_legacy_models(self):
+        service = KimiService()
+
+        valid_models = [
+            "kimi-k2.5",
+            "kimi-k2-turbo-preview",
+            "moonshot-v1-8k",
+            "moonshot-v1-32k",
+            "moonshot-v1-128k",
+        ]
+        for model in valid_models:
+            service.validate_model(model)
+
+        with pytest.raises(ValueError, match="Unsupported Kimi model"):
+            service.validate_model("invalid-model")
 
 
 class TestOpenRouterService:
@@ -158,6 +174,13 @@ class TestLLMRouter:
         router = LLMRouter()
         resolution = router.resolve("openrouter", "MiniMaxAI/MiniMax-M2.1")
         assert resolution.model_name == "minimax/minimax-m2.1"
+        assert resolution.route == LLMRoute.OPENROUTER
+
+    def test_resolve_openrouter_normalizes_new_minimax_model(self, monkeypatch):
+        monkeypatch.setattr(settings, "openrouter_api_key", "test-openrouter")
+        router = LLMRouter()
+        resolution = router.resolve("openrouter", "MiniMaxAI/MiniMax-M2.5")
+        assert resolution.model_name == "minimax/minimax-m2.5"
         assert resolution.route == LLMRoute.OPENROUTER
 
 

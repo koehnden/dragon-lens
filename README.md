@@ -19,8 +19,8 @@ DragonLens fills this gap. It's a visibility tool specifically build for the Chi
 
 ## Key Features
 
-- **Multi-LLM Tracking** — DeepSeek, Kimi, Qwen, Bytedance's seed-1.6, Baiu's ERNIE, MinMax2.1 and many more models via OpenRouter
-- **Local-First** — Runs entirely on your machine with Qwen 2.5 7B via Ollama; no API keys required to get started
+- **Multi-LLM Tracking** — DeepSeek, Kimi K2.5, ByteDance Seed 2.0, Baidu ERNIE 4.5, Qwen 3.5, MiniMax M2.5, and more via OpenRouter
+- **Local Qwen Support** — Keeps Qwen 2.5 7B via Ollama for extraction and low-cost internal test runs while visibility benchmarking uses remote Chinese APIs
 - **Automated NER Pipeline** — Extract brands and products from Chinese responses with multi-stage validation
 - **Visibility Metrics** — Share of Voice, mention rates, ranking positions, sentiment analysis
 - **Bilingual Processing** — Automatic EN/ZH translation for prompts and responses

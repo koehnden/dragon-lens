@@ -85,24 +85,21 @@ def show():
     st.info("Comparison prompts run automatically after the main job (20 product-vs-product prompts, Chinese only).")
 
     st.header("4. LLM Configuration")
+    st.caption(
+        "Local Qwen remains available for internal testing and extraction flows, "
+        "but normal visibility runs use the current remote Chinese model lineup."
+    )
     
     col1, col2 = st.columns(2)
     with col1:
         provider = st.selectbox(
             "LLM Provider",
-            ["qwen", "deepseek", "kimi", "openrouter"],
+            ["deepseek", "kimi", "openrouter"],
             help="Choose which Chinese LLM provider to use",
         )
     
     with col2:
-        if provider == "qwen":
-            model_name = st.selectbox(
-                "Qwen Model",
-                ["qwen2.5:7b-instruct-q4_0", "qwen2.5:14b-instruct-q4_0", "qwen2.5:32b-instruct-q4_0"],
-                help="Select specific Qwen model via Ollama",
-            )
-            st.info("✅ Qwen runs locally via Ollama (no API key needed)")
-        elif provider == "deepseek":
+        if provider == "deepseek":
             model_name = st.selectbox(
                 "DeepSeek Model",
                 ["deepseek-chat", "deepseek-reasoner"],
@@ -112,18 +109,17 @@ def show():
         elif provider == "kimi":
             model_name = st.selectbox(
                 "Kimi Model",
-                ["kimi-k2-turbo-preview", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+                ["kimi-k2.5"],
                 help="Select Kimi model variant (Moonshot API)",
             )
-            st.info("ℹ️ Kimi K2 Turbo is the recommended K2 variant for the Moonshot API.")
+            st.info("ℹ️ Kimi K2.5 is the recommended Moonshot model for visibility runs.")
         elif provider == "openrouter":
             preset_models = [
-                "moonshotai/kimi-k2-0905",
-                "baidu/ernie-4.5-300b-a47b",
-                "bytedance-seed/seed-1.6",
-                "bytedance-seed/seed-1.6-flash",
-                "qwen/qwen-2.5-72b-instruct",
-                "minimax/minimax-m2.1",
+                "bytedance-seed/seed-2.0-lite",
+                "qwen/qwen3.5-plus-02-15",
+                "baidu/ernie-4.5-21b-a3b",
+                "minimax/minimax-m2.5",
+                "moonshotai/kimi-k2.5",
                 "Custom model ID",
             ]
             selected_model = st.selectbox(
