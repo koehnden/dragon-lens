@@ -21,6 +21,21 @@ from constants import GENERIC_TERMS, PRODUCT_HINTS
 
 logger = logging.getLogger(__name__)
 
+
+def _filter_relationships(
+    relationships: Dict[str, str],
+    valid_products: set[str],
+    valid_brands: set[str],
+) -> Dict[str, str]:
+    product_names = {name.casefold() for name in valid_products}
+    brand_names = {name.casefold() for name in valid_brands}
+    return {
+        product: brand
+        for product, brand in relationships.items()
+        if product.casefold() in product_names and brand.casefold() in brand_names
+    }
+
+
 def _calculate_brand_confidence(entity: str, entity_lower: str, vertical: str) -> float:
     """Calculate confidence score for a brand entity."""
     if entity_lower in GENERIC_TERMS:
