@@ -215,12 +215,12 @@ def parse_provider_and_model(provider_arg: str) -> tuple[str, str]:
         "kimi-8k": ("kimi", "moonshot-v1-8k"),
         "kimi-32k": ("kimi", "moonshot-v1-32k"),
         "kimi-128k": ("kimi", "moonshot-v1-128k"),
-        "kimi-k2": ("kimi", "kimi-k2-turbo-preview"),
-        "kimi-k2-or": ("openrouter", "moonshotai/kimi-k2-0905"),
-        "bytedance-seed": ("openrouter", "bytedance-seed/seed-1.6"),
-        "baidu-ernie": ("openrouter", "baidu/ernie-4.5-300b-a47b"),
-        "qwen-72b": ("openrouter", "qwen/qwen-2.5-72b-instruct"),
-        "minimax-m2": ("openrouter", "minimax/minimax-m2.1"),
+        "kimi-k2": ("kimi", "kimi-k2.5"),
+        "kimi-k2-or": ("openrouter", "moonshotai/kimi-k2.5"),
+        "bytedance-seed": ("openrouter", "bytedance-seed/seed-2.0-lite"),
+        "baidu-ernie": ("openrouter", "baidu/ernie-4.5-21b-a3b"),
+        "qwen-72b": ("openrouter", "qwen/qwen3.5-plus-02-15"),
+        "minimax-m2": ("openrouter", "minimax/minimax-m2.5"),
     }
     return mapping.get(provider_arg, (provider_arg, provider_arg))
 
@@ -283,9 +283,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--provider",
-        default="qwen",
+        default="deepseek-chat",
         choices=["qwen", "deepseek-chat", "deepseek-reasoner", "kimi-8k", "kimi-32k", "kimi-128k", "kimi-k2", "kimi-k2-or", "bytedance-seed", "baidu-ernie", "qwen-72b", "minimax-m2"],
-        help="LLM provider to use. Default: qwen"
+        help="LLM provider to use. Default: deepseek-chat"
     )
     parser.add_argument(
         "--model-name",

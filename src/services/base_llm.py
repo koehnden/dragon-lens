@@ -80,6 +80,9 @@ class BaseLLMService(ABC):
     def _build_messages(self, prompt_zh: str) -> list[dict]:
         return [{"role": "user", "content": prompt_zh}]
 
+    def validate_model(self, model: str) -> None:
+        return None
+
     @abstractmethod
     def _build_payload(self, messages: list[dict], model_name: str) -> dict:
         pass
@@ -92,6 +95,7 @@ class BaseLLMService(ABC):
     ) -> tuple[str, int, int, float]:
         api_key = self._get_api_key()
         model = model_name or self.default_model
+        self.validate_model(model)
         url = f"{self.api_base}/chat/completions"
 
         messages = self._build_messages(prompt_zh)
@@ -144,6 +148,7 @@ class OpenAICompatibleService(BaseLLMService):
     ) -> tuple[str, int, int, float]:
         api_key = self._get_api_key()
         model = model_name or self.default_model
+        self.validate_model(model)
 
         http_client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=30.0))
         client = AsyncOpenAI(
