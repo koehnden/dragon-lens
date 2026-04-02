@@ -1,19 +1,12 @@
-import httpx
 import pandas as pd
 import streamlit as st
 
-from config import settings
 from ui.components.charts import (
-    render_metrics_comparison_bar,
     render_positioning_matrix,
-    render_radar_chart,
-    render_sentiment_breakdown,
     render_sov_bar_chart,
-    render_sov_treemap,
 )
-from ui.components.insights import render_insights, render_opportunity_analysis
+from ui.components.insights import render_insights
 from ui.utils.api import (
-    api_url,
     fetch_available_models,
     fetch_json,
     fetch_user_brands,
@@ -94,7 +87,7 @@ def _render_executive_scorecard(df: pd.DataFrame, name_col: str, user_brand: str
         user_rank = 1
         user_brand = user_data[name_col]
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         dvs_score = user_data["dragon_lens_visibility"] * 100
@@ -113,14 +106,6 @@ def _render_executive_scorecard(df: pd.DataFrame, name_col: str, user_brand: str
         )
 
     with col3:
-        mention = user_data["mention_rate"] * 100
-        st.metric(
-            "Mention Rate",
-            f"{mention:.1f}%",
-            help="Percentage of prompts mentioning your brand",
-        )
-
-    with col4:
         sentiment = user_data["sentiment_index"]
         sentiment_label = _get_sentiment_label(sentiment)
         st.metric(
@@ -130,34 +115,13 @@ def _render_executive_scorecard(df: pd.DataFrame, name_col: str, user_brand: str
             help="Overall sentiment index (-1 to +1)",
         )
 
-    with col5:
-        total_brands = len(df)
-        st.metric(
-            "Market Rank",
-            f"#{user_rank} of {total_brands}",
-            help="Your position among all brands by DVS",
-        )
-
-    st.caption(f"Showing metrics for: **{user_brand}**")
-
-
-def _render_leaderboard(df: pd.DataFrame, name_col: str) -> None:
-    display_df = df.sort_values("dragon_lens_visibility", ascending=False).copy()
-    display_df["Rank"] = range(1, len(display_df) + 1)
-    display_df["Score"] = (display_df["dragon_lens_visibility"] * 100).round(0).astype(int)
-    display_df["SoV"] = (display_df["share_of_voice"] * 100).round(1).astype(str) + "%"
-    display_df["Sentiment"] = display_df["sentiment_index"].round(2)
-
-    label = "Brand" if name_col == "brand_name" else "Product"
-    columns = ["Rank", name_col, "Score", "SoV", "Sentiment"]
-    rename_map = {name_col: label}
-
-    st.dataframe(
-        display_df[columns].rename(columns=rename_map),
-        use_container_width=True,
-        hide_index=True,
-        height=min(400, 35 * len(display_df) + 38),
+    total_brands = len(df)
+    mention = user_data["mention_rate"] * 100
+    st.caption(
+        f"**{user_brand}** · Rank #{user_rank} of {total_brands} · "
+        f"Mentioned in {mention:.0f}% of prompts"
     )
+
 
 
 def _render_comparison_tab(comparison: dict, comparison_summary: dict | None, run_id: int | None) -> None:
@@ -253,56 +217,18 @@ def _render_dashboard_content(
     _render_executive_scorecard(df, name_col, user_brand)
     st.markdown("---")
 
-    col_matrix, col_leaderboard = st.columns([2, 1])
-    with col_matrix:
-        render_positioning_matrix(df, name_col, user_brand)
-    with col_leaderboard:
-        st.markdown("### Leaderboard")
-        _render_leaderboard(df, name_col)
-
+    render_positioning_matrix(df, name_col, user_brand)
     st.markdown("---")
 
-    tab_labels = ["Competitive Landscape", "Performance", "Insights & Opportunities"]
-    if comparison or comparison_summary:
-        tab_labels.append("Comparisons")
-    tabs = st.tabs(tab_labels)
-
-    with tabs[0]:
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            render_sov_bar_chart(df, name_col, user_brand)
-        with col2:
-            render_sov_treemap(df, name_col)
-
-    with tabs[1]:
-        col1, col2 = st.columns(2)
-        with col1:
-            brands_to_compare = _select_brands_for_radar(df, name_col, user_brand)
-            render_radar_chart(df, name_col, brands_to_compare)
-        with col2:
-            render_sentiment_breakdown(df, name_col)
-        st.markdown("---")
-        render_metrics_comparison_bar(df, name_col)
-
-    with tabs[2]:
-        col1, col2 = st.columns(2)
-        with col1:
-            render_insights(df, name_col, user_brand)
-        with col2:
-            render_opportunity_analysis(df, name_col, user_brand)
+    col_sov, col_insights = st.columns([3, 2])
+    with col_sov:
+        render_sov_bar_chart(df, name_col, user_brand)
+    with col_insights:
+        render_insights(df, name_col, user_brand)
 
     if comparison or comparison_summary:
-        with tabs[tab_labels.index("Comparisons")]:
+        with st.expander("Comparison Details"):
             _render_comparison_tab(comparison or {}, comparison_summary, run_id)
-
-
-def _select_brands_for_radar(df: pd.DataFrame, name_col: str, user_brand: str | None) -> list[str]:
-    if user_brand and user_brand in df[name_col].values:
-        brands = [user_brand]
-        top_competitors = df[df[name_col] != user_brand].nlargest(2, "dragon_lens_visibility")[name_col].tolist()
-        brands.extend(top_competitors)
-        return brands
-    return df.nlargest(3, "dragon_lens_visibility")[name_col].tolist()
 
 
 def show() -> None:
