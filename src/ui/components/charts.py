@@ -140,15 +140,23 @@ def render_model_heatmap(
     if not available_models or len(available_models) < 2:
         return
 
+    seen_short: dict[str, str] = {}
+    deduped_models: list[str] = []
+    for m in available_models:
+        short = shorten_model_name(m)
+        if short not in seen_short:
+            seen_short[short] = m
+            deduped_models.append(m)
+
     view_mode = "product" if name_col == "product_name" else "brand"
-    rows = _fetch_per_model_metrics(vertical_id, tuple(available_models), view_mode)
+    rows = _fetch_per_model_metrics(vertical_id, tuple(deduped_models), view_mode)
     if not rows:
         return
 
     df = pd.DataFrame(rows)
     pivot = df.pivot_table(index="entity", columns="model", values="sov", fill_value=0)
 
-    model_order = [shorten_model_name(m) for m in available_models if shorten_model_name(m) in pivot.columns]
+    model_order = [shorten_model_name(m) for m in deduped_models if shorten_model_name(m) in pivot.columns]
     pivot = pivot[[m for m in model_order if m in pivot.columns]]
 
     if user_brand and user_brand in pivot.index:
