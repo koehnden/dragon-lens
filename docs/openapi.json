@@ -1,0 +1,4985 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "DragonLens",
+    "description": "Track brand visibility in Chinese LLMs",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/verticals": {
+      "post": {
+        "tags": [
+          "verticals"
+        ],
+        "summary": "Create Vertical",
+        "description": "Create a new vertical.\n\nArgs:\n    vertical: Vertical data to create\n    db: Database session\n\nReturns:\n    Created vertical\n\nRaises:\n    HTTPException: If vertical with same name already exists",
+        "operationId": "create_vertical_api_v1_verticals_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerticalCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerticalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "verticals"
+        ],
+        "summary": "List Verticals",
+        "description": "List all verticals.\n\nArgs:\n    skip: Number of records to skip\n    limit: Maximum number of records to return\n    db: Database session\n\nReturns:\n    List of verticals",
+        "operationId": "list_verticals_api_v1_verticals_get",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VerticalResponse"
+                  },
+                  "title": "Response List Verticals Api V1 Verticals Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/verticals/{vertical_id}": {
+      "get": {
+        "tags": [
+          "verticals"
+        ],
+        "summary": "Get Vertical",
+        "description": "Get a specific vertical by ID.\n\nArgs:\n    vertical_id: Vertical ID\n    db: Database session\n\nReturns:\n    Vertical data\n\nRaises:\n    HTTPException: If vertical not found",
+        "operationId": "get_vertical_api_v1_verticals__vertical_id__get",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Vertical Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerticalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "verticals"
+        ],
+        "summary": "Delete Vertical",
+        "description": "Delete a vertical and all associated data.\n\nArgs:\n    vertical_id: Vertical ID\n    db: Database session\n\nReturns:\n    Deletion confirmation with count of deleted runs\n\nRaises:\n    HTTPException: If vertical not found or has running jobs",
+        "operationId": "delete_vertical_api_v1_verticals__vertical_id__delete",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Vertical Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteVerticalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/verticals/{vertical_id}/models": {
+      "get": {
+        "tags": [
+          "verticals"
+        ],
+        "summary": "Get Vertical Models",
+        "operationId": "get_vertical_models_api_v1_verticals__vertical_id__models_get",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Vertical Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Get Vertical Models Api V1 Verticals  Vertical Id  Models Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/verticals/{vertical_id}/inspector-export": {
+      "get": {
+        "tags": [
+          "verticals"
+        ],
+        "summary": "Export Vertical Inspector Data",
+        "description": "Export run inspector prompt/answer data for all completed runs in this vertical.",
+        "operationId": "export_vertical_inspector_data_api_v1_verticals__vertical_id__inspector_export_get",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Vertical Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunInspectorPromptExport"
+                  },
+                  "title": "Response Export Vertical Inspector Data Api V1 Verticals  Vertical Id  Inspector Export Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/verticals/{vertical_id}/brands": {
+      "get": {
+        "tags": [
+          "verticals"
+        ],
+        "summary": "List Vertical Brands",
+        "description": "List brands for a specific vertical.\n\nArgs:\n    vertical_id: Vertical ID\n    user_input_only: Whether to return only user-input brands\n    db: Database session\n\nReturns:\n    List of brands\n\nRaises:\n    HTTPException: If vertical not found",
+        "operationId": "list_vertical_brands_api_v1_verticals__vertical_id__brands_get",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Vertical Id"
+            }
+          },
+          {
+            "name": "user_input_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "User Input Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BrandResponse"
+                  },
+                  "title": "Response List Vertical Brands Api V1 Verticals  Vertical Id  Brands Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/jobs": {
+      "post": {
+        "tags": [
+          "tracking"
+        ],
+        "summary": "Create Tracking Job",
+        "description": "Create a new tracking job.\n\nThis will:\n1. Create or get the vertical\n2. Create brands and prompts\n3. Create a Run record\n4. Enqueue background processing for the run\n\nArgs:\n    job: Tracking job configuration\n    db: Database session\n\nReturns:\n    Tracking job response with run ID",
+        "operationId": "create_tracking_job_api_v1_tracking_jobs_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackingJobCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackingJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "tracking"
+        ],
+        "summary": "Delete Tracking Jobs",
+        "description": "Delete tracking jobs (runs) based on specified criteria.\n\nExactly one of the following parameters must be provided:\n- id: Delete a specific job by run ID\n- status: Delete all jobs with a specific status (pending, in_progress, completed, failed)\n- latest: Delete the most recently created job\n- all: Delete all jobs\n- vertical_name: Delete all jobs associated with a specific vertical name\n\nReturns the vertical IDs of deleted jobs so verticals can be cleaned up afterwards.\n\nArgs:\n    id: Specific run ID to delete\n    status: Status of runs to delete\n    latest: Whether to delete the latest run\n    all: Whether to delete all runs\n    vertical_name: Name of vertical whose runs should be deleted\n    db: Database session\n\nReturns:\n    DeleteJobsResponse with count and affected vertical IDs\n\nRaises:\n    HTTPException: If no parameters provided, multiple parameters provided, or invalid parameters",
+        "operationId": "delete_tracking_jobs_api_v1_tracking_jobs_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "latest",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Latest"
+            }
+          },
+          {
+            "name": "all",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "All"
+            }
+          },
+          {
+            "name": "vertical_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vertical Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteJobsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/runs": {
+      "get": {
+        "tags": [
+          "tracking"
+        ],
+        "summary": "List Runs",
+        "description": "List tracking runs with optional filters.\n\nArgs:\n    vertical_id: Filter by vertical ID\n    provider: Filter by LLM provider (qwen, deepseek, kimi)\n    model_name: Filter by model name\n    skip: Number of records to skip\n    limit: Maximum number of records to return\n    db: Database session\n\nReturns:\n    List of runs",
+        "operationId": "list_runs_api_v1_tracking_runs_get",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vertical Id"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "model_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Name"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunResponse"
+                  },
+                  "title": "Response List Runs Api V1 Tracking Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "tracking"
+        ],
+        "summary": "Get Run",
+        "description": "Get details of a specific run.\n\nArgs:\n    run_id: Run ID\n    db: Database session\n\nReturns:\n    Run details\n\nRaises:\n    HTTPException: If run not found",
+        "operationId": "get_run_api_v1_tracking_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/runs/{run_id}/reprocess": {
+      "post": {
+        "tags": [
+          "tracking"
+        ],
+        "summary": "Reprocess Run",
+        "description": "Trigger reprocessing of an existing run.\n\nThis will:\n1. Verify the run exists and is not in progress\n2. Enqueue a Celery task to reprocess the run\n3. The task will reuse existing LLM answers and re-run extraction\n\nArgs:\n    run_id: Run ID to reprocess\n    db: Database session\n\nReturns:\n    Status message\n\nRaises:\n    HTTPException: If run not found or status is in progress",
+        "operationId": "reprocess_run_api_v1_tracking_runs__run_id__reprocess_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Reprocess Run Api V1 Tracking Runs  Run Id  Reprocess Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/runs/{run_id}/details": {
+      "get": {
+        "tags": [
+          "tracking"
+        ],
+        "summary": "Get Run Details",
+        "description": "Get detailed information about a run including answers and mentions.\n\nArgs:\n    run_id: Run ID\n    db: Database session\n\nReturns:\n    Detailed run information with all answers and brand mentions\n\nRaises:\n    HTTPException: If run not found",
+        "operationId": "get_run_details_api_v1_tracking_runs__run_id__details_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetailedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/runs/{run_id}/inspector-export": {
+      "get": {
+        "tags": [
+          "tracking"
+        ],
+        "summary": "Export Run Inspector Data",
+        "description": "Export prompt answers and extracted entities for a run.\n\nReturns one item per prompt answer with brands, products, snippets, and translations.",
+        "operationId": "export_run_inspector_data_api_v1_tracking_runs__run_id__inspector_export_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunInspectorPromptExport"
+                  },
+                  "title": "Response Export Run Inspector Data Api V1 Tracking Runs  Run Id  Inspector Export Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/runs/{run_id}/entities": {
+      "get": {
+        "tags": [
+          "tracking"
+        ],
+        "summary": "Get Run Entities",
+        "description": "Get extracted brands, products, and mappings for a run.",
+        "operationId": "get_run_entities_api_v1_tracking_runs__run_id__entities_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEntitiesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/metrics/latest": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Get Latest Metrics",
+        "operationId": "get_latest_metrics_api_v1_metrics_latest_get",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Vertical ID",
+              "title": "Vertical Id"
+            },
+            "description": "Vertical ID"
+          },
+          {
+            "name": "model_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Model name or 'all' for aggregated",
+              "default": "all",
+              "title": "Model Name"
+            },
+            "description": "Model name or 'all' for aggregated"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/metrics/latest/products": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Get Latest Product Metrics",
+        "operationId": "get_latest_product_metrics_api_v1_metrics_latest_products_get",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Vertical ID",
+              "title": "Vertical Id"
+            },
+            "description": "Vertical ID"
+          },
+          {
+            "name": "model_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Model name or 'all' for aggregated",
+              "default": "all",
+              "title": "Model Name"
+            },
+            "description": "Model name or 'all' for aggregated"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductMetricsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/metrics/daily": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Get Daily Metrics",
+        "description": "Get daily metrics for a specific brand over time.\n\nArgs:\n    vertical_id: Vertical ID\n    brand_id: Brand ID\n    model_name: Model name\n    start_date: Start date (optional)\n    end_date: End date (optional)\n    db: Database session\n\nReturns:\n    Daily metrics time series",
+        "operationId": "get_daily_metrics_api_v1_metrics_daily_get",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Vertical ID",
+              "title": "Vertical Id"
+            },
+            "description": "Vertical ID"
+          },
+          {
+            "name": "brand_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Brand ID",
+              "title": "Brand Id"
+            },
+            "description": "Brand ID"
+          },
+          {
+            "name": "model_name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Model name",
+              "title": "Model Name"
+            },
+            "description": "Model name"
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Start date",
+              "title": "Start Date"
+            },
+            "description": "Start date"
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "End date",
+              "title": "End Date"
+            },
+            "description": "End date"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/metrics/run/{run_id}": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Get Run Metrics",
+        "operationId": "get_run_metrics_api_v1_metrics_run__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllRunMetricsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/metrics/run/{run_id}/products": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Get Run Product Metrics",
+        "operationId": "get_run_product_metrics_api_v1_metrics_run__run_id__products_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllRunProductMetricsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/metrics/run/{run_id}/comparison": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Get Run Comparison Metrics",
+        "description": "Get comparison sentiment results for a run.\n\nComparison prompts are executed after the main run completes and are never used for brand/product extraction.",
+        "operationId": "get_run_comparison_metrics_api_v1_metrics_run__run_id__comparison_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "entity_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(all|brand|product)$",
+              "default": "all",
+              "title": "Entity Type"
+            }
+          },
+          {
+            "name": "include_snippets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Snippets"
+            }
+          },
+          {
+            "name": "limit_entities",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit Entities"
+            }
+          },
+          {
+            "name": "limit_snippets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 0,
+              "default": 3,
+              "title": "Limit Snippets"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunComparisonMetricsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/metrics/run/{run_id}/comparison/summary": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Get Run Comparison Summary",
+        "description": "Get winner/loser summary for comparison prompts grouped by characteristic.",
+        "operationId": "get_run_comparison_summary_api_v1_metrics_run__run_id__comparison_summary_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "include_prompt_details",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Prompt Details"
+            }
+          },
+          {
+            "name": "limit_prompts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit Prompts"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunComparisonSummaryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/api-keys": {
+      "post": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Create Api Key",
+        "description": "Store an API key for a specific provider.\n\nThe API key will be encrypted before storage.\nOnly one active API key per provider is allowed.",
+        "operationId": "create_api_key_api_v1_api_keys_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/APIKeyCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIKeyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "List Api Keys",
+        "description": "List API keys with optional filters.\n\nArgs:\n    provider: Filter by provider (qwen, deepseek, kimi)\n    active_only: Only return active keys\n    db: Database session\n\nReturns:\n    List of API keys (without the actual key values)",
+        "operationId": "list_api_keys_api_v1_api_keys_get",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "active_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Active Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/APIKeyResponse"
+                  },
+                  "title": "Response List Api Keys Api V1 Api Keys Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/api-keys/{key_id}": {
+      "get": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Get Api Key",
+        "description": "Get details of a specific API key.\n\nArgs:\n    key_id: API key ID\n    db: Database session\n\nReturns:\n    API key details (without the actual key value)\n\nRaises:\n    HTTPException: If key not found",
+        "operationId": "get_api_key_api_v1_api_keys__key_id__get",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Key Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIKeyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Update Api Key",
+        "description": "Update an API key.\n\nCan update the API key value or toggle active status.",
+        "operationId": "update_api_key_api_v1_api_keys__key_id__put",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Key Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/APIKeyUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIKeyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Delete Api Key",
+        "description": "Delete an API key.\n\nArgs:\n    key_id: API key ID\n    db: Database session\n\nRaises:\n    HTTPException: If key not found",
+        "operationId": "delete_api_key_api_v1_api_keys__key_id__delete",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Key Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consolidation/runs/{run_id}/consolidate": {
+      "post": {
+        "tags": [
+          "consolidation"
+        ],
+        "summary": "Consolidate Entities",
+        "operationId": "consolidate_entities_api_v1_consolidation_runs__run_id__consolidate_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsolidationResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consolidation/verticals/{vertical_id}/canonical-brands": {
+      "get": {
+        "tags": [
+          "consolidation"
+        ],
+        "summary": "List Canonical Brands",
+        "operationId": "list_canonical_brands_api_v1_consolidation_verticals__vertical_id__canonical_brands_get",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Vertical Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CanonicalBrandResponse"
+                  },
+                  "title": "Response List Canonical Brands Api V1 Consolidation Verticals  Vertical Id  Canonical Brands Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consolidation/verticals/{vertical_id}/canonical-products": {
+      "get": {
+        "tags": [
+          "consolidation"
+        ],
+        "summary": "List Canonical Products",
+        "operationId": "list_canonical_products_api_v1_consolidation_verticals__vertical_id__canonical_products_get",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Vertical Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CanonicalProductResponse"
+                  },
+                  "title": "Response List Canonical Products Api V1 Consolidation Verticals  Vertical Id  Canonical Products Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consolidation/verticals/{vertical_id}/validation-candidates": {
+      "get": {
+        "tags": [
+          "consolidation"
+        ],
+        "summary": "List Validation Candidates",
+        "operationId": "list_validation_candidates_api_v1_consolidation_verticals__vertical_id__validation_candidates_get",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Vertical Id"
+            }
+          },
+          {
+            "name": "entity_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by entity type: brand or product",
+              "title": "Entity Type"
+            },
+            "description": "Filter by entity type: brand or product"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ValidationCandidateResponse"
+                  },
+                  "title": "Response List Validation Candidates Api V1 Consolidation Verticals  Vertical Id  Validation Candidates Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consolidation/validation-candidates/{candidate_id}/validate": {
+      "post": {
+        "tags": [
+          "consolidation"
+        ],
+        "summary": "Validate Entity Candidate",
+        "operationId": "validate_entity_candidate_api_v1_consolidation_validation_candidates__candidate_id__validate_post",
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateCandidateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationCandidateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feedback/candidates": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "List Feedback Candidates",
+        "description": "List unresolved feedback candidates for a vertical.",
+        "operationId": "list_feedback_candidates_api_v1_feedback_candidates_get",
+        "parameters": [
+          {
+            "name": "vertical_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Vertical Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackCandidatesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feedback/vertical-alias": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Save Feedback Vertical Alias",
+        "description": "Map a local vertical name into a canonical knowledge vertical.",
+        "operationId": "save_feedback_vertical_alias_api_v1_feedback_vertical_alias_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackVerticalAliasRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackVerticalAliasResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feedback/submit": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Submit Feedback Endpoint",
+        "description": "Submit user feedback to the knowledge database.",
+        "operationId": "submit_feedback_endpoint_api_v1_feedback_submit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackSubmitResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/verticals": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "List Knowledge Verticals",
+        "description": "List canonical verticals stored in the knowledge database.",
+        "operationId": "list_knowledge_verticals_api_v1_knowledge_verticals_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeVerticalResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Knowledge Verticals Api V1 Knowledge Verticals Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Root",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "APIKeyCreate": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider",
+            "description": "LLM provider (deepseek, kimi, openrouter)"
+          },
+          "api_key": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Api Key",
+            "description": "API key to encrypt and store"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "api_key"
+        ],
+        "title": "APIKeyCreate"
+      },
+      "APIKeyResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "provider",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "APIKeyResponse"
+      },
+      "APIKeyUpdate": {
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key",
+            "description": "New API key (optional)"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "description": "Active status"
+          }
+        },
+        "type": "object",
+        "title": "APIKeyUpdate"
+      },
+      "AllRunMetricsResponse": {
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "Run Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "vertical_name": {
+            "type": "string",
+            "title": "Vertical Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "run_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Run Time"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/RunMetricsResponse"
+            },
+            "type": "array",
+            "title": "Metrics"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "vertical_id",
+          "vertical_name",
+          "provider",
+          "model_name",
+          "run_time",
+          "metrics"
+        ],
+        "title": "AllRunMetricsResponse"
+      },
+      "AllRunProductMetricsResponse": {
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "Run Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "vertical_name": {
+            "type": "string",
+            "title": "Vertical Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "run_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Run Time"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/ProductMetrics"
+            },
+            "type": "array",
+            "title": "Products"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "vertical_id",
+          "vertical_name",
+          "provider",
+          "model_name",
+          "run_time",
+          "products"
+        ],
+        "title": "AllRunProductMetricsResponse"
+      },
+      "BrandCreate": {
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "aliases": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Aliases",
+            "description": "Brand aliases in different languages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "display_name"
+        ],
+        "title": "BrandCreate"
+      },
+      "BrandMentionResponse": {
+        "properties": {
+          "brand_id": {
+            "type": "integer",
+            "title": "Brand Id"
+          },
+          "brand_name": {
+            "type": "string",
+            "title": "Brand Name"
+          },
+          "mentioned": {
+            "type": "boolean",
+            "title": "Mentioned"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "sentiment": {
+            "type": "string",
+            "title": "Sentiment"
+          },
+          "evidence_snippets": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Evidence Snippets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "brand_id",
+          "brand_name",
+          "mentioned",
+          "rank",
+          "sentiment",
+          "evidence_snippets"
+        ],
+        "title": "BrandMentionResponse"
+      },
+      "BrandMetrics": {
+        "properties": {
+          "brand_id": {
+            "type": "integer",
+            "title": "Brand Id"
+          },
+          "brand_name": {
+            "type": "string",
+            "title": "Brand Name"
+          },
+          "mention_rate": {
+            "type": "number",
+            "title": "Mention Rate"
+          },
+          "share_of_voice": {
+            "type": "number",
+            "title": "Share Of Voice"
+          },
+          "top_spot_share": {
+            "type": "number",
+            "title": "Top Spot Share"
+          },
+          "sentiment_index": {
+            "type": "number",
+            "title": "Sentiment Index"
+          },
+          "dragon_lens_visibility": {
+            "type": "number",
+            "title": "Dragon Lens Visibility"
+          }
+        },
+        "type": "object",
+        "required": [
+          "brand_id",
+          "brand_name",
+          "mention_rate",
+          "share_of_voice",
+          "top_spot_share",
+          "sentiment_index",
+          "dragon_lens_visibility"
+        ],
+        "title": "BrandMetrics"
+      },
+      "BrandResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "original_name": {
+            "type": "string",
+            "title": "Original Name"
+          },
+          "translated_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translated Name"
+          },
+          "aliases": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Aliases"
+          },
+          "is_user_input": {
+            "type": "boolean",
+            "title": "Is User Input"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "vertical_id",
+          "display_name",
+          "original_name",
+          "translated_name",
+          "aliases",
+          "is_user_input",
+          "created_at"
+        ],
+        "title": "BrandResponse"
+      },
+      "CanonicalBrandResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "canonical_name": {
+            "type": "string",
+            "title": "Canonical Name"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "is_validated": {
+            "type": "boolean",
+            "title": "Is Validated"
+          },
+          "validation_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Source"
+          },
+          "mention_count": {
+            "type": "integer",
+            "title": "Mention Count"
+          },
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Aliases"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "vertical_id",
+          "canonical_name",
+          "display_name",
+          "is_validated",
+          "validation_source",
+          "mention_count",
+          "aliases",
+          "created_at"
+        ],
+        "title": "CanonicalBrandResponse"
+      },
+      "CanonicalProductResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "canonical_brand_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Brand Id"
+          },
+          "canonical_name": {
+            "type": "string",
+            "title": "Canonical Name"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "is_validated": {
+            "type": "boolean",
+            "title": "Is Validated"
+          },
+          "validation_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Source"
+          },
+          "mention_count": {
+            "type": "integer",
+            "title": "Mention Count"
+          },
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Aliases"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "vertical_id",
+          "canonical_brand_id",
+          "canonical_name",
+          "display_name",
+          "is_validated",
+          "validation_source",
+          "mention_count",
+          "aliases",
+          "created_at"
+        ],
+        "title": "CanonicalProductResponse"
+      },
+      "ComparisonCharacteristicSummary": {
+        "properties": {
+          "characteristic_zh": {
+            "type": "string",
+            "title": "Characteristic Zh"
+          },
+          "characteristic_en": {
+            "type": "string",
+            "title": "Characteristic En"
+          },
+          "total_prompts": {
+            "type": "integer",
+            "title": "Total Prompts"
+          },
+          "primary_wins": {
+            "type": "integer",
+            "title": "Primary Wins"
+          },
+          "competitor_wins": {
+            "type": "integer",
+            "title": "Competitor Wins"
+          },
+          "ties": {
+            "type": "integer",
+            "title": "Ties"
+          },
+          "unknown": {
+            "type": "integer",
+            "title": "Unknown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "characteristic_zh",
+          "characteristic_en",
+          "total_prompts",
+          "primary_wins",
+          "competitor_wins",
+          "ties",
+          "unknown"
+        ],
+        "title": "ComparisonCharacteristicSummary"
+      },
+      "ComparisonEntitySentimentSummary": {
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "entity_id": {
+            "type": "integer",
+            "title": "Entity Id"
+          },
+          "entity_name": {
+            "type": "string",
+            "title": "Entity Name"
+          },
+          "entity_role": {
+            "type": "string",
+            "title": "Entity Role"
+          },
+          "positive_count": {
+            "type": "integer",
+            "title": "Positive Count"
+          },
+          "neutral_count": {
+            "type": "integer",
+            "title": "Neutral Count"
+          },
+          "negative_count": {
+            "type": "integer",
+            "title": "Negative Count"
+          },
+          "sentiment_index": {
+            "type": "number",
+            "title": "Sentiment Index"
+          },
+          "snippets": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonEvidenceSnippet"
+            },
+            "type": "array",
+            "title": "Snippets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity_type",
+          "entity_id",
+          "entity_name",
+          "entity_role",
+          "positive_count",
+          "neutral_count",
+          "negative_count",
+          "sentiment_index"
+        ],
+        "title": "ComparisonEntitySentimentSummary"
+      },
+      "ComparisonEvidenceSnippet": {
+        "properties": {
+          "snippet_zh": {
+            "type": "string",
+            "title": "Snippet Zh"
+          },
+          "snippet_en": {
+            "type": "string",
+            "title": "Snippet En"
+          },
+          "sentiment": {
+            "type": "string",
+            "title": "Sentiment"
+          },
+          "aspect": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspect"
+          }
+        },
+        "type": "object",
+        "required": [
+          "snippet_zh",
+          "snippet_en",
+          "sentiment"
+        ],
+        "title": "ComparisonEvidenceSnippet"
+      },
+      "ComparisonPromptOutcomeDetail": {
+        "properties": {
+          "prompt_id": {
+            "type": "integer",
+            "title": "Prompt Id"
+          },
+          "characteristic_zh": {
+            "type": "string",
+            "title": "Characteristic Zh"
+          },
+          "characteristic_en": {
+            "type": "string",
+            "title": "Characteristic En"
+          },
+          "prompt_zh": {
+            "type": "string",
+            "title": "Prompt Zh"
+          },
+          "prompt_en": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt En"
+          },
+          "answer_zh": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Zh"
+          },
+          "answer_en": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer En"
+          },
+          "primary_product_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Product Id"
+          },
+          "primary_product_name": {
+            "type": "string",
+            "title": "Primary Product Name"
+          },
+          "competitor_product_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Competitor Product Id"
+          },
+          "competitor_product_name": {
+            "type": "string",
+            "title": "Competitor Product Name"
+          },
+          "winner_role": {
+            "type": "string",
+            "title": "Winner Role"
+          },
+          "winner_product_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Winner Product Id"
+          },
+          "winner_product_name": {
+            "type": "string",
+            "title": "Winner Product Name"
+          },
+          "loser_product_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loser Product Id"
+          },
+          "loser_product_name": {
+            "type": "string",
+            "title": "Loser Product Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt_id",
+          "characteristic_zh",
+          "characteristic_en",
+          "prompt_zh",
+          "primary_product_name",
+          "competitor_product_name",
+          "winner_role",
+          "winner_product_name",
+          "loser_product_name"
+        ],
+        "title": "ComparisonPromptOutcomeDetail"
+      },
+      "ConsolidationResultResponse": {
+        "properties": {
+          "brands_merged": {
+            "type": "integer",
+            "title": "Brands Merged"
+          },
+          "products_merged": {
+            "type": "integer",
+            "title": "Products Merged"
+          },
+          "brands_flagged": {
+            "type": "integer",
+            "title": "Brands Flagged"
+          },
+          "products_flagged": {
+            "type": "integer",
+            "title": "Products Flagged"
+          },
+          "canonical_brands_created": {
+            "type": "integer",
+            "title": "Canonical Brands Created"
+          },
+          "canonical_products_created": {
+            "type": "integer",
+            "title": "Canonical Products Created"
+          }
+        },
+        "type": "object",
+        "required": [
+          "brands_merged",
+          "products_merged",
+          "brands_flagged",
+          "products_flagged",
+          "canonical_brands_created",
+          "canonical_products_created"
+        ],
+        "title": "ConsolidationResultResponse"
+      },
+      "DeleteJobsResponse": {
+        "properties": {
+          "deleted_count": {
+            "type": "integer",
+            "title": "Deleted Count"
+          },
+          "vertical_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Vertical Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted_count",
+          "vertical_ids"
+        ],
+        "title": "DeleteJobsResponse"
+      },
+      "DeleteVerticalResponse": {
+        "properties": {
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "deleted_runs_count": {
+            "type": "integer",
+            "title": "Deleted Runs Count"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vertical_id",
+          "deleted",
+          "deleted_runs_count",
+          "message"
+        ],
+        "title": "DeleteVerticalResponse"
+      },
+      "FeedbackAction": {
+        "type": "string",
+        "enum": [
+          "validate",
+          "replace",
+          "reject"
+        ],
+        "title": "FeedbackAction"
+      },
+      "FeedbackAppliedSummary": {
+        "properties": {
+          "brands": {
+            "type": "integer",
+            "title": "Brands"
+          },
+          "products": {
+            "type": "integer",
+            "title": "Products"
+          },
+          "mappings": {
+            "type": "integer",
+            "title": "Mappings"
+          },
+          "translations": {
+            "type": "integer",
+            "title": "Translations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "brands",
+          "products",
+          "mappings",
+          "translations"
+        ],
+        "title": "FeedbackAppliedSummary"
+      },
+      "FeedbackBrandFeedbackItem": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/FeedbackAction"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "wrong_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wrong Name"
+          },
+          "correct_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Name"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "FeedbackBrandFeedbackItem"
+      },
+      "FeedbackCandidateBrand": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "translated_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translated Name"
+          },
+          "mention_count": {
+            "type": "integer",
+            "title": "Mention Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "translated_name",
+          "mention_count"
+        ],
+        "title": "FeedbackCandidateBrand"
+      },
+      "FeedbackCandidateMapping": {
+        "properties": {
+          "product_name": {
+            "type": "string",
+            "title": "Product Name"
+          },
+          "brand_name": {
+            "type": "string",
+            "title": "Brand Name"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_name",
+          "brand_name"
+        ],
+        "title": "FeedbackCandidateMapping"
+      },
+      "FeedbackCandidateMissingMapping": {
+        "properties": {
+          "product_name": {
+            "type": "string",
+            "title": "Product Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_name"
+        ],
+        "title": "FeedbackCandidateMissingMapping"
+      },
+      "FeedbackCandidateProduct": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "translated_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translated Name"
+          },
+          "brand_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Name"
+          },
+          "mention_count": {
+            "type": "integer",
+            "title": "Mention Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "translated_name",
+          "brand_name",
+          "mention_count"
+        ],
+        "title": "FeedbackCandidateProduct"
+      },
+      "FeedbackCandidateTranslation": {
+        "properties": {
+          "entity_type": {
+            "$ref": "#/components/schemas/FeedbackEntityType"
+          },
+          "canonical_name": {
+            "type": "string",
+            "title": "Canonical Name"
+          },
+          "current_translation_en": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Translation En"
+          },
+          "mention_count": {
+            "type": "integer",
+            "title": "Mention Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity_type",
+          "canonical_name",
+          "current_translation_en",
+          "mention_count"
+        ],
+        "title": "FeedbackCandidateTranslation"
+      },
+      "FeedbackCandidatesResponse": {
+        "properties": {
+          "group_vertical_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Group Vertical Ids"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "vertical_name": {
+            "type": "string",
+            "title": "Vertical Name"
+          },
+          "latest_completed_run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Completed Run Id"
+          },
+          "resolved_canonical_vertical_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Canonical Vertical Id"
+          },
+          "resolved_canonical_vertical_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Canonical Vertical Name"
+          },
+          "brands": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackCandidateBrand"
+            },
+            "type": "array",
+            "title": "Brands"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackCandidateProduct"
+            },
+            "type": "array",
+            "title": "Products"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackCandidateMapping"
+            },
+            "type": "array",
+            "title": "Mappings"
+          },
+          "missing_mappings": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackCandidateMissingMapping"
+            },
+            "type": "array",
+            "title": "Missing Mappings"
+          },
+          "translations": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackCandidateTranslation"
+            },
+            "type": "array",
+            "title": "Translations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vertical_id",
+          "vertical_name",
+          "latest_completed_run_id",
+          "resolved_canonical_vertical_id",
+          "resolved_canonical_vertical_name"
+        ],
+        "title": "FeedbackCandidatesResponse"
+      },
+      "FeedbackCanonicalVertical": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "is_new": {
+            "type": "boolean",
+            "title": "Is New"
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_new"
+        ],
+        "title": "FeedbackCanonicalVertical"
+      },
+      "FeedbackEntityType": {
+        "type": "string",
+        "enum": [
+          "brand",
+          "product"
+        ],
+        "title": "FeedbackEntityType"
+      },
+      "FeedbackLanguage": {
+        "type": "string",
+        "enum": [
+          "zh",
+          "en"
+        ],
+        "title": "FeedbackLanguage"
+      },
+      "FeedbackMappingAction": {
+        "type": "string",
+        "enum": [
+          "add",
+          "validate",
+          "reject"
+        ],
+        "title": "FeedbackMappingAction"
+      },
+      "FeedbackMappingFeedbackItem": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/FeedbackMappingAction"
+          },
+          "product_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
+          },
+          "brand_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Name"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "FeedbackMappingFeedbackItem"
+      },
+      "FeedbackProductFeedbackItem": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/FeedbackAction"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "wrong_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wrong Name"
+          },
+          "correct_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Name"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "FeedbackProductFeedbackItem"
+      },
+      "FeedbackSubmitRequest": {
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "Run Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "canonical_vertical": {
+            "$ref": "#/components/schemas/FeedbackCanonicalVertical"
+          },
+          "brand_feedback": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackBrandFeedbackItem"
+            },
+            "type": "array",
+            "title": "Brand Feedback"
+          },
+          "product_feedback": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackProductFeedbackItem"
+            },
+            "type": "array",
+            "title": "Product Feedback"
+          },
+          "mapping_feedback": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackMappingFeedbackItem"
+            },
+            "type": "array",
+            "title": "Mapping Feedback"
+          },
+          "translation_overrides": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackTranslationOverrideItem"
+            },
+            "type": "array",
+            "title": "Translation Overrides"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "vertical_id",
+          "canonical_vertical"
+        ],
+        "title": "FeedbackSubmitRequest"
+      },
+      "FeedbackSubmitResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "run_id": {
+            "type": "integer",
+            "title": "Run Id"
+          },
+          "canonical_vertical_id": {
+            "type": "integer",
+            "title": "Canonical Vertical Id"
+          },
+          "applied": {
+            "$ref": "#/components/schemas/FeedbackAppliedSummary"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "run_id",
+          "canonical_vertical_id",
+          "applied",
+          "warnings"
+        ],
+        "title": "FeedbackSubmitResponse"
+      },
+      "FeedbackTranslationOverrideItem": {
+        "properties": {
+          "entity_type": {
+            "$ref": "#/components/schemas/FeedbackEntityType"
+          },
+          "canonical_name": {
+            "type": "string",
+            "title": "Canonical Name"
+          },
+          "language": {
+            "$ref": "#/components/schemas/FeedbackLanguage"
+          },
+          "override_text": {
+            "type": "string",
+            "title": "Override Text"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity_type",
+          "canonical_name",
+          "language",
+          "override_text"
+        ],
+        "title": "FeedbackTranslationOverrideItem"
+      },
+      "FeedbackVerticalAliasRequest": {
+        "properties": {
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "canonical_vertical": {
+            "$ref": "#/components/schemas/FeedbackCanonicalVertical"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vertical_id",
+          "canonical_vertical"
+        ],
+        "title": "FeedbackVerticalAliasRequest"
+      },
+      "FeedbackVerticalAliasResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "vertical_name": {
+            "type": "string",
+            "title": "Vertical Name"
+          },
+          "canonical_vertical_id": {
+            "type": "integer",
+            "title": "Canonical Vertical Id"
+          },
+          "canonical_vertical_name": {
+            "type": "string",
+            "title": "Canonical Vertical Name"
+          },
+          "alias_created": {
+            "type": "boolean",
+            "title": "Alias Created"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "vertical_id",
+          "vertical_name",
+          "canonical_vertical_id",
+          "canonical_vertical_name",
+          "alias_created"
+        ],
+        "title": "FeedbackVerticalAliasResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "KnowledgeVerticalResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "created_at"
+        ],
+        "title": "KnowledgeVerticalResponse"
+      },
+      "LLMAnswerResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "prompt_text_zh": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Text Zh"
+          },
+          "prompt_text_en": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Text En"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          },
+          "raw_answer_zh": {
+            "type": "string",
+            "title": "Raw Answer Zh"
+          },
+          "raw_answer_en": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Answer En"
+          },
+          "tokens_in": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Out"
+          },
+          "latency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency"
+          },
+          "cost_estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Estimate"
+          },
+          "mentions": {
+            "items": {
+              "$ref": "#/components/schemas/BrandMentionResponse"
+            },
+            "type": "array",
+            "title": "Mentions"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "prompt_text_zh",
+          "prompt_text_en",
+          "provider",
+          "model_name",
+          "raw_answer_zh",
+          "raw_answer_en",
+          "tokens_in",
+          "tokens_out",
+          "latency",
+          "cost_estimate",
+          "mentions",
+          "created_at"
+        ],
+        "title": "LLMAnswerResponse"
+      },
+      "MetricsResponse": {
+        "properties": {
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "vertical_name": {
+            "type": "string",
+            "title": "Vertical Name"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "brands": {
+            "items": {
+              "$ref": "#/components/schemas/BrandMetrics"
+            },
+            "type": "array",
+            "title": "Brands"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vertical_id",
+          "vertical_name",
+          "model_name",
+          "date",
+          "brands"
+        ],
+        "title": "MetricsResponse"
+      },
+      "ProductMetrics": {
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "title": "Product Id"
+          },
+          "product_name": {
+            "type": "string",
+            "title": "Product Name"
+          },
+          "brand_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Id"
+          },
+          "brand_name": {
+            "type": "string",
+            "title": "Brand Name"
+          },
+          "mention_rate": {
+            "type": "number",
+            "title": "Mention Rate"
+          },
+          "share_of_voice": {
+            "type": "number",
+            "title": "Share Of Voice"
+          },
+          "top_spot_share": {
+            "type": "number",
+            "title": "Top Spot Share"
+          },
+          "sentiment_index": {
+            "type": "number",
+            "title": "Sentiment Index"
+          },
+          "dragon_lens_visibility": {
+            "type": "number",
+            "title": "Dragon Lens Visibility"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "product_name",
+          "brand_id",
+          "brand_name",
+          "mention_rate",
+          "share_of_voice",
+          "top_spot_share",
+          "sentiment_index",
+          "dragon_lens_visibility"
+        ],
+        "title": "ProductMetrics"
+      },
+      "ProductMetricsResponse": {
+        "properties": {
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "vertical_name": {
+            "type": "string",
+            "title": "Vertical Name"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/ProductMetrics"
+            },
+            "type": "array",
+            "title": "Products"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vertical_id",
+          "vertical_name",
+          "model_name",
+          "date",
+          "products"
+        ],
+        "title": "ProductMetricsResponse"
+      },
+      "PromptCreate": {
+        "properties": {
+          "text_en": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text En"
+          },
+          "text_zh": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Zh"
+          },
+          "language_original": {
+            "type": "string",
+            "pattern": "^(en|zh)$",
+            "title": "Language Original"
+          }
+        },
+        "type": "object",
+        "required": [
+          "language_original"
+        ],
+        "title": "PromptCreate"
+      },
+      "RunComparisonMessage": {
+        "properties": {
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "level",
+          "code",
+          "message"
+        ],
+        "title": "RunComparisonMessage"
+      },
+      "RunComparisonMetricsResponse": {
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "Run Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "vertical_name": {
+            "type": "string",
+            "title": "Vertical Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "primary_brand_id": {
+            "type": "integer",
+            "title": "Primary Brand Id"
+          },
+          "primary_brand_name": {
+            "type": "string",
+            "title": "Primary Brand Name"
+          },
+          "brands": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonEntitySentimentSummary"
+            },
+            "type": "array",
+            "title": "Brands"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonEntitySentimentSummary"
+            },
+            "type": "array",
+            "title": "Products"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/RunComparisonMessage"
+            },
+            "type": "array",
+            "title": "Messages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "vertical_id",
+          "vertical_name",
+          "provider",
+          "model_name",
+          "primary_brand_id",
+          "primary_brand_name",
+          "brands",
+          "products"
+        ],
+        "title": "RunComparisonMetricsResponse"
+      },
+      "RunComparisonSummaryResponse": {
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "Run Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "vertical_name": {
+            "type": "string",
+            "title": "Vertical Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "primary_brand_id": {
+            "type": "integer",
+            "title": "Primary Brand Id"
+          },
+          "primary_brand_name": {
+            "type": "string",
+            "title": "Primary Brand Name"
+          },
+          "brands": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonEntitySentimentSummary"
+            },
+            "type": "array",
+            "title": "Brands"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonEntitySentimentSummary"
+            },
+            "type": "array",
+            "title": "Products"
+          },
+          "characteristics": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonCharacteristicSummary"
+            },
+            "type": "array",
+            "title": "Characteristics"
+          },
+          "prompts": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonPromptOutcomeDetail"
+            },
+            "type": "array",
+            "title": "Prompts"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/RunComparisonMessage"
+            },
+            "type": "array",
+            "title": "Messages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "vertical_id",
+          "vertical_name",
+          "provider",
+          "model_name",
+          "primary_brand_id",
+          "primary_brand_name",
+          "brands",
+          "products"
+        ],
+        "title": "RunComparisonSummaryResponse"
+      },
+      "RunDetailedResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "vertical_name": {
+            "type": "string",
+            "title": "Vertical Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "run_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Run Time"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/LLMAnswerResponse"
+            },
+            "type": "array",
+            "title": "Answers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "vertical_id",
+          "vertical_name",
+          "provider",
+          "model_name",
+          "status",
+          "run_time",
+          "completed_at",
+          "error_message",
+          "answers"
+        ],
+        "title": "RunDetailedResponse"
+      },
+      "RunEntitiesResponse": {
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "Run Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "vertical_name": {
+            "type": "string",
+            "title": "Vertical Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "run_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Run Time"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "brands": {
+            "items": {
+              "$ref": "#/components/schemas/RunEntityBrand"
+            },
+            "type": "array",
+            "title": "Brands"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/RunEntityProduct"
+            },
+            "type": "array",
+            "title": "Products"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/RunEntityMapping"
+            },
+            "type": "array",
+            "title": "Mappings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "vertical_id",
+          "vertical_name",
+          "provider",
+          "model_name",
+          "status",
+          "run_time",
+          "completed_at",
+          "brands",
+          "products",
+          "mappings"
+        ],
+        "title": "RunEntitiesResponse"
+      },
+      "RunEntityBrand": {
+        "properties": {
+          "brand_id": {
+            "type": "integer",
+            "title": "Brand Id"
+          },
+          "brand_name": {
+            "type": "string",
+            "title": "Brand Name"
+          },
+          "original_name": {
+            "type": "string",
+            "title": "Original Name"
+          },
+          "translated_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translated Name"
+          },
+          "mention_count": {
+            "type": "integer",
+            "title": "Mention Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "brand_id",
+          "brand_name",
+          "original_name",
+          "translated_name",
+          "mention_count"
+        ],
+        "title": "RunEntityBrand"
+      },
+      "RunEntityMapping": {
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "title": "Product Id"
+          },
+          "product_name": {
+            "type": "string",
+            "title": "Product Name"
+          },
+          "brand_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Id"
+          },
+          "brand_name": {
+            "type": "string",
+            "title": "Brand Name"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "is_validated": {
+            "type": "boolean",
+            "title": "Is Validated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "product_name",
+          "brand_id",
+          "brand_name",
+          "confidence",
+          "source",
+          "is_validated"
+        ],
+        "title": "RunEntityMapping"
+      },
+      "RunEntityProduct": {
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "title": "Product Id"
+          },
+          "product_name": {
+            "type": "string",
+            "title": "Product Name"
+          },
+          "original_name": {
+            "type": "string",
+            "title": "Original Name"
+          },
+          "translated_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translated Name"
+          },
+          "brand_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Id"
+          },
+          "brand_name": {
+            "type": "string",
+            "title": "Brand Name"
+          },
+          "mention_count": {
+            "type": "integer",
+            "title": "Mention Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "product_name",
+          "original_name",
+          "translated_name",
+          "brand_id",
+          "brand_name",
+          "mention_count"
+        ],
+        "title": "RunEntityProduct"
+      },
+      "RunInspectorBrandExtract": {
+        "properties": {
+          "brand_zh": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Zh"
+          },
+          "brand_en": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand En"
+          },
+          "text_snippet_zh": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Snippet Zh"
+          },
+          "text_snippet_en": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Snippet En"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "products_zh": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Products Zh"
+          },
+          "products_en": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Products En"
+          }
+        },
+        "type": "object",
+        "required": [
+          "brand_zh",
+          "brand_en",
+          "text_snippet_zh",
+          "text_snippet_en",
+          "rank",
+          "products_zh",
+          "products_en"
+        ],
+        "title": "RunInspectorBrandExtract"
+      },
+      "RunInspectorPromptExport": {
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "Run Id"
+          },
+          "llm_answer_id": {
+            "type": "integer",
+            "title": "Llm Answer Id"
+          },
+          "vertical_name": {
+            "type": "string",
+            "title": "Vertical Name"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "prompt_zh": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Zh"
+          },
+          "prompt_eng": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Eng"
+          },
+          "prompt_response_zh": {
+            "type": "string",
+            "title": "Prompt Response Zh"
+          },
+          "prompt_response_en": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Response En"
+          },
+          "brands_extracted": {
+            "items": {
+              "$ref": "#/components/schemas/RunInspectorBrandExtract"
+            },
+            "type": "array",
+            "title": "Brands Extracted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "llm_answer_id",
+          "vertical_name",
+          "model",
+          "prompt_zh",
+          "prompt_eng",
+          "prompt_response_zh",
+          "prompt_response_en",
+          "brands_extracted"
+        ],
+        "title": "RunInspectorPromptExport"
+      },
+      "RunMetricsResponse": {
+        "properties": {
+          "brand_id": {
+            "type": "integer",
+            "title": "Brand Id"
+          },
+          "brand_name": {
+            "type": "string",
+            "title": "Brand Name"
+          },
+          "is_user_input": {
+            "type": "boolean",
+            "title": "Is User Input"
+          },
+          "top_spot_share": {
+            "type": "number",
+            "title": "Top Spot Share"
+          },
+          "sentiment_index": {
+            "type": "number",
+            "title": "Sentiment Index"
+          },
+          "mention_rate": {
+            "type": "number",
+            "title": "Mention Rate"
+          },
+          "share_of_voice": {
+            "type": "number",
+            "title": "Share Of Voice"
+          },
+          "dragon_lens_visibility": {
+            "type": "number",
+            "title": "Dragon Lens Visibility"
+          }
+        },
+        "type": "object",
+        "required": [
+          "brand_id",
+          "brand_name",
+          "is_user_input",
+          "top_spot_share",
+          "sentiment_index",
+          "mention_rate",
+          "share_of_voice",
+          "dragon_lens_visibility"
+        ],
+        "title": "RunMetricsResponse"
+      },
+      "RunResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "run_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Run Time"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "vertical_id",
+          "provider",
+          "model_name",
+          "status",
+          "run_time",
+          "completed_at",
+          "error_message"
+        ],
+        "title": "RunResponse"
+      },
+      "TrackingJobCreate": {
+        "properties": {
+          "vertical_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Vertical Name"
+          },
+          "vertical_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vertical Description"
+          },
+          "brands": {
+            "items": {
+              "$ref": "#/components/schemas/BrandCreate"
+            },
+            "type": "array",
+            "title": "Brands"
+          },
+          "prompts": {
+            "items": {
+              "$ref": "#/components/schemas/PromptCreate"
+            },
+            "type": "array",
+            "title": "Prompts"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider",
+            "description": "LLM provider (qwen, deepseek, kimi, openrouter)",
+            "default": "qwen"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name",
+            "description": "Specific model name or OpenRouter model ID",
+            "default": "qwen2.5:7b-instruct-q4_0"
+          },
+          "reuse_answers": {
+            "type": "boolean",
+            "title": "Reuse Answers",
+            "description": "Whether to reuse answers from previous runs",
+            "default": false
+          },
+          "web_search_enabled": {
+            "type": "boolean",
+            "title": "Web Search Enabled",
+            "description": "Whether web search is enabled for this run",
+            "default": false
+          },
+          "comparison_enabled": {
+            "type": "boolean",
+            "title": "Comparison Enabled",
+            "description": "Deprecated: comparison prompts run automatically after the main run completes",
+            "default": true
+          },
+          "comparison_competitor_brands": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Comparison Competitor Brands",
+            "description": "Ignored (comparison prompts are system-generated)"
+          },
+          "comparison_prompts": {
+            "items": {
+              "$ref": "#/components/schemas/PromptCreate"
+            },
+            "type": "array",
+            "title": "Comparison Prompts",
+            "description": "Ignored (comparison prompts are system-generated)"
+          },
+          "comparison_target_count": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Comparison Target Count",
+            "description": "Ignored (comparison prompts are system-generated with a fixed count)",
+            "default": 20
+          },
+          "comparison_min_prompts_per_competitor": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 0.0,
+            "title": "Comparison Min Prompts Per Competitor",
+            "description": "Ignored (comparison prompts are system-generated)",
+            "default": 2
+          },
+          "comparison_autogenerate_missing": {
+            "type": "boolean",
+            "title": "Comparison Autogenerate Missing",
+            "description": "Ignored (comparison prompts are system-generated)",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "vertical_name",
+          "prompts"
+        ],
+        "title": "TrackingJobCreate"
+      },
+      "TrackingJobResponse": {
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "Run Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "vertical_id",
+          "provider",
+          "model_name",
+          "status",
+          "message"
+        ],
+        "title": "TrackingJobResponse"
+      },
+      "ValidateCandidateRequest": {
+        "properties": {
+          "approved": {
+            "type": "boolean",
+            "title": "Approved"
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "approved"
+        ],
+        "title": "ValidateCandidateRequest"
+      },
+      "ValidationCandidateResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "vertical_id": {
+            "type": "integer",
+            "title": "Vertical Id"
+          },
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "canonical_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Id"
+          },
+          "mention_count": {
+            "type": "integer",
+            "title": "Mention Count"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "vertical_id",
+          "entity_type",
+          "name",
+          "canonical_id",
+          "mention_count",
+          "status",
+          "reviewed_at",
+          "reviewed_by",
+          "rejection_reason",
+          "created_at"
+        ],
+        "title": "ValidationCandidateResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VerticalCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "VerticalCreate"
+      },
+      "VerticalResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "created_at"
+        ],
+        "title": "VerticalResponse"
+      }
+    }
+  }
+}

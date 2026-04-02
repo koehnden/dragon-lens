@@ -1187,7 +1187,8 @@ def run_vertical_analysis(
 @celery_app.task
 def translate_text(text: str, source_lang: str, target_lang: str) -> str:
     logger.info(f"Translating from {source_lang} to {target_lang}")
-    return f"[TODO: Translation of: {text}]"
+    translator = TranslaterService()
+    return translator.translate_text_sync(text, source_lang, target_lang)
 
 
 @celery_app.task

@@ -82,7 +82,7 @@ async def create_tracking_job(
     1. Create or get the vertical
     2. Create brands and prompts
     3. Create a Run record
-    4. Enqueue a Celery task to process the tracking (TODO)
+    4. Enqueue background processing for the run
 
     Args:
         job: Tracking job configuration

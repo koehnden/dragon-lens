@@ -46,6 +46,11 @@ def get_knowledge_db_write() -> Generator[Session, None, None]:
         db.close()
 
 
+def register_knowledge_models() -> None:
+    import models.knowledge_domain  # noqa: F401
+
+
 def init_knowledge_db() -> None:
     """Initialize knowledge tables in PostgreSQL."""
+    register_knowledge_models()
     KnowledgeBase.metadata.create_all(bind=engine)

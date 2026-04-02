@@ -2,6 +2,7 @@ from typing import Generator
 
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from config import settings
 from models.sqlite_config import apply_sqlite_pragmas, is_sqlite_url, sqlite_connect_args
@@ -27,9 +28,14 @@ class Base(DeclarativeBase):
     pass
 
 
+engine_kwargs = {}
+if settings.database_url == "sqlite:///:memory:":
+    engine_kwargs["poolclass"] = StaticPool
+
 engine = create_engine(
     settings.database_url,
     connect_args=sqlite_connect_args(settings.database_url),
+    **engine_kwargs,
     echo=settings.debug,
 )
 

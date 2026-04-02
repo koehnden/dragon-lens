@@ -1,10 +1,8 @@
 """API router for API key management."""
 
-import logging
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from models import APIKey, get_db
@@ -15,10 +13,7 @@ from models.schemas import (
 )
 from services.encryption import EncryptionService, APIKeyManager
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter()
-security = HTTPBearer()
 
 
 def get_encryption_service() -> EncryptionService:
@@ -47,7 +42,7 @@ async def create_api_key(
         db.query(APIKey)
         .filter(
             APIKey.provider == api_key_data.provider,
-            APIKey.is_active == True,
+            APIKey.is_active,
         )
         .first()
     )
@@ -105,7 +100,7 @@ async def list_api_keys(
     if provider:
         query = query.filter(APIKey.provider == provider)
     if active_only:
-        query = query.filter(APIKey.is_active == True)
+        query = query.filter(APIKey.is_active)
 
     api_keys = query.order_by(APIKey.provider, APIKey.created_at.desc()).all()
 
@@ -181,7 +176,7 @@ async def update_api_key(
                 db.query(APIKey)
                 .filter(
                     APIKey.provider == api_key.provider,
-                    APIKey.is_active == True,
+                    APIKey.is_active,
                     APIKey.id != api_key.id,
                 )
                 .first()
@@ -229,37 +224,3 @@ async def delete_api_key(
 
     db.delete(api_key)
     db.commit()
-
-
-@router.get("/api-keys/{key_id}/decrypt", response_model=dict)
-async def decrypt_api_key(
-    key_id: int,
-    credentials: HTTPAuthorizationCredentials = Security(security),
-    db: Session = Depends(get_db),
-    api_key_manager: APIKeyManager = Depends(get_api_key_manager),
-) -> dict:
-    """
-    Decrypt and return an API key (admin only).
-
-    Requires authentication.
-    """
-    # TODO: Implement proper authentication
-    # For now, just check for a basic token
-    if credentials.credentials != "admin-token":
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    api_key = db.query(APIKey).filter(APIKey.id == key_id).first()
-    if not api_key:
-        raise HTTPException(status_code=404, detail=f"API key {key_id} not found")
-
-    try:
-        decrypted_key = api_key_manager.retrieve_api_key(api_key.encrypted_key)
-        return {
-            "id": api_key.id,
-            "provider": api_key.provider,
-            "api_key": decrypted_key,
-            "is_active": api_key.is_active,
-        }
-    except Exception as e:
-        logger.error(f"Failed to decrypt API key {key_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to decrypt API key")

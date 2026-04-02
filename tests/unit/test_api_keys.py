@@ -232,3 +232,19 @@ def test_delete_api_key_not_found(client: TestClient):
     """Test deleting a non-existent API key."""
     response = client.delete("/api/v1/api-keys/999")
     assert response.status_code == 404
+
+
+def test_decrypt_api_key_endpoint_not_exposed(client: TestClient, db: Session):
+    """Public API should not expose a key decryption endpoint."""
+    api_key = APIKey(
+        provider="deepseek",
+        encrypted_key="encrypted-key",
+        key_hash="hash",
+        is_active=True,
+    )
+    db.add(api_key)
+    db.commit()
+    db.refresh(api_key)
+
+    response = client.get(f"/api/v1/api-keys/{api_key.id}/decrypt")
+    assert response.status_code == 404

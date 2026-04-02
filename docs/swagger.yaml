@@ -164,7 +164,8 @@ paths:
       tags:
       - verticals
       summary: Export Vertical Inspector Data
-      description: Export run inspector prompt/answer data for all completed runs in this vertical.
+      description: Export run inspector prompt/answer data for all completed runs
+        in this vertical.
       operationId: export_vertical_inspector_data_api_v1_verticals__vertical_id__inspector_export_get
       parameters:
       - name: vertical_id
@@ -182,7 +183,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/RunInspectorPromptExport'
-                title: Response Export Vertical Inspector Data Api V1 Verticals  Vertical Id  Inspector Export Get
+                title: Response Export Vertical Inspector Data Api V1 Verticals  Vertical
+                  Id  Inspector Export Get
         '422':
           description: Validation Error
           content:
@@ -237,9 +239,9 @@ paths:
       summary: Create Tracking Job
       description: "Create a new tracking job.\n\nThis will:\n1. Create or get the\
         \ vertical\n2. Create brands and prompts\n3. Create a Run record\n4. Enqueue\
-        \ a Celery task to process the tracking (TODO)\n\nArgs:\n    job: Tracking\
-        \ job configuration\n    db: Database session\n\nReturns:\n    Tracking job\
-        \ response with run ID"
+        \ background processing for the run\n\nArgs:\n    job: Tracking job configuration\n\
+        \    db: Database session\n\nReturns:\n    Tracking job response with run\
+        \ ID"
       operationId: create_tracking_job_api_v1_tracking_jobs_post
       requestBody:
         required: true
@@ -436,8 +438,8 @@ paths:
         \ the run exists and is not in progress\n2. Enqueue a Celery task to reprocess\
         \ the run\n3. The task will reuse existing LLM answers and re-run extraction\n\
         \nArgs:\n    run_id: Run ID to reprocess\n    db: Database session\n\nReturns:\n\
-        \    Status message\n\nRaises:\n    HTTPException: If run not found or not\
-        \ in pending, completed, or failed status"
+        \    Status message\n\nRaises:\n    HTTPException: If run not found or status\
+        \ is in progress"
       operationId: reprocess_run_api_v1_tracking_runs__run_id__reprocess_post
       parameters:
       - name: run_id
@@ -497,7 +499,10 @@ paths:
       tags:
       - tracking
       summary: Export Run Inspector Data
-      description: Export run inspector prompt/answer data for a single run.
+      description: 'Export prompt answers and extracted entities for a run.
+
+
+        Returns one item per prompt answer with brands, products, snippets, and translations.'
       operationId: export_run_inspector_data_api_v1_tracking_runs__run_id__inspector_export_get
       parameters:
       - name: run_id
@@ -515,7 +520,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/RunInspectorPromptExport'
-                title: Response Export Run Inspector Data Api V1 Tracking Runs  Run Id  Inspector Export Get
+                title: Response Export Run Inspector Data Api V1 Tracking Runs  Run
+                  Id  Inspector Export Get
         '422':
           description: Validation Error
           content:
@@ -808,6 +814,49 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/metrics/run/{run_id}/comparison/summary:
+    get:
+      tags:
+      - metrics
+      summary: Get Run Comparison Summary
+      description: Get winner/loser summary for comparison prompts grouped by characteristic.
+      operationId: get_run_comparison_summary_api_v1_metrics_run__run_id__comparison_summary_get
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Run Id
+      - name: include_prompt_details
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Include Prompt Details
+      - name: limit_prompts
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit Prompts
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunComparisonSummaryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/api-keys:
     post:
       tags:
@@ -961,40 +1010,6 @@ paths:
       responses:
         '204':
           description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/api-keys/{key_id}/decrypt:
-    get:
-      tags:
-      - api-keys
-      summary: Decrypt Api Key
-      description: 'Decrypt and return an API key (admin only).
-
-
-        Requires authentication.'
-      operationId: decrypt_api_key_api_v1_api_keys__key_id__decrypt_get
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: key_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Key Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-                title: Response Decrypt Api Key Api V1 Api Keys  Key Id  Decrypt Get
         '422':
           description: Validation Error
           content:
@@ -1639,6 +1654,39 @@ components:
       - aliases
       - created_at
       title: CanonicalProductResponse
+    ComparisonCharacteristicSummary:
+      properties:
+        characteristic_zh:
+          type: string
+          title: Characteristic Zh
+        characteristic_en:
+          type: string
+          title: Characteristic En
+        total_prompts:
+          type: integer
+          title: Total Prompts
+        primary_wins:
+          type: integer
+          title: Primary Wins
+        competitor_wins:
+          type: integer
+          title: Competitor Wins
+        ties:
+          type: integer
+          title: Ties
+        unknown:
+          type: integer
+          title: Unknown
+      type: object
+      required:
+      - characteristic_zh
+      - characteristic_en
+      - total_prompts
+      - primary_wins
+      - competitor_wins
+      - ties
+      - unknown
+      title: ComparisonCharacteristicSummary
     ComparisonEntitySentimentSummary:
       properties:
         entity_type:
@@ -1703,6 +1751,82 @@ components:
       - snippet_en
       - sentiment
       title: ComparisonEvidenceSnippet
+    ComparisonPromptOutcomeDetail:
+      properties:
+        prompt_id:
+          type: integer
+          title: Prompt Id
+        characteristic_zh:
+          type: string
+          title: Characteristic Zh
+        characteristic_en:
+          type: string
+          title: Characteristic En
+        prompt_zh:
+          type: string
+          title: Prompt Zh
+        prompt_en:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt En
+        answer_zh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Answer Zh
+        answer_en:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Answer En
+        primary_product_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Primary Product Id
+        primary_product_name:
+          type: string
+          title: Primary Product Name
+        competitor_product_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Competitor Product Id
+        competitor_product_name:
+          type: string
+          title: Competitor Product Name
+        winner_role:
+          type: string
+          title: Winner Role
+        winner_product_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Winner Product Id
+        winner_product_name:
+          type: string
+          title: Winner Product Name
+        loser_product_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Loser Product Id
+        loser_product_name:
+          type: string
+          title: Loser Product Name
+      type: object
+      required:
+      - prompt_id
+      - characteristic_zh
+      - characteristic_en
+      - prompt_zh
+      - primary_product_name
+      - competitor_product_name
+      - winner_role
+      - winner_product_name
+      - loser_product_name
+      title: ComparisonPromptOutcomeDetail
     ConsolidationResultResponse:
       properties:
         brands_merged:
@@ -2497,6 +2621,66 @@ components:
       - brands
       - products
       title: RunComparisonMetricsResponse
+    RunComparisonSummaryResponse:
+      properties:
+        run_id:
+          type: integer
+          title: Run Id
+        vertical_id:
+          type: integer
+          title: Vertical Id
+        vertical_name:
+          type: string
+          title: Vertical Name
+        provider:
+          type: string
+          title: Provider
+        model_name:
+          type: string
+          title: Model Name
+        primary_brand_id:
+          type: integer
+          title: Primary Brand Id
+        primary_brand_name:
+          type: string
+          title: Primary Brand Name
+        brands:
+          items:
+            $ref: '#/components/schemas/ComparisonEntitySentimentSummary'
+          type: array
+          title: Brands
+        products:
+          items:
+            $ref: '#/components/schemas/ComparisonEntitySentimentSummary'
+          type: array
+          title: Products
+        characteristics:
+          items:
+            $ref: '#/components/schemas/ComparisonCharacteristicSummary'
+          type: array
+          title: Characteristics
+        prompts:
+          items:
+            $ref: '#/components/schemas/ComparisonPromptOutcomeDetail'
+          type: array
+          title: Prompts
+        messages:
+          items:
+            $ref: '#/components/schemas/RunComparisonMessage'
+          type: array
+          title: Messages
+      type: object
+      required:
+      - run_id
+      - vertical_id
+      - vertical_name
+      - provider
+      - model_name
+      - primary_brand_id
+      - primary_brand_name
+      - brands
+      - products
+      title: RunComparisonSummaryResponse
     RunDetailedResponse:
       properties:
         id:
@@ -2555,102 +2739,6 @@ components:
       - error_message
       - answers
       title: RunDetailedResponse
-    RunInspectorBrandExtract:
-      properties:
-        brand_zh:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Brand Zh
-        brand_en:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Brand En
-        text_snippet_zh:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Text Snippet Zh
-        text_snippet_en:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Text Snippet En
-        rank:
-          anyOf:
-          - type: integer
-          - type: 'null'
-          title: Rank
-        products_zh:
-          items:
-            type: string
-          type: array
-          title: Products Zh
-        products_en:
-          items:
-            type: string
-          type: array
-          title: Products En
-      type: object
-      required:
-      - brand_zh
-      - brand_en
-      - text_snippet_zh
-      - text_snippet_en
-      - rank
-      - products_zh
-      - products_en
-      title: RunInspectorBrandExtract
-    RunInspectorPromptExport:
-      properties:
-        run_id:
-          type: integer
-          title: Run Id
-        llm_answer_id:
-          type: integer
-          title: Llm Answer Id
-        vertical_name:
-          type: string
-          title: Vertical Name
-        model:
-          type: string
-          title: Model
-        prompt_zh:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Prompt Zh
-        prompt_eng:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Prompt Eng
-        prompt_response_zh:
-          type: string
-          title: Prompt Response Zh
-        prompt_response_en:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Prompt Response En
-        brands_extracted:
-          items:
-            $ref: '#/components/schemas/RunInspectorBrandExtract'
-          type: array
-          title: Brands Extracted
-      type: object
-      required:
-      - run_id
-      - llm_answer_id
-      - vertical_name
-      - model
-      - prompt_zh
-      - prompt_eng
-      - prompt_response_zh
-      - prompt_response_en
-      - brands_extracted
-      title: RunInspectorPromptExport
     RunEntitiesResponse:
       properties:
         run_id:
@@ -2811,6 +2899,102 @@ components:
       - brand_name
       - mention_count
       title: RunEntityProduct
+    RunInspectorBrandExtract:
+      properties:
+        brand_zh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brand Zh
+        brand_en:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brand En
+        text_snippet_zh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text Snippet Zh
+        text_snippet_en:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text Snippet En
+        rank:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rank
+        products_zh:
+          items:
+            type: string
+          type: array
+          title: Products Zh
+        products_en:
+          items:
+            type: string
+          type: array
+          title: Products En
+      type: object
+      required:
+      - brand_zh
+      - brand_en
+      - text_snippet_zh
+      - text_snippet_en
+      - rank
+      - products_zh
+      - products_en
+      title: RunInspectorBrandExtract
+    RunInspectorPromptExport:
+      properties:
+        run_id:
+          type: integer
+          title: Run Id
+        llm_answer_id:
+          type: integer
+          title: Llm Answer Id
+        vertical_name:
+          type: string
+          title: Vertical Name
+        model:
+          type: string
+          title: Model
+        prompt_zh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt Zh
+        prompt_eng:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt Eng
+        prompt_response_zh:
+          type: string
+          title: Prompt Response Zh
+        prompt_response_en:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prompt Response En
+        brands_extracted:
+          items:
+            $ref: '#/components/schemas/RunInspectorBrandExtract'
+          type: array
+          title: Brands Extracted
+      type: object
+      required:
+      - run_id
+      - llm_answer_id
+      - vertical_name
+      - model
+      - prompt_zh
+      - prompt_eng
+      - prompt_response_zh
+      - prompt_response_en
+      - brands_extracted
+      title: RunInspectorPromptExport
     RunMetricsResponse:
       properties:
         brand_id:
@@ -2940,41 +3124,40 @@ components:
         comparison_enabled:
           type: boolean
           title: Comparison Enabled
-          description: Whether to run comparison prompts after the main run completes
-          default: false
+          description: 'Deprecated: comparison prompts run automatically after the
+            main run completes'
+          default: true
         comparison_competitor_brands:
           items:
             type: string
           type: array
           title: Comparison Competitor Brands
-          description: Optional competitor brand display names for comparisons
+          description: Ignored (comparison prompts are system-generated)
         comparison_prompts:
           items:
             $ref: '#/components/schemas/PromptCreate'
           type: array
           title: Comparison Prompts
-          description: Optional user-provided comparison prompts (not used for extraction)
+          description: Ignored (comparison prompts are system-generated)
         comparison_target_count:
           type: integer
           maximum: 500.0
           minimum: 1.0
           title: Comparison Target Count
-          description: Target number of comparison prompts (may be exceeded to satisfy
-            per-competitor minimums)
+          description: Ignored (comparison prompts are system-generated with a fixed
+            count)
           default: 20
         comparison_min_prompts_per_competitor:
           type: integer
           maximum: 50.0
           minimum: 0.0
           title: Comparison Min Prompts Per Competitor
-          description: Minimum number of generated comparison prompts per user-provided
-            competitor brand
+          description: Ignored (comparison prompts are system-generated)
           default: 2
         comparison_autogenerate_missing:
           type: boolean
           title: Comparison Autogenerate Missing
-          description: Whether to auto-generate missing prompts to reach the target
-            count
+          description: Ignored (comparison prompts are system-generated)
           default: true
       type: object
       required:
@@ -3149,7 +3332,3 @@ components:
       - description
       - created_at
       title: VerticalResponse
-  securitySchemes:
-    HTTPBearer:
-      type: http
-      scheme: bearer

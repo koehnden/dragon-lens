@@ -25,19 +25,19 @@ def ensure_src_on_path() -> None:
 
 ensure_src_on_path()
 
-os.environ.setdefault("CELERY_BROKER_URL", "memory://")
-os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
-os.environ.setdefault("ENABLE_QWEN_FILTERING", "false")
-os.environ.setdefault("RUN_TASKS_INLINE", "true")
-os.environ.setdefault("KNOWLEDGE_DATABASE_URL", "sqlite:///:memory:")
+os.environ["CELERY_BROKER_URL"] = "memory://"
+os.environ["CELERY_RESULT_BACKEND"] = "cache+memory://"
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["ENABLE_QWEN_FILTERING"] = "false"
+os.environ["RUN_TASKS_INLINE"] = "true"
+os.environ["KNOWLEDGE_DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["TURSO_DATABASE_URL"] = ""
 os.environ["TURSO_AUTH_TOKEN"] = ""
 os.environ["TURSO_READ_ONLY_AUTH_TOKEN"] = ""
 os.environ["FEEDBACK_SANITY_CHECKS_ENABLED"] = "false"
 os.environ["FEEDBACK_TRIGGER_RERUN_ENABLED"] = "false"
 os.environ["VERTICAL_AUTO_MATCH_ENABLED"] = "false"
-os.environ.setdefault("ENCRYPTION_SECRET_KEY", "test-secret-key")
+os.environ["ENCRYPTION_SECRET_KEY"] = "test-secret-key"
 
 
 def _routers():
@@ -76,8 +76,10 @@ def _knowledge_models():
         get_knowledge_db,
         get_knowledge_db_write,
         knowledge_engine,
+        register_knowledge_models,
     )
 
+    register_knowledge_models()
     return KnowledgeBase, get_knowledge_db, get_knowledge_db_write, knowledge_engine
 
 

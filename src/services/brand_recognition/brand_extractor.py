@@ -1,25 +1,30 @@
 """Legacy brand/product normalization helpers kept for active workflows."""
 
-import logging
 import re
-from typing import Dict, List, Tuple
+from typing import Dict
 
-from sqlalchemy.orm import Session
-
-from services.brand_recognition.models import (
-    ExtractionResult,
-    ExtractionDebugInfo,
-)
 from services.brand_recognition.classification import (
-    is_likely_brand,
-    is_likely_product,
     _has_product_model_patterns,
     _has_product_suffix,
+    is_likely_brand,
+    is_likely_product,
 )
-from services.brand_recognition.prompts import load_prompt
 from constants import GENERIC_TERMS, PRODUCT_HINTS
 
-logger = logging.getLogger(__name__)
+
+def _filter_relationships(
+    relationships: Dict[str, str],
+    valid_products: set[str],
+    valid_brands: set[str],
+) -> Dict[str, str]:
+    product_names = {name.casefold() for name in valid_products}
+    brand_names = {name.casefold() for name in valid_brands}
+    return {
+        product: brand
+        for product, brand in relationships.items()
+        if product.casefold() in product_names and brand.casefold() in brand_names
+    }
+
 
 def _calculate_brand_confidence(entity: str, entity_lower: str, vertical: str) -> float:
     """Calculate confidence score for a brand entity."""
