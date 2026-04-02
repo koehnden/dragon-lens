@@ -2,10 +2,12 @@ import pandas as pd
 import streamlit as st
 
 from ui.components.charts import (
+    render_model_heatmap,
     render_positioning_matrix,
     render_sov_bar_chart,
 )
 from ui.components.insights import render_insights
+from ui.components.prompt_gaps import render_prompt_gaps
 from ui.utils.api import (
     fetch_available_models,
     fetch_json,
@@ -213,6 +215,8 @@ def _render_dashboard_content(
     comparison: dict | None,
     comparison_summary: dict | None,
     run_id: int | None,
+    vertical_id: int | None = None,
+    available_models: list[str] | None = None,
 ) -> None:
     _render_executive_scorecard(df, name_col, user_brand)
     st.markdown("---")
@@ -220,11 +224,19 @@ def _render_dashboard_content(
     render_positioning_matrix(df, name_col, user_brand)
     st.markdown("---")
 
+    if vertical_id and available_models:
+        render_model_heatmap(vertical_id, available_models, name_col, user_brand)
+        st.markdown("---")
+
     col_sov, col_insights = st.columns([3, 2])
     with col_sov:
         render_sov_bar_chart(df, name_col, user_brand)
     with col_insights:
         render_insights(df, name_col, user_brand)
+
+    if run_id:
+        with st.expander("Prompt Coverage Analysis", expanded=False):
+            render_prompt_gaps(run_id, user_brand)
 
     if comparison or comparison_summary:
         with st.expander("Comparison Details"):
@@ -307,4 +319,7 @@ def show() -> None:
     else:
         user_entity = user_brand
 
-    _render_dashboard_content(df, name_col, user_entity, comparison, comparison_summary, run_id)
+    _render_dashboard_content(
+        df, name_col, user_entity, comparison, comparison_summary, run_id,
+        vertical_id=selected_vertical_id, available_models=available_models,
+    )

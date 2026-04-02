@@ -37,6 +37,24 @@ def fetch_user_brands(vertical_id: int) -> list[str]:
     return [b["display_name"] for b in brands]
 
 
+_MODEL_SHORT_NAMES: dict[str, str] = {
+    "qwen2.5:7b-instruct-q4_0": "Qwen 7B",
+    "qwen/qwen-2.5-72b-instruct": "Qwen 72B",
+    "deepseek-chat": "DeepSeek",
+    "kimi-k2-turbo-preview": "Kimi",
+    "baidu/ernie-4.5-300b-a47b": "ERNIE",
+    "bytedance-seed/seed-1.6": "Seed",
+    "minimax/minimax-m2.1": "MiniMax",
+}
+
+
+def shorten_model_name(model_name: str) -> str:
+    if model_name in _MODEL_SHORT_NAMES:
+        return _MODEL_SHORT_NAMES[model_name]
+    parts = model_name.split("/")
+    return parts[-1].split(":")[0].title() if parts else model_name
+
+
 def render_vertical_selector() -> tuple[str, int] | None:
     verticals = fetch_verticals()
     if not verticals:
