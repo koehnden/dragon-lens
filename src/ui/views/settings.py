@@ -105,12 +105,12 @@ def _render_provider_info() -> None:
         4. Create a new API key
 
         **Pricing:**
-        - Input: $0.14 per 1M tokens
-        - Output: $0.28 per 1M tokens
+        - Input (cache miss): $0.28 per 1M tokens
+        - Output: $0.42 per 1M tokens
 
         **Models:**
-        - `deepseek-chat`: General purpose chat model
-        - `deepseek-reasoner`: Enhanced reasoning capabilities
+        - `deepseek-chat`: Current stable chat ID for DeepSeek V3.2
+        - `deepseek-reasoner`: Current stable reasoning ID for DeepSeek V3.2
         """)
 
     with st.expander("Kimi API (Moonshot AI)"):
@@ -121,19 +121,18 @@ def _render_provider_info() -> None:
         3. Navigate to API Keys section
         4. Create a new API key
 
-        **Pricing (per 1K tokens):**
+        **Recommended Model:**
+        - `kimi-k2.5`: Current recommended Moonshot model for visibility runs
+
+        **Legacy Models Still Supported:**
         - `moonshot-v1-8k`: $0.012 (input & output)
         - `moonshot-v1-32k`: $0.024 (input & output)
         - `moonshot-v1-128k`: $0.06 (input & output)
 
-        **Models (direct Moonshot API):**
-        - `kimi-k2-turbo-preview`: Kimi K2 Turbo (recommended for complex prompts)
-        - `moonshot-v1-8k`: Standard model with 8K context
-        - `moonshot-v1-32k`: Extended context model (32K)
-        - `moonshot-v1-128k`: Long context model (128K)
+        **OpenRouter Equivalent:**
+        - `moonshotai/kimi-k2.5`
 
-        **Note:** Use `kimi-k2-turbo-preview` for best results with K2.
-        Also available via OpenRouter as `moonshotai/kimi-k2-0905`.
+        **Note:** Older Moonshot v1 and K2 preview IDs remain available for backward compatibility.
         """)
 
     with st.expander("OpenRouter API"):
@@ -145,12 +144,11 @@ def _render_provider_info() -> None:
         4. Create a new API key
 
         **Models:**
-        - `moonshotai/kimi-k2-0905` (Kimi K2 - only available via OpenRouter)
-        - `baidu/ernie-4.5-300b-a47b`
-        - `bytedance-seed/seed-1.6`
-        - `bytedance-seed/seed-1.6-flash`
-        - `qwen/qwen-2.5-72b-instruct`
-        - `minimax/minimax-m2.1`
+        - `bytedance-seed/seed-2.0-lite`
+        - `qwen/qwen3.5-plus-02-15`
+        - `baidu/ernie-4.5-21b-a3b`
+        - `minimax/minimax-m2.5`
+        - `moonshotai/kimi-k2.5`
         - Any other OpenRouter model ID
 
         **Pricing:** Not available yet for OpenRouter runs in DragonLens.

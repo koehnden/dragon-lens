@@ -3,10 +3,11 @@ from models.domain import LLMProvider
 PRICING = {
     LLMProvider.QWEN: {},
     LLMProvider.DEEPSEEK: {
-        "deepseek-chat": {"input": 0.14, "output": 0.28, "unit": 1_000_000},
-        "deepseek-reasoner": {"input": 0.55, "output": 2.19, "unit": 1_000_000},
+        "deepseek-chat": {"input": 0.28, "output": 0.42, "unit": 1_000_000},
+        "deepseek-reasoner": {"input": 0.28, "output": 0.42, "unit": 1_000_000},
     },
     LLMProvider.KIMI: {
+        "kimi-k2.5": {"input": 4.0, "output": 21.0, "unit": 1_000_000},
         "moonshot-v1-8k": {"input": 0.012, "output": 0.012, "unit": 1000},
         "moonshot-v1-32k": {"input": 0.024, "output": 0.024, "unit": 1000},
         "moonshot-v1-128k": {"input": 0.06, "output": 0.06, "unit": 1000},
