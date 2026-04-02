@@ -18,6 +18,7 @@ def test_create_tracking_job(client: TestClient):
                 {"text_en": "Best SUV cars?", "text_zh": None, "language_original": "en"},
                 {"text_en": None, "text_zh": "最好的SUV汽车？", "language_original": "zh"},
             ],
+            "provider": "qwen",
             "model_name": "qwen",
         },
     )
@@ -44,7 +45,8 @@ def test_create_tracking_job_minimal(client: TestClient):
 
     assert response.status_code == 201
     data = response.json()
-    assert "qwen" in data["model_name"].lower()
+    assert data["provider"] == "deepseek"
+    assert data["model_name"] == "deepseek-chat"
 
 
 def test_create_tracking_job_existing_vertical(client: TestClient):
@@ -85,6 +87,7 @@ def test_list_runs(client: TestClient):
             "vertical_name": "SUV Cars",
             "brands": [{"display_name": "VW"}],
             "prompts": [{"text_en": "Test", "language_original": "en"}],
+            "provider": "qwen",
             "model_name": "qwen",
         },
     )
@@ -95,7 +98,8 @@ def test_list_runs(client: TestClient):
             "vertical_name": "Smartphones",
             "brands": [{"display_name": "Apple"}],
             "prompts": [{"text_en": "Test", "language_original": "en"}],
-            "model_name": "deepseek",
+            "provider": "deepseek",
+            "model_name": "deepseek-chat",
         },
     )
 
@@ -141,6 +145,7 @@ def test_list_runs_filter_by_model(client: TestClient):
             "vertical_name": "Test",
             "brands": [{"display_name": "VW"}],
             "prompts": [{"text_en": "Test", "language_original": "en"}],
+            "provider": "qwen",
             "model_name": "qwen",
         },
     )
@@ -151,7 +156,8 @@ def test_list_runs_filter_by_model(client: TestClient):
             "vertical_name": "Test",
             "brands": [{"display_name": "Apple"}],
             "prompts": [{"text_en": "Test", "language_original": "en"}],
-            "model_name": "deepseek",
+            "provider": "deepseek",
+            "model_name": "deepseek-chat",
         },
     )
 
@@ -188,6 +194,7 @@ def test_get_run(client: TestClient):
             "vertical_name": "SUV Cars",
             "brands": [{"display_name": "VW"}],
             "prompts": [{"text_en": "Test", "language_original": "en"}],
+            "provider": "qwen",
             "model_name": "qwen",
         },
     )
@@ -217,6 +224,7 @@ def test_get_run_details_empty(client: TestClient):
             "vertical_name": "SUV Cars",
             "brands": [{"display_name": "VW"}],
             "prompts": [{"text_en": "Test", "language_original": "en"}],
+            "provider": "qwen",
             "model_name": "qwen",
         },
     )
