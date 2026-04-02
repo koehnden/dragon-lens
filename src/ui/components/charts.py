@@ -1,7 +1,11 @@
+import httpx
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+
+from config import settings
+from ui.utils.api import fetch_json, shorten_model_name
 
 
 def render_positioning_matrix(df: pd.DataFrame, name_col: str, user_brand: str = None) -> None:
@@ -62,39 +66,6 @@ def render_positioning_matrix(df: pd.DataFrame, name_col: str, user_brand: str =
     st.plotly_chart(fig, use_container_width=True)
 
 
-def render_sov_treemap(df: pd.DataFrame, name_col: str) -> None:
-    if df.empty or df["share_of_voice"].sum() == 0:
-        st.info("No share of voice data available.")
-        return
-
-    chart_df = df[df["share_of_voice"] > 0].copy()
-    if chart_df.empty:
-        st.info("No brands with share of voice > 0.")
-        return
-
-    fig = px.treemap(
-        chart_df,
-        path=[name_col],
-        values="share_of_voice",
-        color="sentiment_index",
-        color_continuous_scale=["#d62728", "#ffcc00", "#2ca02c"],
-        color_continuous_midpoint=0,
-        hover_data=["mention_rate", "top_spot_share"],
-        labels={
-            name_col: "Brand" if name_col == "brand_name" else "Product",
-            "share_of_voice": "Share of Voice",
-            "sentiment_index": "Sentiment",
-        },
-    )
-
-    fig.update_layout(
-        title="Share of Voice Distribution",
-        height=400,
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-
 def render_sov_bar_chart(df: pd.DataFrame, name_col: str, user_brand: str = None) -> None:
     if df.empty:
         st.info("No share of voice data available.")
@@ -129,129 +100,81 @@ def render_sov_bar_chart(df: pd.DataFrame, name_col: str, user_brand: str = None
     st.plotly_chart(fig, use_container_width=True)
 
 
-def render_radar_chart(df: pd.DataFrame, name_col: str, selected_brands: list[str] = None) -> None:
-    if df.empty:
-        st.info("No data available for radar chart.")
+@st.cache_data(ttl=300, show_spinner=False)
+def _fetch_per_model_metrics(
+    vertical_id: int, models: tuple[str, ...], view_mode: str,
+) -> list[dict]:
+    base_url = f"http://localhost:{settings.api_port}"
+    endpoint = "/api/v1/metrics/latest"
+    if view_mode == "product":
+        endpoint = "/api/v1/metrics/latest/products"
+    rows: list[dict] = []
+    for model in models:
+        try:
+            resp = httpx.get(
+                f"{base_url}{endpoint}",
+                params={"vertical_id": vertical_id, "model_name": model},
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPError:
+            continue
+        items_key = "products" if view_mode == "product" else "brands"
+        for item in data.get(items_key) or []:
+            name_key = "product_name" if view_mode == "product" else "brand_name"
+            rows.append({
+                "model": shorten_model_name(model),
+                "entity": item[name_key],
+                "sov": round(item["share_of_voice"] * 100),
+            })
+    return rows
+
+
+def render_model_heatmap(
+    vertical_id: int,
+    available_models: list[str],
+    name_col: str,
+    user_brand: str | None = None,
+) -> None:
+    if not available_models or len(available_models) < 2:
         return
 
-    if selected_brands is None:
-        selected_brands = df.nlargest(3, "dragon_lens_visibility")[name_col].tolist()
-
-    metrics = ["mention_rate", "share_of_voice", "top_spot_share", "sentiment_index", "dragon_lens_visibility"]
-    metric_labels = ["Mention Rate", "Share of Voice", "Top Spot", "Sentiment", "DVS"]
-
-    chart_df = df[df[name_col].isin(selected_brands)].copy()
-    if chart_df.empty:
-        st.info("No data for selected brands.")
+    view_mode = "product" if name_col == "product_name" else "brand"
+    rows = _fetch_per_model_metrics(vertical_id, tuple(available_models), view_mode)
+    if not rows:
         return
 
-    for metric in metrics:
-        max_val = df[metric].max()
-        if max_val > 0:
-            chart_df[f"{metric}_norm"] = chart_df[metric] / max_val
-        else:
-            chart_df[f"{metric}_norm"] = 0
+    df = pd.DataFrame(rows)
+    pivot = df.pivot_table(index="entity", columns="model", values="sov", fill_value=0)
 
-    fig = go.Figure()
+    model_order = [shorten_model_name(m) for m in available_models if shorten_model_name(m) in pivot.columns]
+    pivot = pivot[[m for m in model_order if m in pivot.columns]]
 
-    for _, row in chart_df.iterrows():
-        values = [row[f"{m}_norm"] for m in metrics]
-        values.append(values[0])
+    if user_brand and user_brand in pivot.index:
+        other_brands = [b for b in pivot.index if b != user_brand]
+        pivot = pivot.loc[[user_brand] + other_brands]
 
-        fig.add_trace(go.Scatterpolar(
-            r=values,
-            theta=metric_labels + [metric_labels[0]],
-            fill="toself",
-            name=row[name_col],
-        ))
+    fig = go.Figure(data=go.Heatmap(
+        z=pivot.values,
+        x=pivot.columns.tolist(),
+        y=pivot.index.tolist(),
+        text=[[f"{v}%" for v in row] for row in pivot.values.astype(int)],
+        texttemplate="%{text}",
+        textfont={"size": 13},
+        colorscale=[[0, "#ef4444"], [0.3, "#fbbf24"], [0.6, "#22c55e"], [1, "#15803d"]],
+        zmin=0,
+        zmax=100,
+        colorbar=dict(title="SoV %", ticksuffix="%"),
+        hoverongaps=False,
+    ))
 
     fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
-        title="Metrics Comparison Radar",
-        showlegend=True,
-        height=450,
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-
-def render_sentiment_breakdown(df: pd.DataFrame, name_col: str) -> None:
-    if df.empty:
-        st.info("No sentiment data available.")
-        return
-
-    chart_df = df.sort_values("dragon_lens_visibility", ascending=False).head(10).copy()
-
-    def classify_sentiment(val):
-        if val > 0.3:
-            return "Positive"
-        elif val < -0.3:
-            return "Negative"
-        else:
-            return "Neutral"
-
-    chart_df["sentiment_label"] = chart_df["sentiment_index"].apply(classify_sentiment)
-
-    color_map = {"Positive": "#2ca02c", "Neutral": "#ffcc00", "Negative": "#d62728"}
-
-    fig = px.bar(
-        chart_df,
-        x="sentiment_index",
-        y=name_col,
-        orientation="h",
-        color="sentiment_label",
-        color_discrete_map=color_map,
-        labels={
-            name_col: "Brand" if name_col == "brand_name" else "Product",
-            "sentiment_index": "Sentiment Index",
-            "sentiment_label": "Sentiment",
-        },
-    )
-
-    fig.add_vline(x=0, line_dash="solid", line_color="gray", opacity=0.5)
-
-    fig.update_layout(
-        title="Sentiment Breakdown",
-        xaxis_title="Sentiment Index (-1 to +1)",
+        title="Share of Voice Across LLMs",
+        xaxis_title="",
         yaxis_title="",
-        height=max(300, len(chart_df) * 35),
-        showlegend=True,
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-
-def render_metrics_comparison_bar(df: pd.DataFrame, name_col: str) -> None:
-    if df.empty:
-        st.info("No data available for metrics comparison.")
-        return
-
-    chart_df = df.nlargest(8, "dragon_lens_visibility").copy()
-
-    metrics = {
-        "mention_rate": "Mention Rate",
-        "share_of_voice": "Share of Voice",
-        "top_spot_share": "Top Spot Share",
-        "dragon_lens_visibility": "DVS",
-    }
-
-    fig = go.Figure()
-
-    for metric, label in metrics.items():
-        fig.add_trace(go.Bar(
-            name=label,
-            y=chart_df[name_col],
-            x=chart_df[metric] * 100 if metric != "dragon_lens_visibility" else chart_df[metric] * 100,
-            orientation="h",
-        ))
-
-    fig.update_layout(
-        barmode="group",
-        title="Metrics Comparison",
-        xaxis_title="Score (%)",
-        yaxis_title="",
-        height=max(350, len(chart_df) * 50),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        height=max(200, 50 * len(pivot.index) + 100),
+        yaxis=dict(autorange="reversed"),
     )
 
     st.plotly_chart(fig, use_container_width=True)
