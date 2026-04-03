@@ -368,6 +368,17 @@ def _delete_vertical_snapshot(db: Session, vertical_id: int) -> None:
         else []
     )
     _delete_comparison_rows(db, run_ids)
+    _delete_answer_rows(db, answer_ids, run_ids)
+    _delete_prompt_rows(db, vertical_id)
+    _delete_run_rows(db, run_ids)
+    _delete_vertical_rows(db, vertical_id)
+
+
+def _delete_answer_rows(
+    db: Session,
+    answer_ids: list[int],
+    run_ids: list[int],
+) -> None:
     if answer_ids:
         db.query(ExtractionDebug).filter(
             ExtractionDebug.llm_answer_id.in_(answer_ids)
@@ -378,20 +389,38 @@ def _delete_vertical_snapshot(db: Session, vertical_id: int) -> None:
         db.query(ProductMention).filter(
             ProductMention.llm_answer_id.in_(answer_ids)
         ).delete(synchronize_session=False)
-    if run_ids:
-        db.query(ConsolidationDebug).filter(
-            ConsolidationDebug.run_id.in_(run_ids)
-        ).delete(synchronize_session=False)
-        db.query(RunMetrics).filter(RunMetrics.run_id.in_(run_ids)).delete(
-            synchronize_session=False
-        )
-        db.query(RunProductMetrics).filter(
-            RunProductMetrics.run_id.in_(run_ids)
-        ).delete(synchronize_session=False)
-        db.query(LLMAnswer).filter(LLMAnswer.run_id.in_(run_ids)).delete(
-            synchronize_session=False
-        )
-        db.query(Run).filter(Run.id.in_(run_ids)).delete(synchronize_session=False)
+    if not run_ids:
+        return
+    db.query(LLMAnswer).filter(LLMAnswer.run_id.in_(run_ids)).delete(
+        synchronize_session=False
+    )
+
+
+def _delete_prompt_rows(db: Session, vertical_id: int) -> None:
+    db.query(DailyMetrics).filter(DailyMetrics.vertical_id == vertical_id).delete(
+        synchronize_session=False
+    )
+    db.query(Prompt).filter(Prompt.vertical_id == vertical_id).delete(
+        synchronize_session=False
+    )
+
+
+def _delete_run_rows(db: Session, run_ids: list[int]) -> None:
+    if not run_ids:
+        return
+    db.query(ConsolidationDebug).filter(
+        ConsolidationDebug.run_id.in_(run_ids)
+    ).delete(synchronize_session=False)
+    db.query(RunMetrics).filter(RunMetrics.run_id.in_(run_ids)).delete(
+        synchronize_session=False
+    )
+    db.query(RunProductMetrics).filter(
+        RunProductMetrics.run_id.in_(run_ids)
+    ).delete(synchronize_session=False)
+    db.query(Run).filter(Run.id.in_(run_ids)).delete(synchronize_session=False)
+
+
+def _delete_vertical_rows(db: Session, vertical_id: int) -> None:
     db.query(ProductBrandMapping).filter(
         ProductBrandMapping.vertical_id == vertical_id
     ).delete(synchronize_session=False)
@@ -399,12 +428,6 @@ def _delete_vertical_snapshot(db: Session, vertical_id: int) -> None:
         synchronize_session=False
     )
     db.query(Brand).filter(Brand.vertical_id == vertical_id).delete(
-        synchronize_session=False
-    )
-    db.query(Prompt).filter(Prompt.vertical_id == vertical_id).delete(
-        synchronize_session=False
-    )
-    db.query(DailyMetrics).filter(DailyMetrics.vertical_id == vertical_id).delete(
         synchronize_session=False
     )
     db.query(Vertical).filter(Vertical.id == vertical_id).delete(

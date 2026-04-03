@@ -1,10 +1,24 @@
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from collections.abc import Iterator
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from config import settings
-from models import Brand, LLMAnswer, Prompt, PromptLanguage, Run, RunStatus, Vertical
+from models import (
+    Base,
+    Brand,
+    DailyMetrics,
+    LLMAnswer,
+    Prompt,
+    PromptLanguage,
+    Run,
+    RunStatus,
+    Vertical,
+)
 from models.knowledge_domain import (
     KnowledgeBrand,
     KnowledgeBrandAlias,
@@ -15,7 +29,8 @@ from models.knowledge_domain import (
     KnowledgeVertical,
     KnowledgeVerticalAlias,
 )
-from services.demo_publish import build_demo_publish_request
+from models.sqlite_config import apply_sqlite_pragmas
+from services.demo_publish import apply_demo_publish_request, build_demo_publish_request
 
 
 def test_public_demo_blocks_non_admin_mutations(
@@ -185,6 +200,62 @@ def test_demo_publish_replaces_existing_snapshot(
     )
 
 
+def test_demo_publish_replaces_existing_snapshot_with_fk_checks() -> None:
+    with _fk_enforced_session() as session:
+        vertical = _seed_demo_vertical(session)
+        prompt = session.query(Prompt).filter(Prompt.vertical_id == vertical.id).one()
+        brand = session.query(Brand).filter(Brand.vertical_id == vertical.id).one()
+        session.add(
+            DailyMetrics(
+                date=datetime(2026, 4, 2, tzinfo=timezone.utc),
+                vertical_id=vertical.id,
+                provider="qwen",
+                model_name="qwen-plus",
+                prompt_id=prompt.id,
+                brand_id=brand.id,
+                mention_rate=1.0,
+                share_of_voice=1.0,
+                top_spot_share=1.0,
+                sentiment_index=1.0,
+                dragon_lens_visibility=1.0,
+            )
+        )
+        session.flush()
+        payload = build_demo_publish_request(session, vertical.id, "publish-1")
+        _add_legacy_brand(session, vertical.id)
+        session.commit()
+
+        vertical_id, run_count, brand_count, product_count = apply_demo_publish_request(
+            session,
+            payload,
+        )
+        session.commit()
+
+        assert vertical_id > 0
+        assert run_count == 1
+        assert brand_count == 1
+        assert product_count == 0
+        assert (
+            session.query(Vertical).filter(Vertical.name == "Cars").count() == 1
+        )
+        assert (
+            session.query(DailyMetrics)
+            .join(Vertical, DailyMetrics.vertical_id == Vertical.id)
+            .filter(Vertical.name == "Cars")
+            .count()
+            == 0
+        )
+        names = [
+            row.display_name
+            for row in session.query(Brand)
+            .join(Vertical, Brand.vertical_id == Vertical.id)
+            .filter(Vertical.name == "Cars")
+            .order_by(Brand.display_name.asc())
+            .all()
+        ]
+        assert names == ["Toyota"]
+
+
 def _seed_demo_vertical(db_session: Session) -> Vertical:
     vertical = Vertical(name="Cars", description="Vehicles")
     db_session.add(vertical)
@@ -239,3 +310,25 @@ def _add_legacy_brand(db_session: Session, vertical_id: int) -> None:
             aliases={},
         )
     )
+
+
+@contextmanager
+def _fk_enforced_session() -> Iterator[Session]:
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    event.listen(engine, "connect", _enable_sqlite_foreign_keys)
+    Base.metadata.create_all(bind=engine)
+    session = Session(bind=engine)
+    try:
+        yield session
+    finally:
+        session.close()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
+
+
+def _enable_sqlite_foreign_keys(dbapi_connection, _) -> None:
+    apply_sqlite_pragmas(dbapi_connection)
