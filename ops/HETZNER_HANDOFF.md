@@ -57,7 +57,7 @@ ssh -i ~/.ssh/dragonlens_hetzner root@157.90.175.0 \
 ```
 
 Once on the server, the bootstrap script at `ops/hetzner/bootstrap.sh` will:
-- Install Python 3.11, PostgreSQL 16, Caddy, git
+- Install the system Python 3 runtime for Ubuntu 24.04, PostgreSQL 16, Caddy, git
 - Create system user `dragonlens`
 - Create PostgreSQL database and user from the passed password
 - Clone the repo to `/opt/dragonlens`

@@ -171,31 +171,30 @@ start-redis: ## Start Redis using Docker Compose
 
 flush-redis: ## Flush Redis (clears all queued tasks)
 	@echo "$(YELLOW)Flushing Redis...$(NC)"
-	@if docker ps -q -f name=dragonlens-redis 2>/dev/null | grep -q .; then \
+	@set -e; \
+	if docker ps -q -f name=dragonlens-redis 2>/dev/null | grep -q .; then \
 		docker exec dragonlens-redis redis-cli FLUSHALL >/dev/null; \
 		echo "$(GREEN)✓ Redis flushed (docker)$(NC)"; \
 		exit 0; \
-	fi
-	@if ! lsof -nP -tiTCP:$(REDIS_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
+	fi; \
+	if ! lsof -nP -tiTCP:$(REDIS_PORT) -sTCP:LISTEN > /dev/null 2>&1; then \
 		$(MAKE) --no-print-directory start-redis; \
-	fi
-	@if docker ps -q -f name=dragonlens-redis 2>/dev/null | grep -q .; then \
+	fi; \
+	if docker ps -q -f name=dragonlens-redis 2>/dev/null | grep -q .; then \
 		docker exec dragonlens-redis redis-cli FLUSHALL >/dev/null; \
 		echo "$(GREEN)✓ Redis flushed (docker)$(NC)"; \
 		exit 0; \
-	fi
-	@if command -v redis-cli >/dev/null 2>&1; then \
-		if redis-cli -p $(REDIS_PORT) FLUSHALL >/dev/null 2>&1; then \
-			echo "$(GREEN)✓ Redis flushed (local)$(NC)"; \
-			exit 0; \
-		fi; \
-	fi
-	@if docker run --rm redis:7-alpine redis-cli -h host.docker.internal -p $(REDIS_PORT) FLUSHALL >/dev/null 2>&1; then \
+	fi; \
+	if command -v redis-cli >/dev/null 2>&1 && redis-cli -p $(REDIS_PORT) FLUSHALL >/dev/null 2>&1; then \
+		echo "$(GREEN)✓ Redis flushed (local)$(NC)"; \
+		exit 0; \
+	fi; \
+	if docker run --rm redis:7-alpine redis-cli -h host.docker.internal -p $(REDIS_PORT) FLUSHALL >/dev/null 2>&1; then \
 		echo "$(GREEN)✓ Redis flushed (docker-cli)$(NC)"; \
 		exit 0; \
-	fi
-	@echo "$(RED)✗ Failed to flush Redis on port $(REDIS_PORT)$(NC)"
-	@exit 1
+	fi; \
+	echo "$(RED)✗ Failed to flush Redis on port $(REDIS_PORT)$(NC)"; \
+	exit 1
 
 stop-redis: ## Stop Redis
 	@echo "$(YELLOW)Stopping Redis...$(NC)"

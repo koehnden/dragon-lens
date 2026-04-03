@@ -13,10 +13,22 @@ PG_CONF_DIR="/etc/postgresql/16/main/conf.d"
 
 apt-get update
 apt-get install -y \
-    python3.11 python3.11-venv python3-pip \
+    python3 python3-venv python3-pip \
     postgresql postgresql-contrib \
     caddy \
     git curl
+
+PYTHON_BIN="$(command -v python3.12 || true)"
+if [ -z "$PYTHON_BIN" ]; then
+    PYTHON_BIN="$(command -v python3.11 || true)"
+fi
+if [ -z "$PYTHON_BIN" ]; then
+    PYTHON_BIN="$(command -v python3 || true)"
+fi
+if [ -z "$PYTHON_BIN" ]; then
+    echo "No supported Python interpreter found after package installation."
+    exit 1
+fi
 
 useradd --system --create-home --shell /bin/bash "$APP_USER" || true
 
@@ -45,9 +57,11 @@ fi
 
 runuser -u "$APP_USER" -- bash -lc "
     export PATH=\"\$HOME/.local/bin:\$PATH\"
-    python3.11 -m pip install --user --upgrade pip poetry
+    if [ ! -x \"$POETRY_BIN\" ]; then
+        curl -sSL https://install.python-poetry.org | \"$PYTHON_BIN\" -
+    fi
     cd \"$APP_DIR\"
-    POETRY_VIRTUALENVS_IN_PROJECT=true \"$POETRY_BIN\" env use python3.11
+    POETRY_VIRTUALENVS_IN_PROJECT=true \"$POETRY_BIN\" env use \"$PYTHON_BIN\"
     POETRY_VIRTUALENVS_IN_PROJECT=true \"$POETRY_BIN\" install --no-root --only main
 "
 

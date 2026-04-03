@@ -67,7 +67,7 @@ ssh -i ~/.ssh/dragonlens_hetzner root@157.90.175.0 \
   "curl -fsSL https://raw.githubusercontent.com/koehnden/dragon-lens/main/ops/hetzner/bootstrap.sh | bash -s -- https://github.com/koehnden/dragon-lens.git \"$DB_PASSWORD\" main"
 ```
 
-This installs Python 3.11, PostgreSQL, Caddy, creates the `dragonlens` system user, creates the DB, installs the app, and enables the services without starting the app before the env file exists.
+This installs the system Python 3 runtime for Ubuntu 24.04, PostgreSQL, Caddy, creates the `dragonlens` system user, creates the DB, installs the app, and enables the services without starting the app before the env file exists.
 
 ## 4. Config
 
@@ -147,12 +147,12 @@ From your local machine:
 
 ```bash
 # Sync knowledge for a vertical
-python scripts/sync_knowledge_vertical.py "Electric Vehicles" \
+poetry run python scripts/sync_knowledge_vertical.py "Electric Cars" \
   --url https://demo.dragon-lens.ai/api/v1/admin/knowledge-sync \
   --token <KNOWLEDGE_SYNC_TOKEN>
 
 # Publish a demo snapshot
-python scripts/publish_demo_vertical.py --vertical-name "Electric Vehicles" \
+poetry run python scripts/publish_demo_vertical.py --vertical-name "Electric Cars" \
   --url https://demo.dragon-lens.ai/api/v1/admin/demo-publish \
   --token <DEMO_PUBLISH_TOKEN>
 ```
