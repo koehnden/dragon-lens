@@ -1,6 +1,7 @@
 {
   "vertical_name": "Smartphones",
-  "vertical_description": "Chinese consumer smartphone purchase-intent prompts (camera, gaming, budget tiers, business use, elderly, students, ecosystem, battery life, foldables)",
+  "vertical_description": "Chinese consumer smartphone purchase-intent prompts (camera, gaming, budget tiers, business use, elderly, students, ecosystem, battery life, foldables, AI features, long-term smoothness)",
+  "model_name": "qwen",
   "brands": [
     {
       "display_name": "Apple",
@@ -11,25 +12,85 @@
     }
   ],
   "prompts": [
-    {"text_zh": "我是大学生，预算就两三千，平时刷刷视频拍拍照够用就行，有什么性价比高的手机推荐？请给TOP10。", "language_original": "zh"},
-    {"text_zh": "手里有五千左右的预算，想买一台各方面都不拉胯的手机，不想花冤枉钱——你推荐哪些？请给TOP10。", "language_original": "zh"},
-    {"text_zh": "今年想对自己好一点，买台最顶级的旗舰手机，钱不是第一考虑——哪些综合体验最强？请推荐TOP10并说明理由。", "language_original": "zh"},
-    {"text_zh": "我特别喜欢拍照，尤其是晚上出去吃饭拍夜景和给朋友拍人像，哪些手机拍照最强？请推荐TOP10并说说各自拍照优势。", "language_original": "zh"},
-    {"text_zh": "我在小红书和抖音发视频，想换一台视频拍摄给力的手机，防抖好、画质清晰的——有什么推荐？请给TOP10。", "language_original": "zh"},
-    {"text_zh": "我是重度手游党，原神全特效不卡不烫手是基本要求——哪些手机游戏体验最好？请给TOP10并说说散热和性能。", "language_original": "zh"},
-    {"text_zh": "我做销售经常在外面跑，手机续航要扛一整天、信号不能断、拍个合同文件要清楚——推荐哪些？请给TOP10。", "language_original": "zh"},
-    {"text_zh": "想给爸妈换手机，他们年纪大了，字要大声音要响、操作别太复杂——有什么适合老人用的手机？请推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "开学想换手机，预算3000左右，拍照要能打、游戏不卡、续航别太拉胯，有什么好选择？请推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "我手小，想要颜值高、拿着轻巧、自拍好看的手机，有什么推荐？请给TOP10并说说颜色和手感。", "language_original": "zh"},
-    {"text_zh": "我一天到晚在外面跑，最怕手机下午就没电了——哪些手机续航最猛、充电最快？请推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "我经常去工地和偏远地方出差，信号差的地方很多，哪些手机信号最稳、不容易断网掉线？请推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "用了好几年一个牌子的手机，想换个试试但怕数据迁移麻烦、用不习惯——哪些手机迁移体验比较顺畅？请给TOP10。", "language_original": "zh"},
-    {"text_zh": "现在手机越做越大我受不了，单手能握住的小屏手机还有哪些值得买的？请推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "折叠屏手机看着挺酷的，我想试试但怕折痕明显、用着不耐久——目前哪些折叠屏最值得入手？请给TOP10。", "language_original": "zh"},
-    {"text_zh": "我出差多，两张卡都要用、续航要撑住一天、快充也不能少——最适合出差的手机推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "我上一台手机用了一年就卡得不行，想买台用两三年还流畅、系统更新跟得上的——推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "我家孩子上初中了想要手机，我希望能限制使用时间、管控游戏——有没有适合学生用的手机？请推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "我每天盯屏幕时间太长了，眼睛很不舒服，哪些手机屏幕对眼睛最友好、不刺眼？请推荐TOP10并说说屏幕参数。", "language_original": "zh"},
-    {"text_zh": "身边朋友最近都在换手机，2024到2025年最值得买的手机到底是哪些？请给TOP10年度推荐榜。", "language_original": "zh"}
+    {
+      "text_zh": "我是大学生，预算2000到3000元，平时刷视频、聊天、拍拍照就够了，想买一台性价比高、别太容易卡的手机，你最推荐哪几款？",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "预算4000到5000元，想买一台各方面都比较均衡、用起来省心的手机，不想花冤枉钱，你会推荐哪些？请直接给出最值得买的5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "今年想换一台旗舰手机，预算不是最重要，主要想要综合体验强、系统流畅、拍照也在线，哪些最值得考虑？请推荐5款并说明理由。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我平时最爱拍照，尤其喜欢拍夜景、美食和人像，想买一台出片稳定、不容易翻车的手机，哪些更值得买？请推荐5款并说说各自强项。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我经常发短视频和Vlog，比较在意视频清晰度、防抖、收音和色彩稳定，想换一台拍视频更靠谱的手机，哪些最推荐？",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我是重度手游玩家，想买一台打游戏帧率稳、发热控制也不错的手机，哪些最值得入手？请推荐5款并说明性能和散热差异。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我做销售经常在外面跑，手机得续航顶得住、信号稳、拍文件也清楚，还最好双卡体验别太差，哪些手机最适合我？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "想给爸妈换手机，要求字体看得清、声音够大、操作简单、别老弹乱七八糟的东西，适合老人用的手机有哪些？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我手比较小，不喜欢太重太大的手机，想买一台单手握着舒服、外观也好看的手机，哪些更值得买？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我最怕手机下午就没电，平时出门也不想老带充电宝。续航强、充电又快的手机里，哪些最值得买？请推荐5款并说明适合什么人。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我经常去工地、郊区和偏远地方出差，最怕信号差、通话掉线、导航不稳。哪些手机在信号和通信体验上更靠谱？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我想买一台用两三年还流畅的手机，不想一年后就开始卡顿、掉电快。哪些手机更值得长期用？请推荐5款并说明原因。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我平时电脑、平板、耳机都会一起用，想买一台生态联动省心、文件传输方便、跨设备体验好的手机，哪些最值得考虑？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我现在换手机很在意AI功能，像会议录音转写、总结重点、修图、搜图这些要真的实用。哪些手机的AI体验最值得买？请推荐5款并说明差别。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "折叠屏手机我一直很心动，但又担心折痕、重量、续航和耐用性。现在最值得入手的折叠屏有哪些？请推荐5款，并顺便说说哪些人不太适合买折叠屏。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我家孩子上初中了，想买台方便联系、能管控使用时间、别太容易沉迷游戏的手机。适合学生用的手机有哪些？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "最近想趁补贴或者以旧换新换手机，预算卡得比较紧。现在什么价位段最值得买，哪些手机算下来最划算？请按预算分档推荐。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我最怕买到那种刚上手觉得很香，用几个月就开始发热、掉帧、系统广告多或者续航崩得快的手机。现在哪些手机最容易让人后悔买？请说清楚原因。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "如果我最在意售后、省心和维修成本，不想屏幕坏了、电池衰减了就特别麻烦，哪些手机更值得优先考虑，哪些要谨慎？请给我一份推荐和避坑建议。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "最近一年出的新手机很多，我已经看花眼了。如果只看现在最值得买、综合实力最强的手机，你会推荐哪些？请给出5款并分别说出核心优点和短板。",
+      "language_original": "zh"
+    }
   ]
 }
