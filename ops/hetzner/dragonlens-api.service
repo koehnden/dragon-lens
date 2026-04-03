@@ -1,0 +1,21 @@
+[Unit]
+Description=DragonLens FastAPI
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=dragonlens
+Group=dragonlens
+WorkingDirectory=/opt/dragonlens
+EnvironmentFile=/opt/dragonlens/.env
+Environment=PYTHONPATH=/opt/dragonlens/src
+ExecStart=/opt/dragonlens/.venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dragonlens-api
+
+[Install]
+WantedBy=multi-user.target

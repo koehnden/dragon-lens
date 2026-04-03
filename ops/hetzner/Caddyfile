@@ -1,0 +1,13 @@
+demo.dragon-lens.ai {
+    handle /api/* {
+        reverse_proxy localhost:8000
+    }
+
+    handle /health {
+        reverse_proxy localhost:8000
+    }
+
+    handle {
+        reverse_proxy localhost:8501
+    }
+}

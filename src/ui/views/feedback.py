@@ -2,8 +2,8 @@ import httpx
 import pandas as pd
 import streamlit as st
 
-from config import settings
 from ui.feedback_payload import build_feedback_payload
+from ui.api import api_url
 
 ACTION_OPTIONS = ["", "valid", "wrong"]
 MAPPING_ACTIONS = ["", "valid", "wrong"]
@@ -467,7 +467,7 @@ def _fetch_candidates(vertical_id: int):
 
 
 def _api_url(path):
-    return f"http://localhost:{settings.api_port}{path}"
+    return api_url(path)
 
 
 def _fetch_json(path, params=None):

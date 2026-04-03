@@ -45,13 +45,6 @@ logger = logging.getLogger(__name__)
 MIN_MENTION_COUNT_FOR_AUTO_VALIDATE = int(os.getenv("MIN_MENTION_COUNT_AUTO_VALIDATE", "3"))
 SIMILARITY_THRESHOLD = float(os.getenv("ENTITY_SIMILARITY_THRESHOLD", "0.85"))
 
-def _block_knowledge_writes() -> bool:
-    return bool(
-        settings.turso_database_url
-        and (settings.turso_read_only_auth_token or settings.turso_auth_token)
-        and not settings.knowledge_allow_non_feedback_writes
-    )
-
 
 @dataclass
 class MergeCandidate:
@@ -782,7 +775,7 @@ def _knowledge_vertical_id(db: Session, vertical_id: int) -> int | None:
 
 
 def _ensure_knowledge_vertical_id(db: Session, vertical_id: int) -> int | None:
-    if _block_knowledge_writes():
+    if not settings.knowledge_allow_non_feedback_writes:
         return None
     name = _vertical_name(db, vertical_id)
     if not name:

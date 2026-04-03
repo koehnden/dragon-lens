@@ -4,8 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from config import settings
-from ui.utils.api import fetch_json, shorten_model_name
+from ui.utils.api import api_url, shorten_model_name
 
 
 def render_positioning_matrix(df: pd.DataFrame, name_col: str, user_brand: str = None) -> None:
@@ -104,7 +103,6 @@ def render_sov_bar_chart(df: pd.DataFrame, name_col: str, user_brand: str = None
 def _fetch_per_model_metrics(
     vertical_id: int, models: tuple[str, ...], view_mode: str,
 ) -> list[dict]:
-    base_url = f"http://localhost:{settings.api_port}"
     endpoint = "/api/v1/metrics/latest"
     if view_mode == "product":
         endpoint = "/api/v1/metrics/latest/products"
@@ -112,7 +110,7 @@ def _fetch_per_model_metrics(
     for model in models:
         try:
             resp = httpx.get(
-                f"{base_url}{endpoint}",
+                api_url(endpoint),
                 params={"vertical_id": vertical_id, "model_name": model},
                 timeout=30.0,
             )

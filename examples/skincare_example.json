@@ -1,0 +1,95 @@
+{
+  "vertical_name": "Skincare",
+  "vertical_description": "Chinese consumer skincare purchase-intent prompts (anti-aging, sensitive skin, hydration, acne, brightening, budget tiers, seasonal repair, men's skincare, premium and value options)",
+  "brands": [
+    {
+      "display_name": "Estée Lauder",
+      "aliases": {
+        "zh": ["雅诗兰黛", "雅诗兰黛（Estée Lauder）"],
+        "en": ["Estée Lauder", "Estee Lauder", "EL"]
+      }
+    }
+  ],
+  "prompts": [
+    {
+      "text_zh": "我刚25岁，想开始做抗初老，但不想一上来就用太猛的产品。入门抗老精华或面霜有哪些值得买？请推荐5款并说明适合什么肤质。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "30岁以后明显感觉皮肤没以前紧致了，法令纹和细纹也开始出来了。想买真正偏抗老的护肤品，哪些最值得考虑？请推荐5款并说明理由。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "想给40多岁的妈妈买一套护肤品，重点想改善松弛、干纹和气色差。哪些护肤品更适合这个年龄段？请推荐5套方案。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我是敏感肌，稍微换个护肤品就容易泛红刺痛。现在想买温和、修护型的精华或面霜，哪些比较值得买？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "一到换季我脸就又干又痒还起皮，普通保湿根本不够。想买保湿修护能力强一点的护肤品，哪些效果更靠谱？请推荐5款并说明适合秋冬还是四季用。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我是混油皮，T区特别容易出油，毛孔也有点明显。想买控油又不至于太拔干的护肤品，哪些更值得入手？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我最近想试A醇/视黄醇类产品，但很怕刺激、爆皮、烂脸。对于新手来说，哪些产品更适合建立耐受？请推荐5款并说明怎么开始用。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "脸上有暗沉、痘印和一点肤色不均，想买提亮肤色、淡印子类的护肤品。哪些更值得买？请推荐5款并说明更适合白天还是晚上用。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "刚毕业工资不高，想配一套基础护肤流程，重点是保湿、维稳、别太容易踩雷。预算1000元以内的话，哪些搭配最值得买？请按预算分档推荐。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "最近想升级一下护肤，不想再只买基础款了。哪些中高端精华或面霜是真的值得花钱，哪些只是包装和营销做得好？请给我一份推荐和避坑建议。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "下个月要拍婚纱照/参加很重要的活动，想在一个月内把皮肤状态尽量养好一点。密集修护和提亮类护肤品有哪些更值得买？请推荐5款并说说怎么搭配用。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "最近天天熬夜加班，脸色又黄又暗，皮肤看起来特别没精神。想买改善气色、提亮、修护熬夜脸的护肤品，哪些更靠谱？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我痘痘反反复复很多年了，皮肤还容易油、容易留印。想买控痘、维稳、别太刺激的护肤品，哪些更适合？请推荐5款并说明适合哪类痘痘肌。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "黑眼圈和眼下细纹越来越明显，想买眼霜或者眼部精华，但又怕交智商税。哪些眼部产品更值得买，哪些效果比较有限？请直接说清楚。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我知道防晒很重要，但以前用过不少都搓泥、闷痘或者泛白。现在想买日常通勤能坚持用下去的防晒，哪些最值得买？请推荐5款并说明适合什么肤质。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我男朋友/老公平时几乎不护肤，但脸容易出油、偶尔冒痘。想给他买一套简单、步骤别太多的护肤品，哪些更适合男生新手？请推荐5套。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我还是学生，预算不高，但也不想随便乱买把脸搞坏。200元以内到500元以内，有哪些护肤品最值得买？请按预算分档推荐。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我最怕买到那种网上吹得很厉害、实际用起来容易刺痛、闷痘、没效果的护肤品。现在哪些护肤品最容易让人踩雷？请给我一份避坑建议。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "如果我最在意成分和长期稳定使用，不想今天跟风明天烂脸，哪些护肤品更值得长期回购，哪些要谨慎尝试？请给我一份推荐和避雷名单。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "最近一年护肤品选择太多了，我已经看花眼了。如果只看现在最值得买、口碑和实际效果都比较稳的护肤品，你会推荐哪些？请给出5款并说明各自优点和短板。",
+      "language_original": "zh"
+    }
+  ]
+}

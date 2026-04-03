@@ -722,6 +722,79 @@ example-hiking-shoes: ## Run 6-model example for examples/hiking_shoes_example.j
 	@echo ""
 	@echo "$(GREEN)✓ Hiking shoes example submitted (6 models)!$(NC)"
 
+demo-ev: ## Run demo EV example (Electric Cars) with 6 models
+	@echo "$(YELLOW)Running Electric Cars demo with 6 models...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)1/6 Running with DeepSeek Chat...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/ev_example.json
+	@echo ""
+	@echo "$(YELLOW)2/6 Running with Kimi K2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=examples/ev_example.json
+	@echo ""
+	@echo "$(YELLOW)3/6 Running with ByteDance Seed...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=bytedance-seed --example-file=examples/ev_example.json
+	@echo ""
+	@echo "$(YELLOW)4/6 Running with Baidu ERNIE...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=baidu-ernie --example-file=examples/ev_example.json
+	@echo ""
+	@echo "$(YELLOW)5/6 Running with Qwen 72B...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen-72b --example-file=examples/ev_example.json
+	@echo ""
+	@echo "$(YELLOW)6/6 Running with MiniMax M2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=minimax-m2 --example-file=examples/ev_example.json
+	@echo ""
+	@echo "$(GREEN)✓ Electric Cars demo submitted (6 models)!$(NC)"
+
+demo-smartphone: ## Run demo Smartphone example with 6 models
+	@echo "$(YELLOW)Running Smartphones demo with 6 models...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)1/6 Running with DeepSeek Chat...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/smartphone_example.json
+	@echo ""
+	@echo "$(YELLOW)2/6 Running with Kimi K2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=examples/smartphone_example.json
+	@echo ""
+	@echo "$(YELLOW)3/6 Running with ByteDance Seed...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=bytedance-seed --example-file=examples/smartphone_example.json
+	@echo ""
+	@echo "$(YELLOW)4/6 Running with Baidu ERNIE...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=baidu-ernie --example-file=examples/smartphone_example.json
+	@echo ""
+	@echo "$(YELLOW)5/6 Running with Qwen 72B...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen-72b --example-file=examples/smartphone_example.json
+	@echo ""
+	@echo "$(YELLOW)6/6 Running with MiniMax M2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=minimax-m2 --example-file=examples/smartphone_example.json
+	@echo ""
+	@echo "$(GREEN)✓ Smartphones demo submitted (6 models)!$(NC)"
+
+demo-skincare: ## Run demo Skincare example with 6 models
+	@echo "$(YELLOW)Running Premium Skincare demo with 6 models...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)1/6 Running with DeepSeek Chat...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=deepseek-chat --example-file=examples/skincare_example.json
+	@echo ""
+	@echo "$(YELLOW)2/6 Running with Kimi K2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=kimi-k2 --example-file=examples/skincare_example.json
+	@echo ""
+	@echo "$(YELLOW)3/6 Running with ByteDance Seed...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=bytedance-seed --example-file=examples/skincare_example.json
+	@echo ""
+	@echo "$(YELLOW)4/6 Running with Baidu ERNIE...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=baidu-ernie --example-file=examples/skincare_example.json
+	@echo ""
+	@echo "$(YELLOW)5/6 Running with Qwen 72B...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=qwen-72b --example-file=examples/skincare_example.json
+	@echo ""
+	@echo "$(YELLOW)6/6 Running with MiniMax M2...$(NC)"
+	@poetry run python scripts/run_example_with_reuse.py --provider=minimax-m2 --example-file=examples/skincare_example.json
+	@echo ""
+	@echo "$(GREEN)✓ Premium Skincare demo submitted (6 models)!$(NC)"
+
+demo: demo-ev demo-smartphone demo-skincare ## Run all 3 demo examples (EV, Smartphones, Skincare) with 6 models each
+	@echo ""
+	@echo "$(GREEN)✓ All demo examples completed (3 verticals × 6 models = 18 runs)!$(NC)"
+
 example-fresh: ## Run example from scratch (delete existing data, don't reuse prompt results)
 	@echo "$(YELLOW)Running example SUV tracking job from scratch...$(NC)"
 	@echo ""

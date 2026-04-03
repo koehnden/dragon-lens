@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-"""Migrate knowledge database schema (TursoDB) to match models."""
+"""Migrate knowledge database schema to match models."""
 
 from sqlalchemy import text
-from models.knowledge_database import knowledge_write_engine, _turso_enabled
+from models.knowledge_database import knowledge_write_engine
 
 
 def migrate():
     print("Migrating knowledge database schema...")
-
-    if not _turso_enabled():
-        print("⚠️  TursoDB is not enabled. Using local SQLite database.")
 
     with knowledge_write_engine.connect() as conn:
         # Add missing columns to knowledge_verticals

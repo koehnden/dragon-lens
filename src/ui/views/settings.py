@@ -1,7 +1,7 @@
 import httpx
 import streamlit as st
 
-from config import settings
+from ui.api import api_url
 
 REMOTE_PROVIDERS = ["deepseek", "kimi", "openrouter"]
 
@@ -9,7 +9,7 @@ REMOTE_PROVIDERS = ["deepseek", "kimi", "openrouter"]
 def _fetch_api_keys() -> list[dict]:
     try:
         response = httpx.get(
-            f"http://localhost:{settings.api_port}/api/v1/api-keys",
+            api_url("/api/v1/api-keys"),
             timeout=10.0,
         )
         if response.status_code == 200:
@@ -42,7 +42,7 @@ def _render_add_key_form() -> None:
         try:
             with st.spinner("Saving API key..."):
                 response = httpx.post(
-                    f"http://localhost:{settings.api_port}/api/v1/api-keys",
+                    api_url("/api/v1/api-keys"),
                     json={"provider": provider, "api_key": api_key},
                     timeout=30.0,
                 )
@@ -74,7 +74,7 @@ def _render_existing_keys(api_keys: list[dict]) -> None:
                 if st.button("Toggle Active", key=f"toggle_{key['id']}"):
                     try:
                         response = httpx.put(
-                            f"http://localhost:{settings.api_port}/api/v1/api-keys/{key['id']}",
+                            api_url(f"/api/v1/api-keys/{key['id']}"),
                             json={"is_active": not key["is_active"]},
                             timeout=30.0,
                         )
@@ -86,7 +86,7 @@ def _render_existing_keys(api_keys: list[dict]) -> None:
                 if st.button("Delete", key=f"delete_{key['id']}"):
                     try:
                         response = httpx.delete(
-                            f"http://localhost:{settings.api_port}/api/v1/api-keys/{key['id']}",
+                            api_url(f"/api/v1/api-keys/{key['id']}"),
                             timeout=30.0,
                         )
                         response.raise_for_status()

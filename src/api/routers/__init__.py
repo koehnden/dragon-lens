@@ -1,5 +1,5 @@
 """API routers."""
 
-from api.routers import feedback, knowledge, metrics, tracking, verticals
+from api.routers import admin, feedback, knowledge, metrics, tracking, verticals
 
-__all__ = ["feedback", "knowledge", "verticals", "tracking", "metrics"]
+__all__ = ["admin", "feedback", "knowledge", "verticals", "tracking", "metrics"]

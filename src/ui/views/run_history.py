@@ -5,7 +5,6 @@ import httpx
 import pandas as pd
 import streamlit as st
 
-from config import settings
 from ui.utils.api import (
     fetch_available_models,
     fetch_json,
