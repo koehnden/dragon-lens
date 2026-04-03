@@ -1,0 +1,6 @@
+[Unit]
+Description=DragonLens PostgreSQL backup
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dragonlens/ops/hetzner/backup.sh

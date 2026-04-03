@@ -33,9 +33,6 @@ os.environ.setdefault("ENABLE_EMBEDDING_CLUSTERING", "false")
 os.environ.setdefault("ENABLE_LLM_CLUSTERING", "false")
 os.environ.setdefault("RUN_TASKS_INLINE", "true")
 os.environ.setdefault("KNOWLEDGE_DATABASE_URL", "sqlite:///:memory:")
-os.environ["TURSO_DATABASE_URL"] = ""
-os.environ["TURSO_AUTH_TOKEN"] = ""
-os.environ["TURSO_READ_ONLY_AUTH_TOKEN"] = ""
 os.environ["FEEDBACK_SANITY_CHECKS_ENABLED"] = "false"
 os.environ["FEEDBACK_TRIGGER_RERUN_ENABLED"] = "false"
 os.environ["VERTICAL_AUTO_MATCH_ENABLED"] = "false"

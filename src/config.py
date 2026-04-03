@@ -21,10 +21,6 @@ class Settings(BaseSettings):
     )
     knowledge_database_url: str = "sqlite:///./data/knowledge.db"
 
-    turso_database_url: Optional[str] = None
-    turso_auth_token: Optional[str] = None
-    turso_read_only_auth_token: Optional[str] = None
-
     knowledge_db_max_bytes: int = 104857600
     knowledge_allow_non_feedback_writes: bool = False
     knowledge_persist_enabled: bool = True

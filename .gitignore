@@ -134,6 +134,7 @@ celerybeat.pid
 # DragonLens runtime files
 *.pid
 dragonlens.db*
+data/knowledge.db*
 data/extraction_cache.json
 
 # SageMath parsed files
@@ -143,6 +144,8 @@ data/extraction_cache.json
 .env
 .env.*
 .envrc
+ops/*-env
+.DS_Store
 .venv
 env/
 venv/
