@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 _OPENROUTER_MODEL_ALIASES = {
     "MiniMaxAI/MiniMax-M2.1": "minimax/minimax-m2.1",
+    "MiniMaxAI/MiniMax-M2.5": "minimax/minimax-m2.5",
 }
 
 
@@ -36,10 +37,17 @@ class DeepSeekService(OpenAICompatibleService):
 
 class KimiService(OpenAICompatibleService):
     provider = LLMProvider.KIMI
-    default_model = "moonshot-v1-8k"
+    default_model = "kimi-k2.5"
     temperature = 0.6
     max_tokens = 2000
     system_prompt = "你是一个中文助手，请用中文回答所有问题。"
+    KNOWN_MODELS = [
+        "kimi-k2.5",
+        "kimi-k2-turbo-preview",
+        "moonshot-v1-8k",
+        "moonshot-v1-32k",
+        "moonshot-v1-128k",
+    ]
 
     def __init__(self, db: Optional[Session] = None, api_key: Optional[str] = None):
         super().__init__(db, api_key)
@@ -47,6 +55,10 @@ class KimiService(OpenAICompatibleService):
 
     def _is_k2_model(self, model_name: str) -> bool:
         return any(k2 in model_name.lower() for k2 in ["kimi-k2", "k2-"])
+
+    def validate_model(self, model: str) -> None:
+        if model not in self.KNOWN_MODELS:
+            logger.warning(f"Passing through unrecognized Kimi model ID: {model}")
 
     async def query(
         self,
@@ -60,6 +72,7 @@ class KimiService(OpenAICompatibleService):
 
         api_key = self._get_api_key()
         model = model_name or self.default_model
+        self.validate_model(model)
         is_k2 = self._is_k2_model(model)
 
         http_client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=30.0))

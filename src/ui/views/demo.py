@@ -34,8 +34,8 @@ def show() -> None:
     st.subheader("What To Look For")
     st.markdown(
         """
-        - Results shows brand and product visibility scores derived from completed runs.
-        - Run Inspector exposes the raw bilingual prompts, answers, and extracted mentions.
-        - Runs History shows the completed run inventory behind the demo.
+        - Dashboard shows brand and product visibility scores derived from completed runs.
+        - Run History exposes historical runs, bilingual prompts, answers, and exports.
+        - The hosted demo is read-only. New runs and API key changes stay local.
         """
     )

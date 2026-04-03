@@ -66,9 +66,14 @@ def extract_english_from_parenthetical(name: str) -> str:
     return name
 
 
+def strip_possessive(name: str) -> str:
+    return re.sub(r"[''']s$", "", name)
+
+
 def normalize(name: str) -> str:
     name = extract_english_from_parenthetical(name.strip())
-    name = re.sub(r"[''\"\"()]", "", name)
+    name = strip_possessive(name)
+    name = re.sub(r"[''\"\"()\-.]", "", name)
     return name.strip().lower()
 
 
@@ -78,7 +83,25 @@ def fuzzy_match(a: str, b: str) -> bool:
         return False
     if na == nb:
         return True
-    return len(na) >= 3 and len(nb) >= 3 and (na in nb or nb in na)
+    if len(na) >= 3 and len(nb) >= 3 and (na in nb or nb in na):
+        return True
+    if len(na) >= 4 and len(nb) >= 4:
+        return _edit_distance_ratio(na, nb) >= 0.85
+    return False
+
+
+def _edit_distance_ratio(a: str, b: str) -> float:
+    if not a or not b:
+        return 0.0
+    m, n = len(a), len(b)
+    dp = list(range(n + 1))
+    for i in range(1, m + 1):
+        prev, dp[0] = dp[0], i
+        for j in range(1, n + 1):
+            temp = dp[j]
+            dp[j] = prev if a[i - 1] == b[j - 1] else 1 + min(dp[j], dp[j - 1], prev)
+            prev = temp
+    return 1.0 - dp[n] / max(m, n)
 
 
 def parse_gold_pairs(text: str) -> list[tuple[str, str]]:
@@ -224,8 +247,6 @@ def create_isolated_knowledge_db() -> tempfile.NamedTemporaryFile:
 
 
 def disable_remote_validation():
-    os.environ.pop("DEEPSEEK_API_KEY", None)
-    os.environ["DEEPSEEK_API_KEY"] = ""
     os.environ.pop("OPENROUTER_API_KEY", None)
     os.environ["OPENROUTER_API_KEY"] = ""
 
@@ -362,7 +383,7 @@ def print_top_unmatched(overall_brand, overall_product):
 
 def print_run_header(labeled, csv_path, use_deepseek, load_extraction, save_extraction, model_override, tmp_db):
     print(f"Evaluating {len(labeled)} labeled responses from {csv_path.name}")
-    print(f"Remote validation (DeepSeek/OpenRouter): {'ENABLED' if use_deepseek else 'DISABLED'}")
+    print(f"Remote validation (OpenRouter): {'ENABLED' if use_deepseek else 'DISABLED'}")
     if load_extraction:
         print(f"Mode: consolidation-only (loading extraction from {load_extraction})")
     elif save_extraction:
@@ -375,6 +396,7 @@ def print_run_header(labeled, csv_path, use_deepseek, load_extraction, save_extr
 async def run_evaluation(
     csv_path: Path, verbose: bool, model_override: str | None, use_deepseek: bool = False,
     save_extraction: Path | None = None, load_extraction: Path | None = None,
+    exclude_verticals: list[str] | None = None,
 ) -> None:
     if model_override:
         os.environ["OLLAMA_MODEL_NER"] = model_override
@@ -397,6 +419,9 @@ async def run_evaluation(
     total_start = time.time()
 
     for vertical in sorted(by_vertical):
+        if exclude_verticals and vertical in exclude_verticals:
+            print(f"Skipping {vertical} (excluded)")
+            continue
         vert_rows = by_vertical[vertical]
         description = VERTICAL_DESCRIPTIONS.get(vertical, vertical)
 
@@ -446,6 +471,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-extraction", type=Path, default=None)
     parser.add_argument("--load-extraction", type=Path, default=None)
     parser.add_argument("--log-level", default="WARNING", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    parser.add_argument("--exclude-vertical", type=str, action="append", default=[])
     return parser.parse_args()
 
 
@@ -456,6 +482,7 @@ def main():
         args.csv, args.verbose, args.model, args.deepseek,
         save_extraction=args.save_extraction,
         load_extraction=args.load_extraction,
+        exclude_verticals=args.exclude_vertical,
     ))
 
 

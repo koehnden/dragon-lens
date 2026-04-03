@@ -1,4 +1,3 @@
-import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -20,37 +19,17 @@ from config import settings
 from models.knowledge_database import init_knowledge_db
 from models.migrations import upgrade_db
 
-logger = logging.getLogger(__name__)
 MUTATING_METHODS = {"DELETE", "PATCH", "POST", "PUT"}
-
-
-def _log_embedding_model_config() -> None:
-    from services.brand_recognition.config import (
-        ENABLE_EMBEDDING_CLUSTERING,
-        OLLAMA_EMBEDDING_MODEL,
-    )
-
-    if ENABLE_EMBEDDING_CLUSTERING:
-        logging.info("Using Ollama embedding model: %s", OLLAMA_EMBEDDING_MODEL)
-        logging.info(
-            "Ensure model is pulled with: ollama pull qllama/bge-small-zh-v1.5"
-        )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     upgrade_db()
     init_knowledge_db()
-    _log_embedding_model_config()
     yield
 
 
-_log_embedding_model_config()
-
-
-def create_app(
-    app_lifespan=lifespan,
-) -> FastAPI:
+def create_app(app_lifespan=lifespan) -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         description="Track brand visibility in Chinese LLMs",
@@ -116,6 +95,5 @@ def _include_health_routes(app: FastAPI) -> None:
     @app.get("/health")
     async def health():
         return {"status": "healthy"}
-
 
 app = create_app()

@@ -38,3 +38,13 @@ def test_check_existing_vertical_returns_none_on_request_error(monkeypatch):
 
     assert runner.check_existing_vertical("SUV Cars") is None
 
+
+def test_parse_provider_and_model_uses_refreshed_visibility_models():
+    from scripts import run_example_with_reuse as runner
+
+    assert runner.parse_provider_and_model("kimi-k2") == ("kimi", "kimi-k2.5")
+    assert runner.parse_provider_and_model("kimi-k2-or") == ("openrouter", "moonshotai/kimi-k2.5")
+    assert runner.parse_provider_and_model("bytedance-seed") == ("openrouter", "bytedance-seed/seed-2.0-lite")
+    assert runner.parse_provider_and_model("baidu-ernie") == ("openrouter", "baidu/ernie-4.5-21b-a3b")
+    assert runner.parse_provider_and_model("qwen-72b") == ("openrouter", "qwen/qwen3.5-plus-02-15")
+    assert runner.parse_provider_and_model("minimax-m2") == ("openrouter", "minimax/minimax-m2.5")

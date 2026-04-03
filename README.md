@@ -19,8 +19,8 @@ DragonLens fills this gap. It's a visibility tool specifically build for the Chi
 
 ## Key Features
 
-- **Multi-LLM Tracking** — DeepSeek, Kimi, Qwen, Bytedance's seed-1.6, Baiu's ERNIE, MinMax2.1 and many more models via OpenRouter
-- **Local-First** — Runs entirely on your machine with Qwen 2.5 7B via Ollama; no API keys required to get started
+- **Multi-LLM Tracking** — DeepSeek, Kimi K2.5, ByteDance Seed 2.0, Baidu ERNIE 4.5, Qwen 3.5, MiniMax M2.5, and more via OpenRouter
+- **Local Qwen Support** — Keeps Qwen 2.5 7B via Ollama for extraction and low-cost internal test runs while visibility benchmarking uses remote Chinese APIs
 - **Automated NER Pipeline** — Extract brands and products from Chinese responses with multi-stage validation
 - **Visibility Metrics** — Share of Voice, mention rates, ranking positions, sentiment analysis
 - **Bilingual Processing** — Automatic EN/ZH translation for prompts and responses
@@ -93,7 +93,7 @@ DragonLens computes visibility metrics designed for LLM response analysis:
 
 ## Extraction Pipeline
 
-The system uses a two-stage extraction approach to identify brands and products from Chinese LLM responses:
+The pipeline extracts brands and products from Chinese LLM responses using a multi-step approach: knowledge base matching, local LLM extraction, and remote LLM consolidation.
 
 ```mermaid
 flowchart TB
@@ -112,25 +112,44 @@ flowchart TB
         A --> T2[Translate to English]
     end
 
-    subgraph Stage 1: Per-Prompt Extraction
-        A --> NER[Qwen NER]
-        NER --> BD[Brand Discovery]
-        NER --> PD[Product Discovery]
-        BD --> PM[Position Matching]
-        PD --> PM
-        PM --> SN[Snippet Extraction]
-        SN --> RK[Rank Detection]
+    subgraph Step 0: Item Parsing
+        A --> PARSE[Parse into items]
+        PARSE --> ITEMS[List items / table rows / paragraphs]
     end
 
-    subgraph Stage 2: Run Consolidation
-        RK --> AGG[Aggregate Entities]
-        AGG --> NORM[Normalize via Qwen]
-        NORM --> VAL[Validate via WikiData]
-        VAL --> MAP[Map Products → Brands]
+    subgraph Step 1: Knowledge Base Matching
+        ITEMS --> KB[Match against Knowledge DB]
+        KB --> MATCHED[KB-matched brand/product pairs]
+        KB --> MISSING[Unmatched items]
+    end
+
+    subgraph Step 2: Qwen Extraction
+        MISSING --> QWEN[Qwen 7B batch extraction]
+        QWEN --> RAW[Raw brand/product pairs]
+        RAW --> LATIN[Latin token enrichment]
+    end
+
+    subgraph Step 3: Consolidation
+        MATCHED --> AGG[Aggregate all pairs]
+        LATIN --> AGG
+        AGG --> NORM[Normalize aliases]
+        NORM --> CONSOL[Consolidate products]
+        CONSOL --> STRIP[Phase 1: Brand prefix stripping]
+        CONSOL --> SUFFIX[Phase 1: Suffix variant merging]
+        CONSOL --> GROUP[Phase 2: LLM variant grouping]
+        GROUP --> VAL[Validate relevance]
+        VAL --> FILTER[Pre-filter common words]
+        VAL --> LLMVAL[LLM validation via OpenRouter]
+    end
+
+    subgraph Knowledge Loop
+        LLMVAL --> PERSIST[Persist to Knowledge DB]
+        PERSIST --> KB
     end
 
     subgraph Analysis
-        MAP --> SENT[Sentiment Analysis]
+        LLMVAL --> PAIR[Pair dedup + unpaired removal]
+        PAIR --> SENT[Sentiment Analysis]
         SENT --> MET[Metrics Calculation]
     end
 
@@ -143,22 +162,34 @@ flowchart TB
 
 ### How It Works
 
-| Stage | Process | Method                                                      |
-|-------|---------|-------------------------------------------------------------|
-| **Translation** | Convert EN prompts to ZH, translate LLM answers back | Qwen 2.5 via Ollama                                         |
-| **Brand/Product NER** | Extract entity names from Chinese text | Qwen zero-shot extraction (WIP: adding automated Few-shots) |
-| **Position Matching** | Locate mentions and extract surrounding context | Substring matching with 50-char snippets                    |
-| **Rank Detection** | Identify if answer is a ranked list; extract positions | Heuristic (numbered lists, bullets)                         |
-| **Consolidation** | Normalize variants, validate entities, map relationships | Qwen normalization + WikiData lookup                        |
-| **Sentiment** | Classify each mention as positive/neutral/negative | Erlangshen-RoBERTa-110M (HuggingFace)                       |
+| Stage | Process | Method |
+|-------|---------|--------|
+| **Translation** | Convert EN prompts to ZH, translate LLM answers back | Qwen 2.5 via Ollama |
+| **Item Parsing** | Split response into discrete items (list items, table rows, paragraphs) | Heuristic parser |
+| **KB Matching** | Match items against known brands/products from previous runs | Knowledge DB alias lookup |
+| **Qwen Extraction** | Extract brand/product pairs from unmatched items | Qwen 7B zero-shot via Ollama |
+| **Normalization** | Resolve aliases, parenthetical names (CJK/Latin), possessives | Deterministic + Knowledge DB |
+| **Product Consolidation** | Strip brand prefixes, merge suffix variants (GTX/Mid/WP), group product lines | Deterministic + OpenRouter (Qwen 3.5 / ERNIE 4.5) |
+| **Validation** | Filter common words, validate entity relevance to vertical | Pre-filter blocklist + OpenRouter LLM validation |
+| **Knowledge Persistence** | Store validated brands, products, aliases, and brand-product mappings | Knowledge DB upsert |
+| **Sentiment** | Classify each mention as positive/neutral/negative | Erlangshen-RoBERTa-110M (HuggingFace) |
+
+### Extraction Metrics (v6)
+
+Evaluated on gold-labeled data (Hiking Shoes + SUV Cars, 50 responses):
+
+| Metric | Brands | Products |
+|--------|--------|----------|
+| **Precision** | 90.8% | 72.3% |
+| **Recall** | 60.9% | 65.4% |
 
 ### Current Limitations
 
-- **NER accuracy** — Relies on Qwen zero-shot extraction; may miss uncommon brand spellings or novel products -> WID: adding automatic few-shot examples
+- **Brand recall** — LLM validation can be overly aggressive, dropping legitimate brands (~10pp variance between runs)
+- **Product variants** — Suffix stripping (GTX, Waterproof, Mid) can over-consolidate distinct products
 - **Snippet context** — Fixed 50-character window can truncate important context in long answers
 - **Sentiment scope** — Analyzes isolated snippets, not full answer context
-- **Alias matching** — Requires explicit alias definitions or WikiData validation; dynamic variants may be missed
-- **Single-model extraction** — No ensemble verification; extraction errors propagate to metrics -> WIP: use a more capable model (e.g. deepseek) as correction model
+- **Cold start** — First run for a new vertical requires OpenRouter seeding call; subsequent runs benefit from Knowledge DB
 
 ## Requirements
 
@@ -189,6 +220,8 @@ Access the application:
 ## LLM Configuration
 
 Out of the box, DragonLens uses **Qwen 2.5 7B via Ollama** for tracking—no API keys required. To use remote LLMs (DeepSeek, Kimi, or OpenRouter models), you need to add API keys.
+
+> **Recommended:** An OpenRouter API key is strongly recommended. The extraction pipeline uses OpenRouter (Qwen 3.5 / ERNIE 4.5) for vertical seeding, entity normalization, product consolidation, and relevance validation. Without it, these steps fall back to local-only heuristics with lower extraction quality.
 
 ### Option 1: Via UI (Recommended)
 

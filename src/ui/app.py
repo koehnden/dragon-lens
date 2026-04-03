@@ -8,40 +8,34 @@ st.set_page_config(
     layout="wide",
 )
 
-public_pages = ["Demo Overview", "View Results", "Run Inspector", "Runs History"]
-local_pages = [
-    "Setup & Start",
-    "View Results",
-    "Run Inspector",
-    "Runs History",
-    "Feedback",
-    "API Keys",
-]
-pages = public_pages if settings.is_public_demo else local_pages
+PUBLIC_PAGES = ["Demo Overview", "Dashboard", "Run History"]
+LOCAL_PAGES = ["Dashboard", "New Run", "Run History", "Settings"]
 
-page = st.sidebar.radio("Navigate", pages)
+page = st.sidebar.radio(
+    "Navigate",
+    PUBLIC_PAGES if settings.is_public_demo else LOCAL_PAGES,
+)
 
 if settings.is_public_demo:
     st.sidebar.caption("Public demo mode")
 
 if page == "Demo Overview":
-    from ui.pages import demo
+    from ui.views import demo
+
     demo.show()
-elif page == "Setup & Start":
-    from ui.pages import setup
+elif page == "Dashboard":
+    from ui.views import dashboard
+
+    dashboard.show()
+elif page == "New Run":
+    from ui.views import setup
+
     setup.show()
-elif page == "View Results":
-    from ui.pages import results
-    results.show()
-elif page == "Run Inspector":
-    from ui.pages import run_inspector
-    run_inspector.show()
-elif page == "Runs History":
-    from ui.pages import history
-    history.show()
-elif page == "Feedback":
-    from ui.pages import feedback
-    feedback.show()
-elif page == "API Keys":
-    from ui.pages import api_keys
-    api_keys.show()
+elif page == "Run History":
+    from ui.views import run_history
+
+    run_history.show()
+elif page == "Settings":
+    from ui.views import settings
+
+    settings.show()

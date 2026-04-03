@@ -258,8 +258,6 @@ def _brand_variants_for_qwen(brand: Brand) -> List[str]:
 
 
 def _find_matching_user_brand(qwen_key: str, user_brands: List[Brand]) -> Optional[str]:
-    from src.services.wikidata_lookup import lookup_brand
-
     qwen_lower = qwen_key.casefold()
     qwen_norm = _normalize_for_comparison(qwen_key)
 
@@ -283,30 +281,7 @@ def _find_matching_user_brand(qwen_key: str, user_brands: List[Brand]) -> Option
             if qwen_lower in alias_lower or alias_lower in qwen_lower:
                 return brand.display_name
 
-    wikidata_info = lookup_brand(qwen_key, "")
-    if wikidata_info:
-        all_aliases = _wikidata_aliases(wikidata_info)
-        for brand in user_brands:
-            for variant in _brand_variants_for_qwen(brand):
-                if not variant:
-                    continue
-                if variant.casefold() in all_aliases:
-                    return brand.display_name
-
     return None
-
-
-def _wikidata_aliases(wikidata_info: dict) -> Set[str]:
-    aliases: Set[str] = set()
-    for key in ["name_en", "name_zh"]:
-        val = wikidata_info.get(key)
-        if val:
-            aliases.add(val.casefold())
-    for key in ["aliases_en", "aliases_zh"]:
-        for val in wikidata_info.get(key, []):
-            if val:
-                aliases.add(val.casefold())
-    return aliases
 
 
 def _merge_groups_with_user_brands(

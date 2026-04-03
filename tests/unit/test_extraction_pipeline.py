@@ -83,10 +83,10 @@ async def test_finalize_builds_canonical_response_results(knowledge_db_session):
             ]
         ),
     ), patch(
-        "services.extraction.pipeline.DeepSeekConsultant.normalize_and_map",
+        "services.extraction.pipeline.ExtractionConsultant.normalize_and_map",
         new=AsyncMock(return_value=({"大众": "Volkswagen"}, {"途观L 2024款": "途观L"}, {"途观L": "Volkswagen"})),
     ), patch(
-        "services.extraction.pipeline.DeepSeekConsultant.validate_relevance",
+        "services.extraction.pipeline.ExtractionConsultant.validate_relevance",
         new=AsyncMock(return_value=({"Volkswagen"}, {"途观L"}, set(), set(), {})),
     ):
         await pipeline.process_response("1. 大众途观L 2024款", response_id="r1")

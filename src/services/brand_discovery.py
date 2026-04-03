@@ -24,9 +24,7 @@ def discover_all_brands(
             vertical_description = vertical.description
 
     for user_brand in user_brands:
-        canonical_name = _canonicalize_brand_name(
-            user_brand.display_name, vertical_name or ""
-        )
+        canonical_name = _canonicalize_brand_name(user_brand.display_name)
         normalized_key = canonical_name.lower().strip()
         all_brands_map[normalized_key] = user_brand
         original_key = user_brand.display_name.lower().strip()
@@ -46,7 +44,7 @@ def discover_all_brands(
     )
 
     for brand_name in extraction_result.brands.keys():
-        canonical_name = _canonicalize_brand_name(brand_name, vertical_name or "")
+        canonical_name = _canonicalize_brand_name(brand_name)
         normalized_key = canonical_name.lower().strip()
 
         if normalized_key in all_brands_map:
@@ -117,9 +115,7 @@ def discover_brands_and_products_from_result(
     all_brands_map: Dict[str, Brand] = {}
 
     for user_brand in user_brands:
-        canonical_name = _canonicalize_brand_name(
-            user_brand.display_name, vertical_name or ""
-        )
+        canonical_name = _canonicalize_brand_name(user_brand.display_name)
         normalized_key = canonical_name.lower().strip()
         all_brands_map[normalized_key] = user_brand
         original_key = user_brand.display_name.lower().strip()
@@ -131,7 +127,7 @@ def discover_brands_and_products_from_result(
                 all_brands_map[alias_key] = user_brand
 
     for brand_name in extraction_result.brands.keys():
-        canonical_name = _canonicalize_brand_name(brand_name, vertical_name or "")
+        canonical_name = _canonicalize_brand_name(brand_name)
         normalized_key = canonical_name.lower().strip()
 
         if normalized_key in all_brands_map:
@@ -289,11 +285,8 @@ def _get_or_create_discovered_brand(
     brand_name: str,
     vertical_name: str = "",
 ) -> Brand:
-    from src.services.wikidata_lookup import lookup_brand
-    from src.services.translater import format_entity_label
-
     normalized_name = brand_name.strip()
-    canonical_name = _canonicalize_brand_name(normalized_name, vertical_name)
+    canonical_name = _canonicalize_brand_name(normalized_name)
 
     existing = (
         db.query(Brand)
@@ -323,19 +316,8 @@ def _get_or_create_discovered_brand(
     if existing_by_alias:
         return existing_by_alias
 
-    wikidata_info = lookup_brand(normalized_name, vertical_name) if vertical_name else None
-
-    if wikidata_info:
-        english_name = wikidata_info.get("name_en", canonical_name)
-        chinese_name = wikidata_info.get("name_zh", "")
-        display_name = format_entity_label(chinese_name, english_name)
-        aliases = {
-            "zh": wikidata_info.get("aliases_zh", []),
-            "en": wikidata_info.get("aliases_en", []),
-        }
-    else:
-        display_name = canonical_name
-        aliases = {"zh": [], "en": []}
+    display_name = canonical_name
+    aliases = {"zh": [], "en": []}
 
     return _insert_or_get_brand(
         db=db,
@@ -408,17 +390,10 @@ def _upsert_brand(
     db.flush()
 
 
-def _canonicalize_brand_name(name: str, vertical: str = "") -> str:
-    from src.services.wikidata_lookup import get_canonical_brand_name
-
+def _canonicalize_brand_name(name: str) -> str:
     name = name.strip()
     if not name:
         return name
-
-    if vertical:
-        canonical = get_canonical_brand_name(name, vertical)
-        if canonical:
-            return canonical
 
     if name.isupper() and len(name) <= 4:
         return name.upper()
@@ -429,14 +404,5 @@ def _canonicalize_brand_name(name: str, vertical: str = "") -> str:
     return name
 
 
-def _get_canonical_lookup_name(name: str, vertical: str = "") -> str:
-    from src.services.wikidata_lookup import get_canonical_brand_name
-
-    name_lower = name.lower().strip()
-
-    if vertical:
-        canonical = get_canonical_brand_name(name_lower, vertical)
-        if canonical:
-            return canonical
-
+def _get_canonical_lookup_name(name: str) -> str:
     return name.strip()

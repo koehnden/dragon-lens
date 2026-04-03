@@ -68,7 +68,7 @@ class TestKimiService:
         assert KimiService.provider == LLMProvider.KIMI
 
     def test_has_default_model(self):
-        assert KimiService.default_model == "moonshot-v1-8k"
+        assert KimiService.default_model == "kimi-k2.5"
 
     def test_inherits_openai_compatible_service(self):
         assert issubclass(KimiService, OpenAICompatibleService)
@@ -88,6 +88,45 @@ class TestKimiService:
         assert messages[0]["role"] == "system"
         assert messages[1]["role"] == "user"
         assert messages[1]["content"] == "测试提示"
+
+    def test_validates_current_and_legacy_models(self):
+        service = KimiService()
+
+        valid_models = [
+            "kimi-k2.5",
+            "kimi-k2-turbo-preview",
+            "moonshot-v1-8k",
+            "moonshot-v1-32k",
+            "moonshot-v1-128k",
+        ]
+        for model in valid_models:
+            service.validate_model(model)
+
+    @pytest.mark.asyncio
+    async def test_query_allows_unknown_kimi_model_override(self):
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="测试回答"))]
+        mock_response.usage = MagicMock(prompt_tokens=10, completion_tokens=20)
+        mock_http_client = MagicMock()
+        mock_http_client.aclose = AsyncMock()
+
+        with patch("httpx.AsyncClient", return_value=mock_http_client), patch("openai.AsyncOpenAI") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            service = KimiService(api_key="test-key")
+            answer, tokens_in, tokens_out, latency = await service.query(
+                "测试", model_name="kimi-k2-thinking"
+            )
+
+            assert answer == "测试回答"
+            assert tokens_in == 10
+            assert tokens_out == 20
+            assert latency >= 0
+            create_kwargs = mock_client.chat.completions.create.call_args.kwargs
+            assert create_kwargs["model"] == "kimi-k2-thinking"
+            assert "max_tokens" not in create_kwargs
 
 
 class TestOpenRouterService:
@@ -158,6 +197,13 @@ class TestLLMRouter:
         router = LLMRouter()
         resolution = router.resolve("openrouter", "MiniMaxAI/MiniMax-M2.1")
         assert resolution.model_name == "minimax/minimax-m2.1"
+        assert resolution.route == LLMRoute.OPENROUTER
+
+    def test_resolve_openrouter_normalizes_new_minimax_model(self, monkeypatch):
+        monkeypatch.setattr(settings, "openrouter_api_key", "test-openrouter")
+        router = LLMRouter()
+        resolution = router.resolve("openrouter", "MiniMaxAI/MiniMax-M2.5")
+        assert resolution.model_name == "minimax/minimax-m2.5"
         assert resolution.route == LLMRoute.OPENROUTER
 
 
