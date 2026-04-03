@@ -20,6 +20,7 @@ def test_default_settings(monkeypatch):
     )
     assert settings.redis_url == "redis://localhost:6379/0"
     assert settings.ollama_base_url == "http://localhost:11434"
+    assert settings.knowledge_allow_non_feedback_writes is True
     assert settings.resolved_backend_api_base_url == "http://localhost:8000"
     assert settings.resolved_knowledge_database_url == "sqlite:///./data/knowledge.db"
 
@@ -46,3 +47,11 @@ def test_custom_settings(monkeypatch):
         settings.resolved_knowledge_database_url
         == "postgresql+psycopg://user:pass@db:5432/app"
     )
+
+
+def test_knowledge_write_guard_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("KNOWLEDGE_ALLOW_NON_FEEDBACK_WRITES", "false")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.knowledge_allow_non_feedback_writes is False

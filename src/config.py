@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     knowledge_database_url: str = "sqlite:///./data/knowledge.db"
 
     knowledge_db_max_bytes: int = 104857600
-    knowledge_allow_non_feedback_writes: bool = False
+    knowledge_allow_non_feedback_writes: bool = True
     knowledge_persist_enabled: bool = True
     knowledge_persist_threshold: float = 0.8
     feedback_sanity_checks_enabled: bool = True
