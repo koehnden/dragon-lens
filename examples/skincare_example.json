@@ -1,35 +1,95 @@
 {
-  "vertical_name": "Premium Skincare",
-  "vertical_description": "Chinese consumer skincare purchase-intent prompts (anti-aging, sensitive skin, budget tiers, ingredient-focused, seasonal, demographic-specific, wedding prep, men's skincare)",
+  "vertical_name": "Smartphones",
+  "vertical_description": "Chinese consumer smartphone purchase-intent prompts (camera, gaming, budget tiers, business use, elderly, students, ecosystem, battery life, foldables, AI features, long-term smoothness)",
   "brands": [
     {
-      "display_name": "Estée Lauder",
+      "display_name": "Apple",
       "aliases": {
-        "zh": ["雅诗兰黛", "雅诗兰黛（Estée Lauder）"],
-        "en": ["Estée Lauder", "Estee Lauder", "EL"]
+        "zh": ["苹果", "苹果手机", "iPhone"],
+        "en": ["Apple", "iPhone", "APPLE"]
       }
     }
   ],
   "prompts": [
-    {"text_zh": "我刚25，同事说该开始抗初老了，但我完全不懂从哪入手——入门级抗老精华推荐哪些？请给TOP10并说说适合什么肤质。", "language_original": "zh"},
-    {"text_zh": "过了30明显感觉皮肤没以前紧了，法令纹也出来了，抗皱紧致的面霜或精华哪些真的有效？请推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "我妈40多了，脸上松弛下垂挺明显的，想给她挑点提拉紧致的护肤品——哪些效果最好？请推荐TOP10并说说多久能看到变化。", "language_original": "zh"},
-    {"text_zh": "我是敏感肌，换个护肤品就容易泛红刺痛，踩过太多雷了——有哪些真正温和不刺激的护肤品？请推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "一到换季我脸就爆干起皮，普通保湿根本不够用——保湿修护效果最强的面霜/精华推荐哪些？请给TOP10。", "language_original": "zh"},
-    {"text_zh": "夏天我T区出油能煎蛋，毛孔也越来越粗——控油缩毛孔的护肤品有什么好用的？请推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "我是成分党，最近想试A醇/视黄醇但怕烂脸，哪些精华浓度合适、比较温和？请推荐TOP10并说说怎么建立耐受。", "language_original": "zh"},
-    {"text_zh": "脸上有些痘印和暗沉，听说烟酰胺美白淡斑挺好——哪些烟酰胺精华效果最明显？请给TOP10。", "language_original": "zh"},
-    {"text_zh": "刚毕业工资不高，想配一套完整的护肤流程（水+精华+乳+霜），预算1000以内能搞定吗？请推荐TOP10方案。", "language_original": "zh"},
-    {"text_zh": "年终奖到了想犒劳自己，入手一套贵妇级护肤品——哪些高端面霜/精华是真的好、不是交智商税？请推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "下个月结婚了，想这一个月突击护肤让皮肤状态拉满——密集护理用什么产品最有效？请给TOP10并说说使用顺序。", "language_original": "zh"},
-    {"text_zh": "生完宝宝以后皮肤暗沉还长了好多斑，但在哺乳期怕用的东西不安全——哪些护肤品哺乳期能放心用又有效？请给TOP10。", "language_original": "zh"},
-    {"text_zh": "我男朋友脸经常出油冒痘但从来不护肤，想帮他搞一套简单的——三步搞定的男士护肤品推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "最近天天加班到半夜，脸色又暗又黄同事都说我气色差——提亮肤色最有效的护肤品推荐哪些？请给TOP10。", "language_original": "zh"},
-    {"text_zh": "我痘痘反反复复好几年了，好了又冒太崩溃了——祛痘控痘的护肤品推荐TOP10，哪些适合什么类型的痘痘？", "language_original": "zh"},
-    {"text_zh": "我黑眼圈重到遮瑕都盖不住，眼角还开始有细纹了——眼霜/眼部精华哪些真的管用？请给TOP10。", "language_original": "zh"},
-    {"text_zh": "我知道防晒很重要但用过的不是搓泥就是闷痘——有没有好用的防晒霜推荐？请给TOP10并说说适合什么肤质。", "language_original": "zh"},
-    {"text_zh": "每年一到秋冬我皮肤就作妖，又干又敏感——换季维稳修护用什么精华/面霜最靠谱？请推荐TOP10。", "language_original": "zh"},
-    {"text_zh": "我还在上学没什么钱，200块以下有没有好用的护肤品？请给TOP10并说说学生党怎么护肤最省钱有效。", "language_original": "zh"},
-    {"text_zh": "闺蜜说现在国货护肤品不比国际大牌差，真的吗？请分别推荐TOP5最值得买的国货和TOP5国际品牌，帮我对比一下。", "language_original": "zh"}
+    {
+      "text_zh": "我是大学生，预算2000到3000元，平时刷视频、聊天、拍拍照就够了，想买一台性价比高、别太容易卡的手机，你最推荐哪几款？",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "预算4000到5000元，想买一台各方面都比较均衡、用起来省心的手机，不想花冤枉钱，你会推荐哪些？请直接给出最值得买的5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "今年想换一台旗舰手机，预算不是最重要，主要想要综合体验强、系统流畅、拍照也在线，哪些最值得考虑？请推荐5款并说明理由。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我平时最爱拍照，尤其喜欢拍夜景、美食和人像，想买一台出片稳定、不容易翻车的手机，哪些更值得买？请推荐5款并说说各自强项。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我经常发短视频和Vlog，比较在意视频清晰度、防抖、收音和色彩稳定，想换一台拍视频更靠谱的手机，哪些最推荐？",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我是重度手游玩家，想买一台打游戏帧率稳、发热控制也不错的手机，哪些最值得入手？请推荐5款并说明性能和散热差异。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我做销售经常在外面跑，手机得续航顶得住、信号稳、拍文件也清楚，还最好双卡体验别太差，哪些手机最适合我？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "想给爸妈换手机，要求字体看得清、声音够大、操作简单、别老弹乱七八糟的东西，适合老人用的手机有哪些？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我手比较小，不喜欢太重太大的手机，想买一台单手握着舒服、外观也好看的手机，哪些更值得买？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我最怕手机下午就没电，平时出门也不想老带充电宝。续航强、充电又快的手机里，哪些最值得买？请推荐5款并说明适合什么人。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我经常去工地、郊区和偏远地方出差，最怕信号差、通话掉线、导航不稳。哪些手机在信号和通信体验上更靠谱？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我想买一台用两三年还流畅的手机，不想一年后就开始卡顿、掉电快。哪些手机更值得长期用？请推荐5款并说明原因。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我平时电脑、平板、耳机都会一起用，想买一台生态联动省心、文件传输方便、跨设备体验好的手机，哪些最值得考虑？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我现在换手机很在意AI功能，像会议录音转写、总结重点、修图、搜图这些要真的实用。哪些手机的AI体验最值得买？请推荐5款并说明差别。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "折叠屏手机我一直很心动，但又担心折痕、重量、续航和耐用性。现在最值得入手的折叠屏有哪些？请推荐5款，并顺便说说哪些人不太适合买折叠屏。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我家孩子上初中了，想买台方便联系、能管控使用时间、别太容易沉迷游戏的手机。适合学生用的手机有哪些？请推荐5款。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "最近想趁补贴或者以旧换新换手机，预算卡得比较紧。现在什么价位段最值得买，哪些手机算下来最划算？请按预算分档推荐。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "我最怕买到那种刚上手觉得很香，用几个月就开始发热、掉帧、系统广告多或者续航崩得快的手机。现在哪些手机最容易让人后悔买？请说清楚原因。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "如果我最在意售后、省心和维修成本，不想屏幕坏了、电池衰减了就特别麻烦，哪些手机更值得优先考虑，哪些要谨慎？请给我一份推荐和避坑建议。",
+      "language_original": "zh"
+    },
+    {
+      "text_zh": "最近一年出的新手机很多，我已经看花眼了。如果只看现在最值得买、综合实力最强的手机，你会推荐哪些？请给出5款并分别说出核心优点和短板。",
+      "language_original": "zh"
+    }
   ]
 }
