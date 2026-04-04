@@ -33,8 +33,15 @@ from services.brand_discovery import (
 from services.brand_recognition import extract_entities
 from services.brand_recognition.models import ExtractionResult as BrandExtractionResult
 from services.entity_consolidation import consolidate_run
-from services.extraction.pipeline import ExtractionPipeline
-from services.brand_recognition.consolidation_service import run_enhanced_consolidation
+from services.extraction.consultant import ExtractionConsultant
+from services.extraction.models import BatchExtractionResult
+from services.extraction.pipeline import ExtractionPipeline, persist_extraction_knowledge
+from services.brand_recognition.consolidation_service import (
+    gather_consolidation_input,
+    run_enhanced_consolidation,
+)
+from services.knowledge_verticals import get_or_create_vertical
+from models.knowledge_database import KnowledgeWriteSessionLocal
 from services.brand_recognition.product_brand_mapping import (
     map_products_to_brands_for_run,
 )
@@ -70,6 +77,29 @@ def _get_or_create_event_loop():
 def _run_async(coro):
     loop = _get_or_create_event_loop()
     return loop.run_until_complete(coro)
+
+
+def _get_redis():
+    import redis
+    return redis.from_url(settings.redis_url)
+
+
+def _store_batch_results(key: str, results: list[dict]) -> None:
+    r = _get_redis()
+    for result in results:
+        r.rpush(key, json.dumps(result))
+    r.expire(key, 86400)
+
+
+def _load_all_results(key: str) -> list[dict]:
+    r = _get_redis()
+    raw = r.lrange(key, 0, -1)
+    return [json.loads(item) for item in raw]
+
+
+def _clear_batch_results(key: str) -> None:
+    r = _get_redis()
+    r.delete(key)
 
 
 @dataclass(frozen=True)
@@ -248,17 +278,24 @@ def start_run(
         commit_with_retry(self.db)
         return {"run_id": run_id, "prompt_count": 0}
 
-    header = []
     llm_queue = _llm_queue(resolution.route)
-    for prompt_id in prompt_ids:
-        header.append(
-            ensure_llm_answer.s(run_id, prompt_id).set(queue=llm_queue)
-            | ensure_extraction.s(run_id, force_reextract).set(queue="ollama_extract")
-        )
+    batch_size = settings.extraction_consolidation_batch_size
+    batches = [prompt_ids[i:i + batch_size] for i in range(0, len(prompt_ids), batch_size)]
 
-    callback = finalize_run.s(run_id, force_reextract, skip_entity_consolidation).set(
-        queue="default"
-    )
+    results_key = f"dragonlens:run:{run_id}:batch_results"
+    _clear_batch_results(results_key)
+
+    first_batch = batches[0]
+    remaining = batches[1:]
+    header = [
+        ensure_llm_answer.s(run_id, pid).set(queue=llm_queue)
+        | ensure_extraction.s(run_id, force_reextract).set(queue="ollama_extract")
+        for pid in first_batch
+    ]
+    callback = intermediate_consolidation.s(
+        run_id, 0, results_key, remaining,
+        force_reextract, skip_entity_consolidation, llm_queue,
+    ).set(queue="default")
     chord(group(header))(callback)
     return {"run_id": run_id, "prompt_count": len(prompt_ids)}
 
@@ -410,7 +447,8 @@ def ensure_extraction(
         answer_zh = answer.raw_answer_zh or ""
         logger.info(f"[TASK] ensure_extraction: calling discover_brands_and_products for run={run_id}")
         all_brands, extraction_result = discover_brands_and_products(
-            answer_zh, run.vertical_id, brands, self.db
+            answer_zh, run.vertical_id, brands, self.db,
+            skip_finalize=True,
         )
         logger.info(f"[TASK] ensure_extraction: discover_brands_and_products completed, {len(all_brands)} brands found")
 
@@ -596,16 +634,161 @@ def _has_mentions(db: Session, llm_answer_id: int) -> bool:
 
 
 @celery_app.task(base=DatabaseTask, bind=True)
-def finalize_run(
+def intermediate_consolidation(
     self: DatabaseTask,
     results: list[dict],
     run_id: int,
+    batch_index: int,
+    results_key: str,
+    remaining_batches: list[list[int]],
+    force_reextract: bool,
+    skip_entity_consolidation: bool,
+    llm_queue: str,
+) -> dict:
+    """Run OpenRouter consultant after a batch of prompts completes.
+
+    Persists normalized entities to the knowledge DB so subsequent batches
+    benefit from a richer KB.  Then launches the next batch chord or
+    finalize_run if no batches remain.
+    """
+    logger.info(
+        "[BATCH] intermediate_consolidation batch=%d run=%d, %d results, %d batches remaining",
+        batch_index, run_id, len(results), len(remaining_batches),
+    )
+    _store_batch_results(results_key, results)
+
+    try:
+        _run_batch_consultant(self.db, run_id)
+    except Exception as exc:
+        logger.error("[BATCH] Consultant failed for batch %d run %d: %s", batch_index, run_id, exc, exc_info=True)
+
+    if remaining_batches:
+        next_batch = remaining_batches[0]
+        rest = remaining_batches[1:]
+        header = []
+        for prompt_id in next_batch:
+            header.append(
+                ensure_llm_answer.s(run_id, prompt_id).set(queue=llm_queue)
+                | ensure_extraction.s(run_id, force_reextract).set(queue="ollama_extract")
+            )
+        callback = intermediate_consolidation.s(
+            run_id, batch_index + 1, results_key, rest,
+            force_reextract, skip_entity_consolidation, llm_queue,
+        ).set(queue="default")
+        chord(group(header))(callback)
+    else:
+        finalize_run.delay(
+            run_id, force_reextract, skip_entity_consolidation, results_key,
+        )
+
+    return {"batch_index": batch_index, "ok": True, "run_id": run_id}
+
+
+def _run_batch_consultant(db: Session, run_id: int) -> None:
+    """Run ExtractionConsultant over all entities extracted so far for a run."""
+    consolidation_input = gather_consolidation_input(db, run_id)
+    if not consolidation_input.all_unique_brands and not consolidation_input.all_unique_products:
+        logger.info("[BATCH] No entities to consolidate for run %d", run_id)
+        return
+
+    raw_brands = sorted(consolidation_input.all_unique_brands)
+    raw_products = sorted(consolidation_input.all_unique_products)
+    item_pairs = _gather_item_pairs_for_run(db, run_id)
+
+    knowledge_db = KnowledgeWriteSessionLocal()
+    try:
+        vertical = get_or_create_vertical(knowledge_db, consolidation_input.vertical_name)
+        consultant = ExtractionConsultant(
+            consolidation_input.vertical_name,
+            consolidation_input.vertical_description,
+            vertical_id=vertical.id,
+            knowledge_db=knowledge_db,
+        )
+
+        brand_aliases, product_aliases, product_brand_map = _run_async(
+            consultant.normalize_and_map(raw_brands, raw_products, item_pairs)
+        )
+        product_aliases, product_brand_map = _run_async(
+            consultant.consolidate_products(product_aliases, product_brand_map, brand_aliases)
+        )
+
+        canonical_brands = list({brand_aliases.get(b, b) for b in raw_brands})
+        canonical_products = list({product_aliases.get(p, p) for p in raw_products})
+        valid_brands, valid_products, rejected_brands, rejected_products, rejection_reasons = _run_async(
+            consultant.validate_relevance(canonical_brands, canonical_products)
+        )
+
+        consultant.store_rejections(rejected_brands, rejected_products, rejection_reasons)
+
+        batch = BatchExtractionResult(
+            items=[],
+            brand_aliases=brand_aliases,
+            product_aliases=product_aliases,
+            product_brand_map=product_brand_map,
+            validated_brands=valid_brands,
+            validated_products=valid_products,
+            rejected_brands=rejected_brands,
+            rejected_products=rejected_products,
+        )
+        persist_extraction_knowledge(knowledge_db, vertical.id, run_id, batch)
+
+        knowledge_db.commit()
+        logger.info(
+            "[BATCH] Consultant done for run %d: %d valid brands, %d valid products",
+            run_id, len(valid_brands), len(valid_products),
+        )
+    except Exception:
+        knowledge_db.rollback()
+        raise
+    finally:
+        knowledge_db.close()
+
+
+def _gather_item_pairs_for_run(db: Session, run_id: int) -> list[tuple[str | None, str | None]]:
+    """Reconstruct brand-product co-occurrence pairs from mention records."""
+    answer_ids = [
+        row[0]
+        for row in db.query(LLMAnswer.id).filter(LLMAnswer.run_id == run_id).all()
+    ]
+    pairs: list[tuple[str | None, str | None]] = []
+    for aid in answer_ids:
+        brand_names = [
+            row[0]
+            for row in db.query(Brand.display_name)
+            .join(BrandMention, BrandMention.brand_id == Brand.id)
+            .filter(BrandMention.llm_answer_id == aid, BrandMention.mentioned == True)
+            .all()
+        ]
+        product_names = [
+            row[0]
+            for row in db.query(Product.display_name)
+            .join(ProductMention, ProductMention.product_id == Product.id)
+            .filter(ProductMention.llm_answer_id == aid, ProductMention.mentioned == True)
+            .all()
+        ]
+        for b in brand_names:
+            for p in product_names:
+                pairs.append((b, p))
+    return pairs
+
+
+@celery_app.task(base=DatabaseTask, bind=True)
+def finalize_run(
+    self: DatabaseTask,
+    run_id: int,
     force_reextract: bool = False,
     skip_entity_consolidation: bool = False,
+    results_key: str | None = None,
 ) -> dict:
     run = self.db.query(Run).filter(Run.id == run_id).first()
     if not run:
         raise ValueError(f"Run {run_id} not found")
+
+    if results_key:
+        results = _load_all_results(results_key)
+        _clear_batch_results(results_key)
+    else:
+        results = []
 
     failed_ids = _failed_prompt_ids(results)
     if _should_fail_run(results):

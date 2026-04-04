@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     vertical_auto_match_model: Optional[str] = None
 
     redis_url: str = "redis://localhost:6379/0"
+    extraction_consolidation_batch_size: int = 5
 
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"

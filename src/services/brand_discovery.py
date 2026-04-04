@@ -73,6 +73,7 @@ def discover_brands_and_products(
     db: Session,
     vertical_name: Optional[str] = None,
     vertical_description: Optional[str] = None,
+    skip_finalize: bool = False,
 ) -> Tuple[List[Brand], ExtractionResult]:
     import logging
     logger = logging.getLogger(__name__)
@@ -85,6 +86,7 @@ def discover_brands_and_products(
         vertical_id=vertical_id,
         vertical_name=vertical_name,
         vertical_description=vertical_description,
+        skip_finalize=skip_finalize,
     )
     logger.info(f"[DISCOVERY] _extract_for_discovery completed")
 
@@ -158,6 +160,7 @@ def _extract_for_discovery(
     vertical_id: int,
     vertical_name: Optional[str],
     vertical_description: Optional[str],
+    skip_finalize: bool = False,
 ) -> ExtractionResult:
     # Fetch vertical context from DB if not provided
     if not vertical_name:
@@ -174,6 +177,7 @@ def _extract_for_discovery(
         vertical_description=vertical_description or "",
         db=db,
         vertical_id=vertical_id,
+        skip_finalize=skip_finalize,
     )
 
 
