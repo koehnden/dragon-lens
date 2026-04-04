@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+from config import settings
 from ui.components.charts import (
     render_model_heatmap,
     render_positioning_matrix,
@@ -8,47 +9,8 @@ from ui.components.charts import (
 )
 from ui.components.insights import render_insights
 from ui.components.prompt_gaps import render_prompt_gaps
-from ui.utils.api import (
-    fetch_available_models,
-    fetch_json,
-    fetch_user_brands,
-    render_vertical_selector,
-)
-
-
-def _fetch_metrics(vertical_id: int, model_name: str, view_mode: str) -> dict | None:
-    endpoint = "/api/v1/metrics/latest"
-    if view_mode == "Product":
-        endpoint = "/api/v1/metrics/latest/products"
-    return fetch_json(
-        endpoint,
-        params={"vertical_id": vertical_id, "model_name": model_name},
-    )
-
-
-def _fetch_latest_completed_run(vertical_id: int, model_name: str) -> dict | None:
-    runs = fetch_json(
-        "/api/v1/tracking/runs",
-        params={"vertical_id": vertical_id, "model_name": model_name, "limit": 50},
-        timeout=10.0,
-    )
-    if not runs:
-        return None
-    for run in runs:
-        if run.get("status") == "completed":
-            return run
-    return None
-
-
-def _fetch_run_brand_metrics(run_id: int) -> dict | None:
-    data = fetch_json(f"/api/v1/metrics/run/{run_id}")
-    if not data:
-        return None
-    return {"brands": data.get("metrics") or []}
-
-
-def _fetch_run_product_metrics(run_id: int) -> dict | None:
-    return fetch_json(f"/api/v1/metrics/run/{run_id}/products")
+from ui.dashboard_repository import get_dashboard_repository
+from ui.utils.api import fetch_json
 
 
 def _fetch_run_comparison(run_id: int, include_snippets: bool) -> dict | None:
@@ -212,48 +174,60 @@ def _render_prompt_outcome_details(rows: list[dict]) -> None:
 def _render_dashboard_content(
     df: pd.DataFrame,
     name_col: str,
-    user_brand: str | None,
+    user_entity: str | None,
+    heatmap_rows: list[dict],
     comparison: dict | None,
     comparison_summary: dict | None,
     run_id: int | None,
-    vertical_id: int | None = None,
-    available_models: list[str] | None = None,
     user_brand_id: int | None = None,
 ) -> None:
-    _render_executive_scorecard(df, name_col, user_brand)
+    _render_executive_scorecard(df, name_col, user_entity)
     st.markdown("---")
 
-    render_positioning_matrix(df, name_col, user_brand)
+    render_positioning_matrix(df, name_col, user_entity)
     st.markdown("---")
 
-    if vertical_id and available_models:
-        render_model_heatmap(vertical_id, available_models, name_col, user_brand)
+    if heatmap_rows:
+        render_model_heatmap(heatmap_rows, user_entity)
         st.markdown("---")
 
     col_sov, col_insights = st.columns([3, 2])
     with col_sov:
-        render_sov_bar_chart(df, name_col, user_brand)
+        render_sov_bar_chart(df, name_col, user_entity)
     with col_insights:
-        render_insights(df, name_col, user_brand)
+        render_insights(df, name_col, user_entity)
 
-    if run_id:
+    if run_id and not settings.is_public_demo:
         with st.expander("Prompt Coverage Analysis", expanded=False):
             render_prompt_gaps(run_id, user_brand_id)
 
-    if comparison or comparison_summary:
+    if not settings.is_public_demo and (comparison or comparison_summary):
         with st.expander("Comparison Details"):
             _render_comparison_tab(comparison or {}, comparison_summary, run_id)
+
+
+def _render_vertical_selector(verticals: list[dict]) -> tuple[str, int] | None:
+    if not verticals:
+        message = "No published demo data is available yet."
+        if not settings.is_public_demo:
+            message = "No verticals found. Please create a tracking job first."
+        st.warning(message)
+        return None
+    vertical_options = {vertical["name"]: vertical["id"] for vertical in verticals}
+    selected_name = st.selectbox("Select Vertical", list(vertical_options.keys()))
+    return selected_name, vertical_options[selected_name]
 
 
 def show() -> None:
     st.title("Dashboard")
 
-    vertical_result = render_vertical_selector()
+    repository = get_dashboard_repository()
+    vertical_result = _render_vertical_selector(repository.fetch_verticals())
     if not vertical_result:
         return
     selected_vertical_name, selected_vertical_id = vertical_result
 
-    available_models = fetch_available_models(selected_vertical_id)
+    available_models = repository.fetch_available_models(selected_vertical_id)
     if not available_models:
         st.info("No completed runs found for this vertical yet.")
         return
@@ -266,9 +240,14 @@ def show() -> None:
         view_mode = st.radio("View Mode", ["Brand", "Product"], horizontal=True)
 
     model_param = "all" if selected_model == "All" else selected_model
-    user_brand_records = fetch_user_brands(selected_vertical_id)
+    user_brand_records = repository.fetch_user_brands(selected_vertical_id)
     user_brand = user_brand_records[0]["display_name"] if user_brand_records else None
     user_brand_id = user_brand_records[0]["id"] if user_brand_records else None
+    heatmap_rows = repository.fetch_per_model_metric_rows(
+        selected_vertical_id,
+        available_models,
+        view_mode,
+    )
 
     comparison = None
     comparison_summary = None
@@ -276,7 +255,11 @@ def show() -> None:
 
     if model_param == "all":
         with st.spinner("Loading metrics..."):
-            metrics = _fetch_metrics(selected_vertical_id, model_param, view_mode)
+            metrics = repository.fetch_aggregate_metrics(
+                selected_vertical_id,
+                model_param,
+                view_mode,
+            )
         if not metrics:
             st.warning("No data found for this vertical and model combination.")
             return
@@ -284,7 +267,7 @@ def show() -> None:
         st.subheader(f"{metrics['vertical_name']} ({metrics['model_name']})")
         st.caption(f"Data from: {metrics['date']}")
     else:
-        latest_run = _fetch_latest_completed_run(selected_vertical_id, model_param)
+        latest_run = repository.fetch_latest_run(selected_vertical_id, model_param)
         if not latest_run:
             st.info("No completed runs found for this vertical/model yet.")
             return
@@ -294,18 +277,19 @@ def show() -> None:
         st.caption(f"Run ID: {run_id} | Run time: {latest_run.get('run_time')}")
 
         with st.spinner("Loading run metrics..."):
-            if view_mode == "Brand":
-                metrics = _fetch_run_brand_metrics(run_id)
-            else:
-                metrics = _fetch_run_product_metrics(run_id)
+            metrics = repository.fetch_run_metrics(run_id, view_mode)
         if not metrics:
             st.error("Failed to load run metrics.")
             return
 
-        include_snippets = st.checkbox("Include comparison snippets", value=False)
-        with st.spinner("Loading comparison data..."):
-            comparison = _fetch_run_comparison(run_id, include_snippets)
-            comparison_summary = _fetch_run_comparison_summary(run_id, include_prompt_details=False)
+        if not settings.is_public_demo:
+            include_snippets = st.checkbox("Include comparison snippets", value=False)
+            with st.spinner("Loading comparison data..."):
+                comparison = _fetch_run_comparison(run_id, include_snippets)
+                comparison_summary = _fetch_run_comparison_summary(
+                    run_id,
+                    include_prompt_details=False,
+                )
 
     items_key = "brands" if view_mode == "Brand" else "products"
     items = metrics.get(items_key) or []
@@ -324,7 +308,12 @@ def show() -> None:
         user_entity = user_brand
 
     _render_dashboard_content(
-        df, name_col, user_entity, comparison, comparison_summary, run_id,
-        vertical_id=selected_vertical_id, available_models=available_models,
+        df,
+        name_col,
+        user_entity,
+        heatmap_rows,
+        comparison,
+        comparison_summary,
+        run_id,
         user_brand_id=user_brand_id,
     )

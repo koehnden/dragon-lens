@@ -25,16 +25,22 @@ def ensure_src_on_path() -> None:
 
 ensure_src_on_path()
 
-os.environ.setdefault("CELERY_BROKER_URL", "memory://")
-os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
-os.environ.setdefault("ENABLE_QWEN_FILTERING", "false")
-os.environ.setdefault("RUN_TASKS_INLINE", "true")
-os.environ.setdefault("KNOWLEDGE_DATABASE_URL", "sqlite:///:memory:")
+
+def _set_env_default(name: str, value: str) -> None:
+    if not os.environ.get(name):
+        os.environ[name] = value
+
+
+_set_env_default("CELERY_BROKER_URL", "memory://")
+_set_env_default("CELERY_RESULT_BACKEND", "cache+memory://")
+_set_env_default("DATABASE_URL", "sqlite:///:memory:")
+_set_env_default("ENABLE_QWEN_FILTERING", "false")
+_set_env_default("RUN_TASKS_INLINE", "true")
+_set_env_default("KNOWLEDGE_DATABASE_URL", "sqlite:///:memory:")
 os.environ["FEEDBACK_SANITY_CHECKS_ENABLED"] = "false"
 os.environ["FEEDBACK_TRIGGER_RERUN_ENABLED"] = "false"
 os.environ["VERTICAL_AUTO_MATCH_ENABLED"] = "false"
-os.environ.setdefault("ENCRYPTION_SECRET_KEY", "test-secret-key")
+_set_env_default("ENCRYPTION_SECRET_KEY", "test-secret-key")
 
 
 def _routers():

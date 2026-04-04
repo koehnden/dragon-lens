@@ -9,6 +9,7 @@ def test_default_settings(monkeypatch):
     monkeypatch.delenv("KNOWLEDGE_DATABASE_URL", raising=False)
     monkeypatch.delenv("BACKEND_API_BASE_URL", raising=False)
     monkeypatch.delenv("APP_MODE", raising=False)
+    monkeypatch.delenv("REDIS_URL", raising=False)
     settings = Settings(_env_file=None)
 
     assert settings.app_name == "DragonLens"
@@ -21,6 +22,7 @@ def test_default_settings(monkeypatch):
     assert settings.redis_url == "redis://localhost:6379/0"
     assert settings.ollama_base_url == "http://localhost:11434"
     assert settings.knowledge_allow_non_feedback_writes is True
+    assert settings.dashboard_snapshot_path == "demo_data/dashboard_snapshot.json"
     assert settings.resolved_backend_api_base_url == "http://localhost:8000"
     assert settings.resolved_knowledge_database_url == "sqlite:///./data/knowledge.db"
 
@@ -31,7 +33,7 @@ def test_custom_settings(monkeypatch):
     monkeypatch.setenv("DEBUG", "True")
     monkeypatch.setenv("API_PORT", "9000")
     monkeypatch.setenv("APP_MODE", "public_demo")
-    monkeypatch.setenv("BACKEND_API_BASE_URL", "https://demo.dragon-lens.ai/api")
+    monkeypatch.setenv("BACKEND_API_BASE_URL", "https://example.com/api")
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@db:5432/app")
     monkeypatch.setenv("KNOWLEDGE_DATABASE_URL", "")
 
@@ -42,7 +44,7 @@ def test_custom_settings(monkeypatch):
     assert settings.api_port == 9000
     assert settings.app_mode == "public_demo"
     assert settings.is_public_demo is True
-    assert settings.resolved_backend_api_base_url == "https://demo.dragon-lens.ai/api"
+    assert settings.resolved_backend_api_base_url == "https://example.com/api"
     assert (
         settings.resolved_knowledge_database_url
         == "postgresql+psycopg://user:pass@db:5432/app"
