@@ -281,7 +281,7 @@ Environment variables take precedence over UI-configured keys.
 ### Future (v2+)
 - [ ] Scheduled tracking jobs (Celery Beat)
 - [ ] Multi-tenant user accounts
-- [ ] Cloud deployment configs (AWS/GCP)
+- [x] Dashboard demo deployment on Streamlit Community Cloud
 
 ## Project Structure
 

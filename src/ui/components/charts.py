@@ -1,10 +1,9 @@
-import httpx
+from collections import Counter
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-
-from ui.utils.api import api_url, shorten_model_name
 
 
 def render_positioning_matrix(df: pd.DataFrame, name_col: str, user_brand: str = None) -> None:
@@ -99,71 +98,22 @@ def render_sov_bar_chart(df: pd.DataFrame, name_col: str, user_brand: str = None
     st.plotly_chart(fig, use_container_width=True)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def _fetch_per_model_metrics(
-    vertical_id: int, models: tuple[str, ...], view_mode: str,
-) -> list[dict]:
-    endpoint = "/api/v1/metrics/latest"
-    if view_mode == "product":
-        endpoint = "/api/v1/metrics/latest/products"
-    rows: list[dict] = []
-    for model in models:
-        try:
-            resp = httpx.get(
-                api_url(endpoint),
-                params={"vertical_id": vertical_id, "model_name": model},
-                timeout=30.0,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPError:
-            continue
-        items_key = "products" if view_mode == "product" else "brands"
-        for item in data.get(items_key) or []:
-            name_key = "product_name" if view_mode == "product" else "brand_name"
-            rows.append({
-                "model": shorten_model_name(model),
-                "entity": item[name_key],
-                "sov": round(item["share_of_voice"] * 100),
-            })
-    return rows
-
-
 def render_model_heatmap(
-    vertical_id: int,
-    available_models: list[str],
-    name_col: str,
-    user_brand: str | None = None,
+    rows: list[dict],
+    user_entity: str | None = None,
 ) -> None:
-    if not available_models or len(available_models) < 2:
-        return
-
-    seen_short: dict[str, str] = {}
-    deduped_models: list[str] = []
-    for m in available_models:
-        short = shorten_model_name(m)
-        if short not in seen_short:
-            seen_short[short] = m
-            deduped_models.append(m)
-
-    view_mode = "product" if name_col == "product_name" else "brand"
-    rows = _fetch_per_model_metrics(vertical_id, tuple(deduped_models), view_mode)
     if not rows:
         return
 
-    df = pd.DataFrame(rows)
-    pivot = df.pivot_table(index="entity", columns="model", values="sov", fill_value=0)
+    pivot, x_labels = _build_heatmap_matrix(rows)
 
-    model_order = [shorten_model_name(m) for m in deduped_models if shorten_model_name(m) in pivot.columns]
-    pivot = pivot[[m for m in model_order if m in pivot.columns]]
-
-    if user_brand and user_brand in pivot.index:
-        other_brands = [b for b in pivot.index if b != user_brand]
-        pivot = pivot.loc[[user_brand] + other_brands]
+    if user_entity and user_entity in pivot.index:
+        other_entities = [entity for entity in pivot.index if entity != user_entity]
+        pivot = pivot.loc[[user_entity] + other_entities]
 
     fig = go.Figure(data=go.Heatmap(
         z=pivot.values,
-        x=pivot.columns.tolist(),
+        x=x_labels,
         y=pivot.index.tolist(),
         text=[[f"{v}%" for v in row] for row in pivot.values.astype(int)],
         texttemplate="%{text}",
@@ -184,3 +134,34 @@ def render_model_heatmap(
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+
+def _build_heatmap_matrix(rows: list[dict]) -> tuple[pd.DataFrame, list[str]]:
+    df = pd.DataFrame(rows)
+    if "model_label" not in df.columns:
+        df["model_label"] = df["model"]
+
+    model_frame = df[["model", "model_label"]].drop_duplicates()
+    display_labels = _build_display_labels(model_frame)
+    pivot = df.pivot_table(
+        index="entity",
+        columns="model",
+        values="sov",
+        aggfunc="first",
+        fill_value=0,
+    )
+    ordered_models = model_frame["model"].tolist()
+    pivot = pivot.reindex(columns=ordered_models)
+    return pivot, [display_labels[model_name] for model_name in pivot.columns]
+
+
+def _build_display_labels(model_frame: pd.DataFrame) -> dict[str, str]:
+    labels = model_frame["model_label"].tolist()
+    counts = Counter(labels)
+    display_labels: dict[str, str] = {}
+    for row in model_frame.itertuples(index=False):
+        if counts[row.model_label] == 1:
+            display_labels[row.model] = row.model_label
+        else:
+            display_labels[row.model] = f"{row.model_label} ({row.model})"
+    return display_labels
