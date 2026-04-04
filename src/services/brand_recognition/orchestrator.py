@@ -26,6 +26,7 @@ def extract_entities(
     vertical_description: str = "",
     db: Optional[Session] = None,
     vertical_id: Optional[int] = None,
+    skip_finalize: bool = False,
 ) -> ExtractionResult:
     """
     Main entry point for entity extraction.
@@ -33,6 +34,10 @@ def extract_entities(
     The redesigned pipeline is run-scoped. This wrapper executes the run-level
     pipeline against a single response for direct callers that still need a
     one-shot extraction.
+
+    When skip_finalize=True, only runs the cheap KB + Qwen 7B extraction
+    without the expensive OpenRouter consultant consolidation. Used by the
+    chord-based worker path where consolidation happens in batches.
     """
     from services.extraction.pipeline import ExtractionPipeline
     from services.brand_recognition.list_processor import (
@@ -58,13 +63,19 @@ def extract_entities(
 
     try:
         logger.info(f"[ORCHESTRATOR] Calling pipeline.process_response()")
-        _run_async(
+        response_result = _run_async(
             pipeline.process_response(
                 text,
                 response_id="single-response",
                 user_brands=user_brands,
             )
         )
+        if skip_finalize:
+            logger.info(f"[ORCHESTRATOR] skip_finalize=True, returning process_response result")
+            response_result.quality = _assess_extraction_quality(
+                text, response_result, expected_count, list_item_count
+            )
+            return response_result
         logger.info(f"[ORCHESTRATOR] process_response completed, calling finalize()")
         batch = _run_async(pipeline.finalize())
         logger.info(f"[ORCHESTRATOR] finalize completed")

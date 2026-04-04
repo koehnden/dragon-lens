@@ -290,60 +290,9 @@ class ExtractionPipeline:
         )
 
     def _persist_knowledge(self, batch: BatchExtractionResult) -> None:
-        brand_rows: dict[str, KnowledgeBrand] = {}
-
-        for canonical in sorted(batch.validated_brands):
-            brand_rows[canonical] = _upsert_brand(self.knowledge_db, self.knowledge_vertical_id, canonical)
-
-        for alias, canonical in batch.brand_aliases.items():
-            if canonical not in batch.validated_brands:
-                continue
-            brand = brand_rows.setdefault(
-                canonical,
-                _upsert_brand(self.knowledge_db, self.knowledge_vertical_id, canonical),
-            )
-            _upsert_brand_alias(self.knowledge_db, brand.id, alias)
-
-        product_rows: dict[str, KnowledgeProduct] = {}
-        for canonical in sorted(batch.validated_products):
-            mapped_brand_name = batch.product_brand_map.get(canonical)
-            mapped_brand = brand_rows.get(mapped_brand_name) if mapped_brand_name else None
-            product_rows[canonical] = _upsert_product(
-                self.knowledge_db,
-                self.knowledge_vertical_id,
-                canonical,
-                brand_id=mapped_brand.id if mapped_brand else None,
-            )
-
-        for alias, canonical in batch.product_aliases.items():
-            if canonical not in batch.validated_products:
-                continue
-            product = product_rows.setdefault(
-                canonical,
-                _upsert_product(self.knowledge_db, self.knowledge_vertical_id, canonical),
-            )
-            _upsert_product_alias(self.knowledge_db, product.id, alias)
-
-        for product_name, brand_name in batch.product_brand_map.items():
-            if product_name not in batch.validated_products or brand_name not in batch.validated_brands:
-                continue
-            product = product_rows.setdefault(
-                product_name,
-                _upsert_product(self.knowledge_db, self.knowledge_vertical_id, product_name),
-            )
-            brand = brand_rows.setdefault(
-                brand_name,
-                _upsert_brand(self.knowledge_db, self.knowledge_vertical_id, brand_name),
-            )
-            if not product.brand_id:
-                product.brand_id = brand.id
-            _upsert_product_brand_mapping(
-                self.knowledge_db,
-                self.knowledge_vertical_id,
-                product.id,
-                brand.id,
-            )
-
+        persist_extraction_knowledge(
+            self.knowledge_db, self.knowledge_vertical_id, self.run_id, batch,
+        )
         self._write_extraction_logs(batch)
 
     def _write_extraction_logs(self, batch: BatchExtractionResult) -> None:
@@ -377,6 +326,72 @@ class ExtractionPipeline:
                             item_text=item.item.text,
                         )
                     )
+
+
+def persist_extraction_knowledge(
+    db: Session,
+    vertical_id: int,
+    run_id: int | None,
+    batch: BatchExtractionResult,
+) -> None:
+    """Persist validated extraction results to the knowledge DB.
+
+    Extracted from ExtractionPipeline._persist_knowledge so it can be
+    reused by the intermediate batch consolidation task.
+    """
+    brand_rows: dict[str, KnowledgeBrand] = {}
+
+    for canonical in sorted(batch.validated_brands):
+        brand_rows[canonical] = _upsert_brand(db, vertical_id, canonical)
+
+    for alias, canonical in batch.brand_aliases.items():
+        if canonical not in batch.validated_brands:
+            continue
+        brand = brand_rows.setdefault(
+            canonical,
+            _upsert_brand(db, vertical_id, canonical),
+        )
+        _upsert_brand_alias(db, brand.id, alias)
+
+    product_rows: dict[str, KnowledgeProduct] = {}
+    for canonical in sorted(batch.validated_products):
+        mapped_brand_name = batch.product_brand_map.get(canonical)
+        mapped_brand = brand_rows.get(mapped_brand_name) if mapped_brand_name else None
+        product_rows[canonical] = _upsert_product(
+            db,
+            vertical_id,
+            canonical,
+            brand_id=mapped_brand.id if mapped_brand else None,
+        )
+
+    for alias, canonical in batch.product_aliases.items():
+        if canonical not in batch.validated_products:
+            continue
+        product = product_rows.setdefault(
+            canonical,
+            _upsert_product(db, vertical_id, canonical),
+        )
+        _upsert_product_alias(db, product.id, alias)
+
+    for product_name, brand_name in batch.product_brand_map.items():
+        if product_name not in batch.validated_products or brand_name not in batch.validated_brands:
+            continue
+        product = product_rows.setdefault(
+            product_name,
+            _upsert_product(db, vertical_id, product_name),
+        )
+        brand = brand_rows.setdefault(
+            brand_name,
+            _upsert_brand(db, vertical_id, brand_name),
+        )
+        if not product.brand_id:
+            product.brand_id = brand.id
+        _upsert_product_brand_mapping(
+            db,
+            vertical_id,
+            product.id,
+            brand.id,
+        )
 
 
 def _brand_to_seed_dict(brand: object) -> dict:
