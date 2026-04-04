@@ -1,7 +1,11 @@
+import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from typing import Optional
 
+import httpx
+from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, RateLimitError
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -18,6 +22,10 @@ _OPENROUTER_MODEL_ALIASES = {
 
 def _normalize_openrouter_model(model_name: str) -> str:
     return _OPENROUTER_MODEL_ALIASES.get(model_name, model_name)
+
+
+class KimiReasoningOnlyError(RuntimeError):
+    """Raised when Moonshot returns reasoning tokens without final answer text."""
 
 
 class DeepSeekService(OpenAICompatibleService):
@@ -60,47 +68,104 @@ class KimiService(OpenAICompatibleService):
         if model not in self.KNOWN_MODELS:
             logger.warning(f"Passing through unrecognized Kimi model ID: {model}")
 
+    def _request_max_tokens(self, is_k2: bool) -> Optional[int]:
+        if is_k2:
+            return settings.kimi_k2_max_tokens
+        return self.max_tokens
+
+    def _request_extra_body(self, is_k2: bool) -> Optional[dict]:
+        if is_k2 and settings.kimi_disable_thinking:
+            return {"thinking": {"type": "disabled"}}
+        return None
+
+    def _should_retry(self, exc: Exception) -> bool:
+        if isinstance(exc, (APITimeoutError, APIConnectionError, RateLimitError, KimiReasoningOnlyError)):
+            return True
+        if isinstance(exc, APIStatusError):
+            return exc.response.status_code >= 500
+        return False
+
+    def _retry_delay(self, attempt: int) -> float:
+        return settings.kimi_retry_base_delay_seconds * (2 ** attempt)
+
+    def _parse_kimi_response(
+        self,
+        response,
+        latency: float,
+    ) -> tuple[str, int, int, float]:
+        message = response.choices[0].message
+        content = message.content or ""
+        reasoning_content = getattr(message, "reasoning_content", None) or ""
+        if not content and reasoning_content:
+            raise KimiReasoningOnlyError(
+                "Kimi returned reasoning_content without final content"
+            )
+        return self._parse_openai_response(response, latency)
+
     async def query(
         self,
         prompt_zh: str,
         model_name: Optional[str] = None,
         **kwargs,
     ) -> tuple[str, int, int, float]:
-        import httpx
-        import time
-        from openai import AsyncOpenAI
-
         api_key = self._get_api_key()
         model = model_name or self.default_model
         self.validate_model(model)
         is_k2 = self._is_k2_model(model)
+        messages = self._build_messages(prompt_zh)
+        request_kwargs = {
+            "model": model,
+            "messages": messages,
+            "temperature": self.temperature,
+        }
 
-        http_client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=30.0))
-        client = AsyncOpenAI(
-            api_key=api_key,
-            base_url=self.api_base,
-            http_client=http_client,
+        max_tokens = self._request_max_tokens(is_k2)
+        if max_tokens is not None:
+            request_kwargs["max_tokens"] = max_tokens
+        extra_body = self._request_extra_body(is_k2)
+        if extra_body is not None:
+            request_kwargs["extra_body"] = extra_body
+
+        logger.info(
+            "Kimi request: model=%s, is_k2=%s, max_tokens=%s, thinking_disabled=%s",
+            model,
+            is_k2,
+            request_kwargs.get("max_tokens"),
+            bool(extra_body),
         )
 
-        messages = self._build_messages(prompt_zh)
-        temp = 1.0 if is_k2 else self.temperature
-        request_kwargs = {"model": model, "messages": messages, "temperature": temp}
-
-        if not is_k2 and self.max_tokens is not None:
-            request_kwargs["max_tokens"] = self.max_tokens
-
-        logger.info(f"Kimi request: model={model}, is_k2={is_k2}, max_tokens={'none' if is_k2 else self.max_tokens}")
-
+        attempts = max(1, settings.kimi_retry_attempts)
         start_time = time.time()
-        try:
-            response = await client.chat.completions.create(**request_kwargs)
-            latency = time.time() - start_time
-            return self._parse_openai_response(response, latency)
-        except Exception as e:
-            logger.error(f"{self.provider.value} API error: {e}")
-            raise
-        finally:
-            await http_client.aclose()
+        for attempt in range(attempts):
+            http_client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=30.0))
+            client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=self.api_base,
+                http_client=http_client,
+            )
+            try:
+                response = await client.chat.completions.create(**request_kwargs)
+                latency = time.time() - start_time
+                return self._parse_kimi_response(response, latency)
+            except Exception as exc:
+                final_attempt = attempt == attempts - 1
+                if final_attempt or not self._should_retry(exc):
+                    logger.error(f"{self.provider.value} API error: {exc}")
+                    raise
+
+                delay = self._retry_delay(attempt)
+                logger.warning(
+                    "Retrying Kimi request after %s on attempt %s/%s in %.1fs",
+                    type(exc).__name__,
+                    attempt + 1,
+                    attempts,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+            finally:
+                await http_client.aclose()
+
+        raise RuntimeError("Kimi request retry loop exited without returning a response")
 
 
 class OpenRouterService(OpenAICompatibleService):

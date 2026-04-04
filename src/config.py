@@ -43,6 +43,10 @@ class Settings(BaseSettings):
 
     kimi_api_key: Optional[str] = None
     kimi_api_base: str = "https://api.moonshot.ai/v1"
+    kimi_disable_thinking: bool = True
+    kimi_k2_max_tokens: int = 1000
+    kimi_retry_attempts: int = 3
+    kimi_retry_base_delay_seconds: float = 1.0
 
     openrouter_api_key: Optional[str] = None
     openrouter_api_base: str = "https://openrouter.ai/api/v1"
