@@ -64,8 +64,18 @@ def test_snapshot_dashboard_repository_reads_public_demo_snapshot(tmp_path) -> N
         "Brand",
     )
     assert heatmap_rows == [
-        {"model": "Qwen 72B", "entity": "Toyota", "sov": 58},
-        {"model": "DeepSeek V3.2", "entity": "Toyota", "sov": 61},
+        {
+            "model": "qwen/qwen-2.5-72b-instruct",
+            "model_label": "Qwen 72B",
+            "entity": "Toyota",
+            "sov": 58,
+        },
+        {
+            "model": "deepseek-chat",
+            "model_label": "DeepSeek V3.2",
+            "entity": "Toyota",
+            "sov": 61,
+        },
     ]
 
 

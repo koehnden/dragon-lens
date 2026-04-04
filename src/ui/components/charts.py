@@ -1,3 +1,5 @@
+from collections import Counter
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -103,8 +105,7 @@ def render_model_heatmap(
     if not rows:
         return
 
-    df = pd.DataFrame(rows)
-    pivot = df.pivot_table(index="entity", columns="model", values="sov", fill_value=0)
+    pivot, x_labels = _build_heatmap_matrix(rows)
 
     if user_entity and user_entity in pivot.index:
         other_entities = [entity for entity in pivot.index if entity != user_entity]
@@ -112,7 +113,7 @@ def render_model_heatmap(
 
     fig = go.Figure(data=go.Heatmap(
         z=pivot.values,
-        x=pivot.columns.tolist(),
+        x=x_labels,
         y=pivot.index.tolist(),
         text=[[f"{v}%" for v in row] for row in pivot.values.astype(int)],
         texttemplate="%{text}",
@@ -133,3 +134,34 @@ def render_model_heatmap(
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+
+def _build_heatmap_matrix(rows: list[dict]) -> tuple[pd.DataFrame, list[str]]:
+    df = pd.DataFrame(rows)
+    if "model_label" not in df.columns:
+        df["model_label"] = df["model"]
+
+    model_frame = df[["model", "model_label"]].drop_duplicates()
+    display_labels = _build_display_labels(model_frame)
+    pivot = df.pivot_table(
+        index="entity",
+        columns="model",
+        values="sov",
+        aggfunc="first",
+        fill_value=0,
+    )
+    ordered_models = model_frame["model"].tolist()
+    pivot = pivot.reindex(columns=ordered_models)
+    return pivot, [display_labels[model_name] for model_name in pivot.columns]
+
+
+def _build_display_labels(model_frame: pd.DataFrame) -> dict[str, str]:
+    labels = model_frame["model_label"].tolist()
+    counts = Counter(labels)
+    display_labels: dict[str, str] = {}
+    for row in model_frame.itertuples(index=False):
+        if counts[row.model_label] == 1:
+            display_labels[row.model] = row.model_label
+        else:
+            display_labels[row.model] = f"{row.model_label} ({row.model})"
+    return display_labels

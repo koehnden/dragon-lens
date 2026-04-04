@@ -75,7 +75,8 @@ class ApiDashboardRepository:
             for item in data.get(items_key) or []:
                 rows.append(
                     {
-                        "model": shorten_model_name(model_name),
+                        "model": model_name,
+                        "model_label": shorten_model_name(model_name),
                         "entity": item[name_key],
                         "sov": round(item["share_of_voice"] * 100),
                     }
@@ -151,7 +152,8 @@ class SnapshotDashboardRepository:
             for item in payload.get(items_key) or []:
                 rows.append(
                     {
-                        "model": shorten_model_name(model_name),
+                        "model": model_name,
+                        "model_label": shorten_model_name(model_name),
                         "entity": item[name_key],
                         "sov": round(item["share_of_voice"] * 100),
                     }
