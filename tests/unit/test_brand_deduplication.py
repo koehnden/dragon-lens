@@ -4,6 +4,7 @@ from services.brand_discovery import (
     _canonicalize_brand_name,
     _find_brand_by_alias,
     _get_canonical_lookup_name,
+    _is_substring_match,
 )
 from models import Brand, Vertical
 
@@ -231,3 +232,68 @@ class TestFindBrandByAlias:
         result = _find_brand_by_alias(db_session, vertical.id, "BY")
 
         assert result is None
+
+    def test_does_not_cross_match_unrelated_same_length_brands(self, db_session):
+        vertical = Vertical(name="SUV cars", description="SUV cars")
+        db_session.add(vertical)
+        db_session.flush()
+
+        toyota = Brand(
+            vertical_id=vertical.id,
+            display_name="Toyota",
+            original_name="Toyota",
+            aliases={"en": ["Toyota"], "zh": ["丰田"]},
+        )
+        honda = Brand(
+            vertical_id=vertical.id,
+            display_name="Honda",
+            original_name="Honda",
+            aliases={"en": ["Honda"], "zh": ["本田"]},
+        )
+        li_auto = Brand(
+            vertical_id=vertical.id,
+            display_name="Li Auto",
+            original_name="Li Auto",
+            aliases={"en": ["Li Auto"], "zh": ["理想"]},
+        )
+        db_session.add_all([toyota, honda, li_auto])
+        db_session.flush()
+
+        assert _find_brand_by_alias(db_session, vertical.id, "Toyota").id == toyota.id
+        assert _find_brand_by_alias(db_session, vertical.id, "丰田").id == toyota.id
+        assert _find_brand_by_alias(db_session, vertical.id, "Honda").id == honda.id
+        assert _find_brand_by_alias(db_session, vertical.id, "本田").id == honda.id
+        assert _find_brand_by_alias(db_session, vertical.id, "Li Auto").id == li_auto.id
+        assert _find_brand_by_alias(db_session, vertical.id, "理想").id == li_auto.id
+
+        assert _find_brand_by_alias(db_session, vertical.id, "Lexus") is None
+        assert _find_brand_by_alias(db_session, vertical.id, "Tesla") is None
+        assert _find_brand_by_alias(db_session, vertical.id, "Mazda") is None
+
+
+class TestSubstringMatch:
+
+    @pytest.mark.parametrize(
+        ("name1", "name2"),
+        [
+            ("toyota", "liauto"),
+            ("lexus", "honda"),
+            ("tesla", "honda"),
+            ("ford", "oxford"),
+            ("mini", "minimax"),
+        ],
+    )
+    def test_rejects_false_positive_latin_matches(self, name1, name2):
+        assert _is_substring_match(name1, name2) is False
+
+    @pytest.mark.parametrize(
+        ("name1", "name2"),
+        [
+            ("GAC", "GAC Motors"),
+            ("长安", "长安汽车"),
+            ("理想", "理想汽车"),
+            ("大众", "上汽大众"),
+        ],
+    )
+    def test_allows_expected_brand_expansions(self, name1, name2):
+        assert _is_substring_match(name1, name2) is True

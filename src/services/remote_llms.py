@@ -83,7 +83,8 @@ class KimiService(OpenAICompatibleService):
         )
 
         messages = self._build_messages(prompt_zh)
-        request_kwargs = {"model": model, "messages": messages, "temperature": self.temperature}
+        temp = 1.0 if is_k2 else self.temperature
+        request_kwargs = {"model": model, "messages": messages, "temperature": temp}
 
         if not is_k2 and self.max_tokens is not None:
             request_kwargs["max_tokens"] = self.max_tokens

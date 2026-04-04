@@ -1,3 +1,4 @@
+import re
 from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy import func
@@ -43,23 +44,26 @@ def discover_all_brands(
         vertical_id=vertical_id,
     )
 
-    for brand_name in extraction_result.brands.keys():
+    for brand_name, surface_forms in extraction_result.brands.items():
         canonical_name = _canonicalize_brand_name(brand_name)
         normalized_key = canonical_name.lower().strip()
 
         if normalized_key in all_brands_map:
+            _merge_surface_forms(all_brands_map[normalized_key], surface_forms)
             continue
 
         original_key = brand_name.lower().strip()
         if original_key in all_brands_map:
+            _merge_surface_forms(all_brands_map[original_key], surface_forms)
             continue
 
         brand = _get_or_create_discovered_brand(
-            db, vertical_id, brand_name, vertical_name or ""
+            db, vertical_id, brand_name, vertical_name or "",
+            surface_forms=surface_forms,
         )
         all_brands_map[normalized_key] = brand
 
-    return list(all_brands_map.values())
+    return _deduplicate_brands(list(all_brands_map.values()))
 
 
 def discover_brands_and_products(
@@ -126,23 +130,26 @@ def discover_brands_and_products_from_result(
             if alias_key and alias_key not in all_brands_map:
                 all_brands_map[alias_key] = user_brand
 
-    for brand_name in extraction_result.brands.keys():
+    for brand_name, surface_forms in extraction_result.brands.items():
         canonical_name = _canonicalize_brand_name(brand_name)
         normalized_key = canonical_name.lower().strip()
 
         if normalized_key in all_brands_map:
+            _merge_surface_forms(all_brands_map[normalized_key], surface_forms)
             continue
 
         original_key = brand_name.lower().strip()
         if original_key in all_brands_map:
+            _merge_surface_forms(all_brands_map[original_key], surface_forms)
             continue
 
         brand = _get_or_create_discovered_brand(
-            db, vertical_id, brand_name, vertical_name or ""
+            db, vertical_id, brand_name, vertical_name or "",
+            surface_forms=surface_forms,
         )
         all_brands_map[normalized_key] = brand
 
-    return list(all_brands_map.values()), extraction_result
+    return _deduplicate_brands(list(all_brands_map.values())), extraction_result
 
 
 def _extract_for_discovery(
@@ -245,7 +252,7 @@ def _find_brand_by_alias(
                 continue
             if variant_normalized == name_normalized:
                 return brand
-            if _is_substring_match(name_normalized, variant_normalized):
+            if _is_substring_match(name, variant):
                 return brand
     return None
 
@@ -261,22 +268,45 @@ def _collect_brand_variants(brand: Brand) -> List[str]:
 
 
 def _is_substring_match(name1: str, name2: str) -> bool:
-    if len(name1) < 2 or len(name2) < 2:
+    from services.canonicalization_metrics import normalize_entity_key
+
+    raw1 = (name1 or "").strip()
+    raw2 = (name2 or "").strip()
+    if len(raw1) < 2 or len(raw2) < 2:
         return False
-    shorter = min(name1, name2, key=len)
-    longer = max(name1, name2, key=len)
+
+    normalized1 = normalize_entity_key(raw1)
+    normalized2 = normalize_entity_key(raw2)
+    if len(normalized1) < 2 or len(normalized2) < 2 or normalized1 == normalized2:
+        return False
+
+    if len(normalized1) == len(normalized2):
+        return False
+
+    if len(normalized1) < len(normalized2):
+        shorter_raw, longer_raw = raw1, raw2
+        shorter, longer = normalized1, normalized2
+    else:
+        shorter_raw, longer_raw = raw2, raw1
+        shorter, longer = normalized2, normalized1
+
     if shorter not in longer:
         return False
-    has_cjk = any("\u4e00" <= c <= "\u9fff" for c in shorter)
+
+    has_cjk = _has_cjk(shorter) or _has_cjk(longer)
     min_len = 2 if has_cjk else 3
     if len(shorter) < min_len:
         return False
-    if longer.startswith(shorter):
-        return True
-    min_ratio = 0.3 if has_cjk else 0.5
+
+    min_ratio = 0.3
     if len(shorter) / len(longer) < min_ratio:
         return False
-    return True
+
+    if has_cjk:
+        return True
+
+    pattern = re.compile(rf"(?<![a-z0-9]){re.escape(shorter_raw.casefold())}(?![a-z0-9])")
+    return bool(pattern.search(longer_raw.casefold()))
 
 
 def _get_or_create_discovered_brand(
@@ -284,6 +314,7 @@ def _get_or_create_discovered_brand(
     vertical_id: int,
     brand_name: str,
     vertical_name: str = "",
+    surface_forms: Optional[List[str]] = None,
 ) -> Brand:
     normalized_name = brand_name.strip()
     canonical_name = _canonicalize_brand_name(normalized_name)
@@ -298,6 +329,7 @@ def _get_or_create_discovered_brand(
     )
 
     if existing:
+        _merge_surface_forms(existing, surface_forms or [])
         return existing
 
     existing_by_original = (
@@ -310,14 +342,16 @@ def _get_or_create_discovered_brand(
     )
 
     if existing_by_original:
+        _merge_surface_forms(existing_by_original, surface_forms or [])
         return existing_by_original
 
     existing_by_alias = _find_brand_by_alias(db, vertical_id, normalized_name)
     if existing_by_alias:
+        _merge_surface_forms(existing_by_alias, surface_forms or [])
         return existing_by_alias
 
     display_name = canonical_name
-    aliases = {"zh": [], "en": []}
+    aliases = _build_aliases_from_surface_forms(canonical_name, surface_forms or [])
 
     return _insert_or_get_brand(
         db=db,
@@ -388,6 +422,61 @@ def _upsert_brand(
     stmt = stmt.on_conflict_do_nothing(index_elements=["vertical_id", "display_name"])
     db.execute(stmt)
     db.flush()
+
+
+def _has_cjk(text: str) -> bool:
+    return any("\u4e00" <= c <= "\u9fff" for c in text)
+
+
+def _build_aliases_from_surface_forms(
+    canonical_name: str, surface_forms: List[str]
+) -> Dict[str, List[str]]:
+    zh: List[str] = []
+    en: List[str] = []
+    seen: set[str] = {canonical_name.lower()}
+    for form in surface_forms:
+        form = form.strip()
+        if not form or form.lower() in seen:
+            continue
+        seen.add(form.lower())
+        if _has_cjk(form):
+            zh.append(form)
+        else:
+            en.append(form)
+    return {"zh": zh, "en": en}
+
+
+def _merge_surface_forms(brand: Brand, surface_forms: List[str]) -> None:
+    if not surface_forms:
+        return
+    aliases = brand.aliases or {"zh": [], "en": []}
+    existing_lower = {v.lower() for v in aliases.get("zh", []) + aliases.get("en", [])}
+    existing_lower.add(brand.display_name.lower())
+    if brand.original_name:
+        existing_lower.add(brand.original_name.lower())
+    changed = False
+    for form in surface_forms:
+        form = form.strip()
+        if not form or form.lower() in existing_lower:
+            continue
+        existing_lower.add(form.lower())
+        if _has_cjk(form):
+            aliases.setdefault("zh", []).append(form)
+        else:
+            aliases.setdefault("en", []).append(form)
+        changed = True
+    if changed:
+        brand.aliases = dict(aliases)
+
+
+def _deduplicate_brands(brands: List[Brand]) -> List[Brand]:
+    seen: set[int] = set()
+    result: List[Brand] = []
+    for b in brands:
+        if b.id not in seen:
+            seen.add(b.id)
+            result.append(b)
+    return result
 
 
 def _canonicalize_brand_name(name: str) -> str:
