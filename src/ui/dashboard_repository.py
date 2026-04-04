@@ -130,6 +130,8 @@ class SnapshotDashboardRepository:
                 payload = model.latest_brand_metrics if view_mode == "Brand" else model.latest_product_metrics
                 if payload is None:
                     return None
+                if view_mode == "Brand":
+                    return {"brands": [metric.model_dump(mode="json") for metric in payload.metrics]}
                 return payload.model_dump(mode="json")
         return None
 

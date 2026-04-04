@@ -42,7 +42,21 @@ def test_snapshot_dashboard_repository_reads_public_demo_snapshot(tmp_path) -> N
     assert repository.fetch_aggregate_metrics(7, "all", "Brand")["model_name"] == "All Models"
     assert repository.fetch_aggregate_metrics(7, "deepseek-chat", "Product")["model_name"] == "deepseek-chat"
     assert repository.fetch_latest_run(7, "deepseek-chat")["id"] == 102
-    assert repository.fetch_run_metrics(102, "Brand")["metrics"][0]["brand_name"] == "Toyota"
+    run_brand_metrics = repository.fetch_run_metrics(102, "Brand")
+    assert run_brand_metrics == {
+        "brands": [
+            {
+                "brand_id": 1,
+                "brand_name": "Toyota",
+                "is_user_input": True,
+                "top_spot_share": 1.0,
+                "sentiment_index": 1.0,
+                "mention_rate": 1.0,
+                "share_of_voice": 0.7,
+                "dragon_lens_visibility": 0.85,
+            }
+        ]
+    }
 
     heatmap_rows = repository.fetch_per_model_metric_rows(
         7,
