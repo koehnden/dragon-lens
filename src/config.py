@@ -83,6 +83,7 @@ class Settings(BaseSettings):
 
     batch_translation_enabled: bool = True
     batch_translation_max_size: int = 20
+    dashboard_snapshot_path: str = "demo_data/dashboard_snapshot.json"
 
     @property
     def is_public_demo(self) -> bool:
