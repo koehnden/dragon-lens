@@ -246,9 +246,23 @@ def create_isolated_knowledge_db() -> tempfile.NamedTemporaryFile:
     return tmp_db
 
 
+def init_isolated_knowledge_db() -> None:
+    import models.knowledge_domain  # noqa: F401
+    from models.knowledge_database import init_knowledge_db
+
+    init_knowledge_db()
+
+
 def disable_remote_validation():
+    try:
+        from config import settings
+    except Exception:
+        settings = None
+
     os.environ.pop("OPENROUTER_API_KEY", None)
     os.environ["OPENROUTER_API_KEY"] = ""
+    if settings is not None:
+        settings.openrouter_api_key = ""
 
 
 def load_labeled_rows(csv_path: Path) -> list[dict]:
@@ -402,6 +416,7 @@ async def run_evaluation(
         os.environ["OLLAMA_MODEL_NER"] = model_override
 
     tmp_db = create_isolated_knowledge_db()
+    init_isolated_knowledge_db()
     if not use_deepseek:
         disable_remote_validation()
 

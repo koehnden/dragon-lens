@@ -210,7 +210,7 @@ class ExtractionPipeline:
                 valid_brands=valid_brands,
                 valid_products=valid_products,
             )
-            extraction_result = self._build_response_result(finalized_items)
+            extraction_result = self._build_response_result(finalized_items, brand_aliases, product_aliases)
             batch.response_results[response_id] = extraction_result
         logger.info(f"[EXTRACTION] Response results finalized")
 
@@ -241,7 +241,15 @@ class ExtractionPipeline:
             if pair.product and pair.product_source == "kb":
                 self.debug_info.step1_kb_matched_products.append(pair.product)
 
-    def _build_response_result(self, item_results: list[ItemExtractionResult]) -> ExtractionResult:
+    def _build_response_result(
+        self,
+        item_results: list[ItemExtractionResult],
+        brand_aliases: dict[str, str] | None = None,
+        product_aliases: dict[str, str] | None = None,
+    ) -> ExtractionResult:
+        reverse_brand = _invert_alias_map(brand_aliases or {})
+        reverse_product = _invert_alias_map(product_aliases or {})
+
         brands: dict[str, list[str]] = defaultdict(list)
         products: dict[str, list[str]] = defaultdict(list)
         relationships: dict[str, str] = {}
@@ -254,10 +262,16 @@ class ExtractionPipeline:
                     raw_brands.append(pair.brand)
                     if pair.brand not in brands[pair.brand]:
                         brands[pair.brand].append(pair.brand)
+                    for sf in reverse_brand.get(pair.brand, []):
+                        if sf not in brands[pair.brand]:
+                            brands[pair.brand].append(sf)
                 if pair.product:
                     raw_products.append(pair.product)
                     if pair.product not in products[pair.product]:
                         products[pair.product].append(pair.product)
+                    for sf in reverse_product.get(pair.product, []):
+                        if sf not in products[pair.product]:
+                            products[pair.product].append(sf)
                 if pair.brand and pair.product:
                     relationships[pair.product] = pair.brand
 
@@ -606,6 +620,15 @@ def _ordered_unique(values: Iterable[str]) -> list[str]:
         seen.add(value)
         ordered.append(value)
     return ordered
+
+
+def _invert_alias_map(alias_map: dict[str, str]) -> dict[str, list[str]]:
+    """Invert {surface_form: canonical} to {canonical: [surface_forms]}."""
+    inverted: dict[str, list[str]] = defaultdict(list)
+    for surface_form, canonical in alias_map.items():
+        if surface_form != canonical:
+            inverted[canonical].append(surface_form)
+    return dict(inverted)
 
 
 def _enrich_with_latin_tokens(
