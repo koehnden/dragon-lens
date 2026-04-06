@@ -140,7 +140,7 @@ class KnowledgeRejectedEntity(KnowledgeBase):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("knowledge_verticals.id"), nullable=False)
-    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType), nullable=False)
+    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType, native_enum=False), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     alias_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True, default="")
     reason: Mapped[str] = mapped_column(Text, nullable=False)
@@ -179,7 +179,7 @@ class KnowledgeTranslationOverride(KnowledgeBase):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("knowledge_verticals.id"), nullable=False)
-    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType), nullable=False)
+    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType, native_enum=False), nullable=False)
     canonical_name: Mapped[str] = mapped_column(String(255), nullable=False)
     language: Mapped[str] = mapped_column(String(10), nullable=False)
     override_text: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -202,7 +202,7 @@ class KnowledgeFeedbackEvent(KnowledgeBase):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vertical_id: Mapped[int] = mapped_column(ForeignKey("knowledge_verticals.id"), nullable=False)
     run_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    status: Mapped[FeedbackStatus] = mapped_column(Enum(FeedbackStatus), nullable=False)
+    status: Mapped[FeedbackStatus] = mapped_column(Enum(FeedbackStatus, native_enum=False), nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -219,7 +219,7 @@ class KnowledgeExtractionLog(KnowledgeBase):
     vertical_id: Mapped[int] = mapped_column(ForeignKey("knowledge_verticals.id"), nullable=False)
     run_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     entity_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType), nullable=False)
+    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType, native_enum=False), nullable=False)
     extraction_source: Mapped[str] = mapped_column(String(50), nullable=False)
     resolved_to: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     was_accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

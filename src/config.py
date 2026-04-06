@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+psycopg://dragonlens:dragonlens@localhost:5432/dragonlens"
     )
-    knowledge_database_url: str = "sqlite:///./data/knowledge.db"
+    knowledge_database_url: str = ""
 
     knowledge_db_max_bytes: int = 104857600
     knowledge_allow_non_feedback_writes: bool = True

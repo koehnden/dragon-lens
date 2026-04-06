@@ -24,7 +24,7 @@ def test_default_settings(monkeypatch):
     assert settings.knowledge_allow_non_feedback_writes is True
     assert settings.dashboard_snapshot_path == "demo_data/dashboard_snapshot.json"
     assert settings.resolved_backend_api_base_url == "http://localhost:8000"
-    assert settings.resolved_knowledge_database_url == "sqlite:///./data/knowledge.db"
+    assert settings.resolved_knowledge_database_url == settings.database_url
 
 
 def test_custom_settings(monkeypatch):
