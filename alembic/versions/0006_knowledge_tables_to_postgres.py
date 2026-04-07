@@ -30,12 +30,29 @@ KNOWLEDGE_TABLES = [
 ]
 
 
+ENUM_COLUMNS = [
+    ("knowledge_rejected_entities", "entity_type"),
+    ("knowledge_translation_overrides", "entity_type"),
+    ("knowledge_extraction_logs", "entity_type"),
+    ("knowledge_feedback_events", "status"),
+]
+
+
 def upgrade() -> None:
     import models.knowledge_domain  # noqa: F401
 
     from models.knowledge_database import KnowledgeBase
 
     KnowledgeBase.metadata.create_all(bind=op.get_bind())
+
+    # create_all reuses existing native PG enums even when models specify
+    # native_enum=False. Convert these columns to VARCHAR so SQLAlchemy
+    # sends string values correctly.
+    for table, column in ENUM_COLUMNS:
+        op.execute(
+            f"ALTER TABLE {table} ALTER COLUMN {column} "
+            f"TYPE VARCHAR(255) USING {column}::text"
+        )
 
 
 def downgrade() -> None:
