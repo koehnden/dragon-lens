@@ -39,7 +39,9 @@ celery_config = {
     ),
     "task_routes": {
         "workers.tasks.start_run": {"queue": "default"},
-        "workers.tasks.finalize_run": {"queue": "default"},
+        "workers.tasks.ensure_extraction": {"queue": "ollama_extract"},
+        "workers.tasks.intermediate_consolidation": {"queue": "ollama_extract"},
+        "workers.tasks.finalize_run": {"queue": "ollama_extract"},
     },
 }
 

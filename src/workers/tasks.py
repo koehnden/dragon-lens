@@ -1549,20 +1549,35 @@ def _collect_all_snippets(
 ) -> tuple[list[str], dict[tuple[str, int, int], int]]:
     all_snippets: list[str] = []
     snippet_map: dict[tuple[str, int, int], int] = {}
+    seen: dict[str, int] = {}
+    cap = settings.snippet_translation_cap_per_entity
+
+    def _add_snippets(
+        entity_type: str,
+        entity_idx: int,
+        snippets: list[str],
+    ) -> None:
+        unique_count = 0
+        for j, snippet in enumerate(snippets):
+            if snippet in seen:
+                snippet_map[(entity_type, entity_idx, j)] = seen[snippet]
+                continue
+            if unique_count >= cap:
+                continue
+            idx = len(all_snippets)
+            seen[snippet] = idx
+            snippet_map[(entity_type, entity_idx, j)] = idx
+            all_snippets.append(snippet)
+            unique_count += 1
+
     for mention_data in brand_mentions:
         if not mention_data.get("mentioned"):
             continue
-        brand_idx = mention_data["brand_index"]
-        for j, snippet in enumerate(mention_data.get("snippets", [])):
-            snippet_map[("brand", brand_idx, j)] = len(all_snippets)
-            all_snippets.append(snippet)
+        _add_snippets("brand", mention_data["brand_index"], mention_data.get("snippets", []))
     for mention_data in product_mentions:
         if not mention_data.get("mentioned") or mention_data.get("rank") is None:
             continue
-        product_idx = mention_data["product_index"]
-        for j, snippet in enumerate(mention_data.get("snippets", [])):
-            snippet_map[("product", product_idx, j)] = len(all_snippets)
-            all_snippets.append(snippet)
+        _add_snippets("product", mention_data["product_index"], mention_data.get("snippets", []))
     return all_snippets, snippet_map
 
 

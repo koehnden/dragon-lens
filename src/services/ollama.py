@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import time
@@ -12,9 +13,13 @@ from services.sentiment_analysis import get_sentiment_service
 
 logger = logging.getLogger(__name__)
 
+_RETRYABLE_EXCEPTIONS = (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError)
+
 
 class OllamaService:
-    def __init__(self):
+    _shared_client: Optional[httpx.AsyncClient] = None
+
+    def __init__(self) -> None:
         self.base_url = settings.ollama_base_url
         self.translation_model = settings.ollama_model_translation
         self.sentiment_model = settings.ollama_model_sentiment
@@ -22,6 +27,18 @@ class OllamaService:
         self.main_model = settings.ollama_model_main
 
         self._sentiment_service = None
+
+    @classmethod
+    def _get_client(cls) -> httpx.AsyncClient:
+        if cls._shared_client is None or cls._shared_client.is_closed:
+            timeout = httpx.Timeout(
+                connect=10.0,
+                read=settings.ollama_read_timeout,
+                write=10.0,
+                pool=10.0,
+            )
+            cls._shared_client = httpx.AsyncClient(timeout=timeout)
+        return cls._shared_client
 
     def _get_sentiment_service(self):
         if self._sentiment_service is None:
@@ -34,6 +51,7 @@ class OllamaService:
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
+        format: Optional[str] = None,
     ) -> str:
         url = f"{self.base_url}/api/chat"
 
@@ -42,32 +60,47 @@ class OllamaService:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        payload = {
+        payload: dict = {
             "model": model,
             "messages": messages,
             "stream": False,
             "think": False,
+            "keep_alive": settings.ollama_keep_alive,
             "options": {
                 "temperature": temperature,
             },
         }
+        if format:
+            payload["format"] = format
 
-        timeout = httpx.Timeout(
-            connect=10.0,
-            read=600.0,
-            write=10.0,
-            pool=10.0
-        )
-
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        client = self._get_client()
+        last_exc: Exception | None = None
+        for attempt in range(settings.ollama_retry_attempts):
             try:
                 response = await client.post(url, json=payload)
+                if response.status_code == 503:
+                    raise httpx.ReadTimeout("Ollama overloaded (503)")
                 response.raise_for_status()
                 result = response.json()
                 return result.get("message", {}).get("content", "")
-            except httpx.HTTPError as e:
-                logger.error(f"Ollama API error: {e}")
+            except _RETRYABLE_EXCEPTIONS as exc:
+                last_exc = exc
+                if attempt < settings.ollama_retry_attempts - 1:
+                    delay = settings.ollama_retry_base_delay * (2 ** attempt)
+                    logger.warning(
+                        "Ollama call failed (attempt %d/%d, model=%s): %s — retrying in %.1fs",
+                        attempt + 1, settings.ollama_retry_attempts, model, exc, delay,
+                    )
+                    await asyncio.sleep(delay)
+            except httpx.HTTPError as exc:
+                logger.error("Ollama API error (model=%s): %s", model, exc)
                 raise
+
+        logger.error(
+            "Ollama call failed after %d attempts (model=%s): %s",
+            settings.ollama_retry_attempts, model, last_exc,
+        )
+        raise last_exc  # type: ignore[misc]
 
     async def classify_sentiment(self, text_zh: str) -> str:
         if settings.use_erlangshen_sentiment:
@@ -264,32 +297,3 @@ def _mask_variants(text: str, variants: list[str], token: str) -> str:
         return text
     pattern = "|".join(re.escape(v) for v in sorted(set(variants), key=len, reverse=True) if v)
     return re.sub(pattern, token, text, flags=re.IGNORECASE) if pattern else text
-
-    async def get_embeddings(self, texts: list[str], model: str = "bge-small-zh-v1.5") -> list[list[float]]:
-        url = f"{self.base_url}/api/embeddings"
-
-        embeddings = []
-        timeout = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0)
-
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            for text in texts:
-                payload = {"model": model, "prompt": text}
-                try:
-                    response = await client.post(url, json=payload)
-                    response.raise_for_status()
-                    result = response.json()
-                    embeddings.append(result.get("embedding", []))
-                except httpx.HTTPError as e:
-                    logger.error(f"Ollama embeddings API error for text '{text[:50]}': {e}")
-                    raise
-
-        return embeddings
-
-    async def check_health(self) -> bool:
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.base_url}/api/tags")
-                return response.status_code == 200
-        except Exception as e:
-            logger.error(f"Ollama health check failed: {e}")
-            return False

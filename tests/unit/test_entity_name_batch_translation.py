@@ -11,7 +11,7 @@ class DummyOllama:
         self._retry = retry
         self.calls: list[tuple[str, str]] = []
 
-    async def _call_ollama(self, model: str, prompt: str, system_prompt: str, temperature: float = 0.1) -> str:
+    async def _call_ollama(self, model: str, prompt: str, system_prompt: str, temperature: float = 0.1, format: str = None) -> str:
         self.calls.append((prompt, system_prompt))
         if "romanization" in (system_prompt or "").lower():
             return self._retry
@@ -21,7 +21,7 @@ class DummyOllama:
 class FailingOllama:
     translation_model = "qwen"
 
-    async def _call_ollama(self, model: str, prompt: str, system_prompt: str, temperature: float = 0.1) -> str:
+    async def _call_ollama(self, model: str, prompt: str, system_prompt: str, temperature: float = 0.1, format: str = None) -> str:
         raise RuntimeError("ollama down")
 
 

@@ -191,22 +191,38 @@ class TranslaterService:
         source_lang: str,
         target_lang: str,
         max_batch_size: int = 20,
+        cache: dict[str, str] | None = None,
     ) -> list[str]:
         if not texts:
             return []
-        if len(texts) == 1:
-            result = await self.translate_text(texts[0], source_lang, target_lang)
-            return [result]
-        non_empty_indices = [i for i, t in enumerate(texts) if t and t.strip()]
-        if not non_empty_indices:
-            return [""] * len(texts)
-        non_empty_texts = [texts[i] for i in non_empty_indices]
-        translated = await _translate_batch_internal(
-            self.ollama, non_empty_texts, source_lang, target_lang, max_batch_size
-        )
+
         results = [""] * len(texts)
-        for idx, trans in zip(non_empty_indices, translated):
+        need_translation: list[int] = []
+
+        for i, text in enumerate(texts):
+            if not text or not text.strip():
+                continue
+            if cache is not None and text in cache:
+                results[i] = cache[text]
+            else:
+                need_translation.append(i)
+
+        if not need_translation:
+            return results
+
+        to_translate = [texts[i] for i in need_translation]
+        if len(to_translate) == 1:
+            translated = [await self.translate_text(to_translate[0], source_lang, target_lang)]
+        else:
+            translated = await _translate_batch_internal(
+                self.ollama, to_translate, source_lang, target_lang, max_batch_size
+            )
+
+        for idx, trans in zip(need_translation, translated):
             results[idx] = trans
+            if cache is not None:
+                cache[texts[idx]] = trans
+
         return results
 
     def translate_batch_sync(
@@ -215,8 +231,9 @@ class TranslaterService:
         source_lang: str,
         target_lang: str,
         max_batch_size: int = 20,
+        cache: dict[str, str] | None = None,
     ) -> list[str]:
-        return asyncio.run(self.translate_batch(texts, source_lang, target_lang, max_batch_size))
+        return asyncio.run(self.translate_batch(texts, source_lang, target_lang, max_batch_size, cache))
 
 
 def _build_entity_prompt(name: str) -> str:
@@ -266,8 +283,8 @@ async def _translate_with_guardrails(
     return cleaned or fallback
 
 
-def _is_valid_english_entity_name(name: str | None) -> bool:
-    if not name:
+def _is_valid_english_entity_name(name: object) -> bool:
+    if not isinstance(name, str) or not name:
         return False
     cleaned = name.strip()
     if not cleaned or len(cleaned) > MAX_ENTITY_ENGLISH_NAME_LENGTH:
@@ -316,7 +333,7 @@ async def _translate_entity_batch(
     )
     system_prompt = load_prompt(sys_id)
     try:
-        response = await service._call_ollama(model=service.translation_model, prompt=prompt, system_prompt=system_prompt, temperature=0.1)
+        response = await service._call_ollama(model=service.translation_model, prompt=prompt, system_prompt=system_prompt, temperature=0.1, format="json")
     except Exception:
         return {}
     parsed = _json_array_from_text(response)
@@ -375,6 +392,7 @@ async def _translate_single_batch(
             prompt=prompt,
             system_prompt=system_prompt,
             temperature=0.2,
+            format="json",
         )
     except Exception:
         return list(texts)

@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     ollama_model_sentiment: str = "qwen2.5:7b-instruct-q4_0"  # Fallback model
     ollama_model_ner: str = "qwen2.5:7b-instruct-q4_0"
     ollama_model_main: str = "qwen2.5:7b-instruct-q4_0"
+    ollama_read_timeout: float = 120.0
+    ollama_retry_attempts: int = 3
+    ollama_retry_base_delay: float = 1.0
+    ollama_keep_alive: str = "15m"
+
+    snippet_translation_cap_per_entity: int = 2
+
+    extraction_remote_fallback_enabled: bool = False
+    extraction_remote_fallback_model: str = "qwen/qwen-2.5-72b-instruct"
+    openrouter_extraction_max_tokens: int = 1024
 
     # Erlangshen-Roberta-110M-Sentiment configuration
     erlangshen_sentiment_model: str = "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment"
