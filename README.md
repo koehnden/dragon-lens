@@ -19,8 +19,8 @@ DragonLens fills this gap. It's a visibility tool specifically build for the Chi
 
 ## Key Features
 
-- **Multi-LLM Tracking** — DeepSeek, Kimi K2.5, ByteDance Seed 2.0, Baidu ERNIE 4.5, Qwen 3.5, MiniMax M2.5, and more via OpenRouter
-- **Local Qwen Support** — Keeps Qwen 2.5 7B via Ollama for extraction and low-cost internal test runs while visibility benchmarking uses remote Chinese APIs
+- **Multi-LLM Tracking** — DeepSeek and Kimi natively, plus 20+ Chinese models (Seed 2.0, ERNIE 4.5, Qwen 3.5, MiniMax M2.5, etc.) via OpenRouter
+- **Local Qwen Support** — Qwen 2.5 7B via Ollama for extraction, translation, and low-cost local test runs
 - **Automated NER Pipeline** — Extract brands and products from Chinese responses with multi-stage validation
 - **Visibility Metrics** — Share of Voice, mention rates, ranking positions, sentiment analysis
 - **Bilingual Processing** — Automatic EN/ZH translation for prompts and responses
@@ -40,7 +40,7 @@ DragonLens fills this gap. It's a visibility tool specifically build for the Chi
 |-------|------------|
 | API | FastAPI with OpenAPI/Swagger docs |
 | Task Queue | Celery + Redis |
-| Database | PostgreSQL (SQLite for local dev) |
+| Database | PostgreSQL (SQLite in tests) |
 | ORM | SQLAlchemy + Alembic migrations |
 | UI | Streamlit |
 | Local LLMs | Ollama (Qwen 2.5) |
@@ -95,71 +95,6 @@ DragonLens computes visibility metrics designed for LLM response analysis:
 
 The pipeline extracts brands and products from Chinese LLM responses using a multi-step approach: knowledge base matching, local LLM extraction, and remote LLM consolidation.
 
-```mermaid
-flowchart TB
-    subgraph Input
-        P[Prompt EN/ZH]
-    end
-
-    subgraph Translation
-        P --> T1[Translate to Chinese]
-        T1 --> ZH[Chinese Prompt]
-    end
-
-    subgraph LLM Query
-        ZH --> LLM[Chinese LLM]
-        LLM --> A[Chinese Answer]
-        A --> T2[Translate to English]
-    end
-
-    subgraph Step 0: Item Parsing
-        A --> PARSE[Parse into items]
-        PARSE --> ITEMS[List items / table rows / paragraphs]
-    end
-
-    subgraph Step 1: Knowledge Base Matching
-        ITEMS --> KB[Match against Knowledge DB]
-        KB --> MATCHED[KB-matched brand/product pairs]
-        KB --> MISSING[Unmatched items]
-    end
-
-    subgraph Step 2: Qwen Extraction
-        MISSING --> QWEN[Qwen 7B batch extraction]
-        QWEN --> RAW[Raw brand/product pairs]
-        RAW --> LATIN[Latin token enrichment]
-    end
-
-    subgraph Step 3: Consolidation
-        MATCHED --> AGG[Aggregate all pairs]
-        LATIN --> AGG
-        AGG --> NORM[Normalize aliases]
-        NORM --> CONSOL[Consolidate products]
-        CONSOL --> STRIP[Phase 1: Brand prefix stripping]
-        CONSOL --> SUFFIX[Phase 1: Suffix variant merging]
-        CONSOL --> GROUP[Phase 2: LLM variant grouping]
-        GROUP --> VAL[Validate relevance]
-        VAL --> FILTER[Pre-filter common words]
-        VAL --> LLMVAL[LLM validation via OpenRouter]
-    end
-
-    subgraph Knowledge Loop
-        LLMVAL --> PERSIST[Persist to Knowledge DB]
-        PERSIST --> KB
-    end
-
-    subgraph Analysis
-        LLMVAL --> PAIR[Pair dedup + unpaired removal]
-        PAIR --> SENT[Sentiment Analysis]
-        SENT --> MET[Metrics Calculation]
-    end
-
-    subgraph Output
-        MET --> DVS[Dragon Visibility Score]
-        T2 --> OUT[Bilingual Results]
-        DVS --> OUT
-    end
-```
-
 ### How It Works
 
 | Stage | Process | Method |
@@ -174,7 +109,7 @@ flowchart TB
 | **Knowledge Persistence** | Store validated brands, products, aliases, and brand-product mappings | Knowledge DB upsert |
 | **Sentiment** | Classify each mention as positive/neutral/negative | Erlangshen-RoBERTa-110M (HuggingFace) |
 
-### Extraction Metrics (v6)
+### Extraction Metrics
 
 Evaluated on gold-labeled data (Hiking Shoes + SUV Cars, 50 responses):
 
@@ -219,7 +154,7 @@ Access the application:
 
 ## LLM Configuration
 
-Out of the box, DragonLens uses **Qwen 2.5 7B via Ollama** for tracking—no API keys required. To use remote LLMs (DeepSeek, Kimi, or OpenRouter models), you need to add API keys.
+Out of the box, DragonLens uses **Qwen 2.5 7B via Ollama** for extraction, translation, and local test runs—no API keys required. To use remote LLMs (DeepSeek, Kimi, or OpenRouter models), you need to add API keys.
 
 > **Recommended:** An OpenRouter API key is strongly recommended. The extraction pipeline uses OpenRouter (Qwen 3.5 / ERNIE 4.5) for vertical seeding, entity normalization, product consolidation, and relevance validation. Without it, these steps fall back to local-only heuristics with lower extraction quality.
 
@@ -254,7 +189,7 @@ Environment variables take precedence over UI-configured keys.
 |----------|--------|-------------|
 | **Ollama** (local) | Qwen 2.5 7B | No key needed |
 | **DeepSeek** | DeepSeek-V3, DeepSeek-R1 | [platform.deepseek.com](https://platform.deepseek.com) |
-| **Kimi** | Moonshot-v1 | [platform.moonshot.cn](https://platform.moonshot.cn) |
+| **Kimi** | Kimi K2.5, Moonshot-v1 | [platform.moonshot.cn](https://platform.moonshot.cn) |
 | **OpenRouter** | Claude, GPT-4, Llama, etc. | [openrouter.ai](https://openrouter.ai) |
 
 ## Project Status
@@ -267,10 +202,9 @@ Environment variables take precedence over UI-configured keys.
 - [x] Ranking detection and scoring
 - [x] Visibility metrics calculation
 - [x] PostgreSQL + SQLite support
-- [x] Streamlit UI with 6 pages
+- [x] Streamlit UI with 4 pages
 - [x] API key management (encrypted storage)
 - [x] Entity consolidation and feedback system
-- [x] WikiData integration for validation
 
 ### v1 Roadmap
 - [ ] Feedback and self-learning system for brand/product extraction
@@ -288,16 +222,19 @@ Environment variables take precedence over UI-configured keys.
 ```
 src/
 ├── api/           # FastAPI REST endpoints
+├── constants/     # Enums and shared constants
+├── data/          # Static data files
+├── metrics/       # Visibility metrics calculation
 ├── models/        # SQLAlchemy ORM models
+├── prompts/       # LLM prompt templates (Jinja2)
 ├── services/      # LLM clients, NER, translation
-├── workers/       # Celery background tasks
 ├── ui/            # Streamlit pages
-└── prompts/       # LLM prompt templates
+└── workers/       # Celery background tasks
 
 tests/
-├── unit/          # Unit tests (27)
-├── integration/   # Integration tests (25)
-└── smoke/         # End-to-end tests (3)
+├── unit/          # Unit tests
+├── integration/   # Integration tests
+└── smoke/         # End-to-end tests
 ```
 
 ## Development
