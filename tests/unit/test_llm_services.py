@@ -1,4 +1,6 @@
+import httpx
 import pytest
+from openai import APITimeoutError
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from config import settings
@@ -103,6 +105,34 @@ class TestKimiService:
             service.validate_model(model)
 
     @pytest.mark.asyncio
+    async def test_query_k2_uses_non_thinking_mode_and_cap(self):
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="测试回答"))]
+        mock_response.usage = MagicMock(prompt_tokens=10, completion_tokens=20)
+        mock_http_client = MagicMock()
+        mock_http_client.aclose = AsyncMock()
+
+        with patch("services.remote_llms.httpx.AsyncClient", return_value=mock_http_client), patch("services.remote_llms.AsyncOpenAI") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            service = KimiService(api_key="test-key")
+            answer, tokens_in, tokens_out, latency = await service.query(
+                "测试", model_name="kimi-k2.5"
+            )
+
+            assert answer == "测试回答"
+            assert tokens_in == 10
+            assert tokens_out == 20
+            assert latency >= 0
+            create_kwargs = mock_client.chat.completions.create.call_args.kwargs
+            assert create_kwargs["model"] == "kimi-k2.5"
+            assert create_kwargs["temperature"] == 0.6
+            assert create_kwargs["max_tokens"] == settings.kimi_k2_max_tokens
+            assert create_kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
+
+    @pytest.mark.asyncio
     async def test_query_allows_unknown_kimi_model_override(self):
         mock_response = MagicMock()
         mock_response.choices = [MagicMock(message=MagicMock(content="测试回答"))]
@@ -110,7 +140,7 @@ class TestKimiService:
         mock_http_client = MagicMock()
         mock_http_client.aclose = AsyncMock()
 
-        with patch("httpx.AsyncClient", return_value=mock_http_client), patch("openai.AsyncOpenAI") as mock_client_class:
+        with patch("services.remote_llms.httpx.AsyncClient", return_value=mock_http_client), patch("services.remote_llms.AsyncOpenAI") as mock_client_class:
             mock_client = MagicMock()
             mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
@@ -126,7 +156,83 @@ class TestKimiService:
             assert latency >= 0
             create_kwargs = mock_client.chat.completions.create.call_args.kwargs
             assert create_kwargs["model"] == "kimi-k2-thinking"
-            assert "max_tokens" not in create_kwargs
+            assert create_kwargs["max_tokens"] == settings.kimi_k2_max_tokens
+            assert create_kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
+
+    @pytest.mark.asyncio
+    async def test_query_retries_timeout_then_succeeds(self):
+        request = httpx.Request("POST", "https://api.moonshot.ai/v1/chat/completions")
+        timeout_error = APITimeoutError(request=request)
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="测试回答"))]
+        mock_response.usage = MagicMock(prompt_tokens=10, completion_tokens=20)
+        mock_http_client = MagicMock()
+        mock_http_client.aclose = AsyncMock()
+
+        with patch("services.remote_llms.httpx.AsyncClient", return_value=mock_http_client), patch("services.remote_llms.AsyncOpenAI") as mock_client_class, patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create = AsyncMock(
+                side_effect=[timeout_error, mock_response]
+            )
+            mock_client_class.return_value = mock_client
+
+            service = KimiService(api_key="test-key")
+            answer, tokens_in, tokens_out, latency = await service.query(
+                "测试", model_name="kimi-k2.5"
+            )
+
+            assert answer == "测试回答"
+            assert tokens_in == 10
+            assert tokens_out == 20
+            assert latency >= 0
+            assert mock_client.chat.completions.create.await_count == 2
+            mock_sleep.assert_awaited_once_with(settings.kimi_retry_base_delay_seconds)
+
+    @pytest.mark.asyncio
+    async def test_query_rejects_reasoning_only_payloads(self, monkeypatch):
+        monkeypatch.setattr(settings, "kimi_retry_attempts", 1)
+
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(content="", reasoning_content="分析中")
+            )
+        ]
+        mock_response.usage = MagicMock(prompt_tokens=10, completion_tokens=20)
+        mock_http_client = MagicMock()
+        mock_http_client.aclose = AsyncMock()
+
+        with patch("services.remote_llms.httpx.AsyncClient", return_value=mock_http_client), patch("services.remote_llms.AsyncOpenAI") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            service = KimiService(api_key="test-key")
+
+            with pytest.raises(RuntimeError, match="reasoning_content without final content"):
+                await service.query("测试", model_name="kimi-k2.5")
+
+    @pytest.mark.asyncio
+    async def test_query_legacy_kimi_model_keeps_standard_payload(self):
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="测试回答"))]
+        mock_response.usage = MagicMock(prompt_tokens=10, completion_tokens=20)
+        mock_http_client = MagicMock()
+        mock_http_client.aclose = AsyncMock()
+
+        with patch("services.remote_llms.httpx.AsyncClient", return_value=mock_http_client), patch("services.remote_llms.AsyncOpenAI") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            service = KimiService(api_key="test-key")
+            await service.query("测试", model_name="moonshot-v1-8k")
+
+            create_kwargs = mock_client.chat.completions.create.call_args.kwargs
+            assert create_kwargs["model"] == "moonshot-v1-8k"
+            assert create_kwargs["temperature"] == 0.6
+            assert create_kwargs["max_tokens"] == KimiService.max_tokens
+            assert "extra_body" not in create_kwargs
 
 
 class TestOpenRouterService:

@@ -1,4 +1,7 @@
+import asyncio
+
 from celery import Celery
+from celery.signals import worker_shutdown
 from kombu import Queue
 
 from config import settings
@@ -39,7 +42,9 @@ celery_config = {
     ),
     "task_routes": {
         "workers.tasks.start_run": {"queue": "default"},
-        "workers.tasks.finalize_run": {"queue": "default"},
+        "workers.tasks.ensure_extraction": {"queue": "ollama_extract"},
+        "workers.tasks.intermediate_consolidation": {"queue": "ollama_extract"},
+        "workers.tasks.finalize_run": {"queue": "ollama_extract"},
     },
 }
 
@@ -51,3 +56,13 @@ celery_app.conf.update(celery_config)
 
 celery_app.conf.beat_schedule = {
 }
+
+
+@worker_shutdown.connect
+def _cleanup_ollama_client(**kwargs: object) -> None:
+    from services.ollama import OllamaService
+
+    try:
+        asyncio.get_event_loop().run_until_complete(OllamaService.close_client())
+    except RuntimeError:
+        pass

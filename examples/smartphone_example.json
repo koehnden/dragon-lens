@@ -1,7 +1,6 @@
 {
   "vertical_name": "Smartphones",
   "vertical_description": "Chinese consumer smartphone purchase-intent prompts (camera, gaming, budget tiers, business use, elderly, students, ecosystem, battery life, foldables, AI features, long-term smoothness)",
-  "model_name": "qwen",
   "brands": [
     {
       "display_name": "Apple",

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+psycopg://dragonlens:dragonlens@localhost:5432/dragonlens"
     )
-    knowledge_database_url: str = "sqlite:///./data/knowledge.db"
+    knowledge_database_url: str = ""
 
     knowledge_db_max_bytes: int = 104857600
     knowledge_allow_non_feedback_writes: bool = True
@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     vertical_auto_match_model: Optional[str] = None
 
     redis_url: str = "redis://localhost:6379/0"
+    extraction_consolidation_batch_size: int = 5
 
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
@@ -43,6 +44,10 @@ class Settings(BaseSettings):
 
     kimi_api_key: Optional[str] = None
     kimi_api_base: str = "https://api.moonshot.ai/v1"
+    kimi_disable_thinking: bool = True
+    kimi_k2_max_tokens: int = 1000
+    kimi_retry_attempts: int = 3
+    kimi_retry_base_delay_seconds: float = 1.0
 
     openrouter_api_key: Optional[str] = None
     openrouter_api_base: str = "https://openrouter.ai/api/v1"
@@ -54,6 +59,16 @@ class Settings(BaseSettings):
     ollama_model_sentiment: str = "qwen2.5:7b-instruct-q4_0"  # Fallback model
     ollama_model_ner: str = "qwen2.5:7b-instruct-q4_0"
     ollama_model_main: str = "qwen2.5:7b-instruct-q4_0"
+    ollama_read_timeout: float = 120.0
+    ollama_retry_attempts: int = 3
+    ollama_retry_base_delay: float = 1.0
+    ollama_keep_alive: str = "15m"
+
+    snippet_translation_cap_per_entity: int = 2
+
+    extraction_remote_fallback_enabled: bool = False
+    extraction_remote_fallback_model: str = "qwen/qwen-2.5-72b-instruct"
+    openrouter_extraction_max_tokens: int = 1024
 
     # Erlangshen-Roberta-110M-Sentiment configuration
     erlangshen_sentiment_model: str = "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment"

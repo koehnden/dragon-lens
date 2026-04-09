@@ -11,8 +11,9 @@ def render_positioning_matrix(df: pd.DataFrame, name_col: str, user_brand: str =
         st.info("No data available for positioning matrix.")
         return
 
+    competitor_df = df[df[name_col] != user_brand] if user_brand else df
     fig = px.scatter(
-        df,
+        competitor_df,
         x="share_of_voice",
         y="sentiment_index",
         size="mention_rate",
@@ -26,6 +27,37 @@ def render_positioning_matrix(df: pd.DataFrame, name_col: str, user_brand: str =
         },
         size_max=50,
     )
+
+    if user_brand and user_brand in df[name_col].values:
+        user_row = df[df[name_col] == user_brand].iloc[0]
+        fig.add_trace(go.Scatter(
+            x=[user_row["share_of_voice"]],
+            y=[user_row["sentiment_index"]],
+            mode="markers+text",
+            marker=dict(
+                size=max(12, user_row["mention_rate"] * 200),
+                color="#2ca02c",
+                symbol="star",
+                line=dict(width=2, color="white"),
+            ),
+            text=[user_brand],
+            textposition="top center",
+            textfont=dict(size=12, color="#2ca02c"),
+            name=f"★ {user_brand}",
+            customdata=[[
+                user_row["mention_rate"],
+                user_row["top_spot_share"],
+                user_row["dragon_lens_visibility"],
+            ]],
+            hovertemplate=(
+                f"<b>{user_brand}</b><br>"
+                "Share of Voice: %{x:.3f}<br>"
+                "Sentiment Index: %{y:.3f}<br>"
+                "Mention Rate: %{customdata[0]:.3f}<br>"
+                "Top Spot Share: %{customdata[1]:.3f}<br>"
+                "Visibility: %{customdata[2]:.3f}<extra></extra>"
+            ),
+        ))
 
     median_sov = df["share_of_voice"].median()
     median_sentiment = df["sentiment_index"].median()

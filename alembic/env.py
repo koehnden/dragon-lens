@@ -5,7 +5,7 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import MetaData, engine_from_config, pool
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -19,9 +19,17 @@ def _setup():
     sys.path.insert(0, str(SRC))
     from config import settings
     from models.database import Base
+    from models.knowledge_database import KnowledgeBase
+    import models.knowledge_domain  # noqa: F401 — ensure tables registered
 
     config.set_main_option("sqlalchemy.url", settings.database_url)
-    return Base.metadata
+
+    combined = MetaData()
+    for table in Base.metadata.tables.values():
+        table.to_metadata(combined)
+    for table in KnowledgeBase.metadata.tables.values():
+        table.to_metadata(combined)
+    return combined
 
 
 def run_migrations_offline() -> None:

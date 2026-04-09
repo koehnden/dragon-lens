@@ -1,4 +1,4 @@
-.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen test test-unit test-integration test-smoke run start-db start-redis flush-redis start-sentiment start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi logs-sentiment eval-extraction eval-consolidation
+.PHONY: help setup check-deps install-ollama install-poetry install-deps pull-qwen test test-unit test-integration test-smoke run start-db start-redis flush-redis start-sentiment start-api start-celery stop clean clear example example-suv example-diaper example-hiking-shoes example-all-mini example-all-mini-qwen example-all-mini-deepseek example-all-mini-kimi logs-sentiment eval-extraction eval-extraction-all eval-consolidation eval-consolidation-all eval-consolidation-no-diapers
 
 # Default target
 .DEFAULT_GOAL := help
@@ -283,15 +283,24 @@ start-api: check-deps start-db ## Start FastAPI server
 	if [ -f .api.pid ]; then kill -9 $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid; fi; \
 	exit 1
 
-start-celery: check-deps start-db start-redis ## Start Celery worker
-	@echo "$(YELLOW)Starting Celery worker...$(NC)"
-	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run celery -A workers.celery_app worker --loglevel=info --concurrency="$${CELERY_CONCURRENCY:-8}" -Q "default,remote_llm,local_llm,ollama_extract" > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
+start-celery: check-deps start-db start-redis ## Start Celery workers (main + ollama)
+	@echo "$(YELLOW)Starting Celery main worker...$(NC)"
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run celery -A workers.celery_app worker --loglevel=info --concurrency="$${CELERY_CONCURRENCY_MAIN:-8}" -Q "default,remote_llm,local_llm" -n main@%h > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
+	@echo "$(YELLOW)Starting Celery ollama worker...$(NC)"
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run celery -A workers.celery_app worker --loglevel=info --concurrency="$${CELERY_CONCURRENCY_OLLAMA:-2}" -Q "ollama_extract" -n ollama@%h >> $(CELERY_LOG) 2>&1 & echo $$! > .celery-ollama.pid
 	@sleep 2
 	@if [ -f .celery.pid ] && kill -0 $$(cat .celery.pid) 2>/dev/null; then \
-		echo "$(GREEN)✓ Celery worker started$(NC)"; \
+		echo "$(GREEN)✓ Celery main worker started$(NC)"; \
 		echo "  Logs: tail -f $(CELERY_LOG)"; \
 	else \
-		echo "$(RED)✗ Failed to start Celery worker$(NC)"; \
+		echo "$(RED)✗ Failed to start Celery main worker$(NC)"; \
+		cat $(CELERY_LOG); \
+		exit 1; \
+	fi
+	@if [ -f .celery-ollama.pid ] && kill -0 $$(cat .celery-ollama.pid) 2>/dev/null; then \
+		echo "$(GREEN)✓ Celery ollama worker started (concurrency=$${CELERY_CONCURRENCY_OLLAMA:-2})$(NC)"; \
+	else \
+		echo "$(RED)✗ Failed to start Celery ollama worker$(NC)"; \
 		cat $(CELERY_LOG); \
 		exit 1; \
 	fi
@@ -362,7 +371,12 @@ stop: ## Stop all services
 	@if [ -f .celery.pid ]; then \
 		kill $$(cat .celery.pid) 2>/dev/null || true; \
 		rm .celery.pid; \
-		echo "$(GREEN)✓ Celery stopped$(NC)"; \
+		echo "$(GREEN)✓ Celery main worker stopped$(NC)"; \
+	fi
+	@if [ -f .celery-ollama.pid ]; then \
+		kill $$(cat .celery-ollama.pid) 2>/dev/null || true; \
+		rm .celery-ollama.pid; \
+		echo "$(GREEN)✓ Celery ollama worker stopped$(NC)"; \
 	fi
 	@if [ -f .sentiment.pid ]; then \
 		kill $$(cat .sentiment.pid) 2>/dev/null || true; \
@@ -395,35 +409,47 @@ test-smoke: check-deps ## Run smoke tests only
 
 EVAL_CSV ?= data/gold_pairs_chatgpt.csv
 EVAL_CACHE ?= data/extraction_cache.json
+EVAL_CACHE_ALL ?= data/extraction_cache_all.json
+EVAL_DEFAULT_EXCLUDE_ARGS ?= --exclude-vertical Diapers
 
-eval-extraction: ## Run extraction evaluation and cache results (slow, requires Ollama)
-	@echo "$(YELLOW)Running extraction evaluation...$(NC)"
+eval-extraction: ## Run extraction evaluation excluding Diapers and cache results (slow, requires Ollama)
+	@echo "$(YELLOW)Running extraction evaluation (excluding Diapers)...$(NC)"
 	@echo "$(YELLOW)This runs the full Qwen extraction pipeline and saves results for consolidation experiments.$(NC)"
 	@echo ""
 	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
-		--csv $(EVAL_CSV) --save-extraction $(EVAL_CACHE) $(EVAL_ARGS)
+		--csv $(EVAL_CSV) --save-extraction $(EVAL_CACHE) $(EVAL_DEFAULT_EXCLUDE_ARGS) $(EVAL_ARGS)
 
-eval-consolidation: ## Run consolidation evaluation on cached extraction (fast, requires OpenRouter)
+eval-extraction-all: ## Run extraction evaluation on all verticals and cache results (slow, requires Ollama)
+	@echo "$(YELLOW)Running extraction evaluation on all verticals...$(NC)"
+	@echo "$(YELLOW)This runs the full Qwen extraction pipeline and saves results for consolidation experiments.$(NC)"
+	@echo ""
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
+		--csv $(EVAL_CSV) --save-extraction $(EVAL_CACHE_ALL) $(EVAL_ARGS)
+
+eval-consolidation: ## Run consolidation evaluation on cached extraction excluding Diapers (fast, requires OpenRouter)
 	@if [ ! -f $(EVAL_CACHE) ]; then \
 		echo "$(RED)Error: No extraction cache found at $(EVAL_CACHE)$(NC)"; \
 		echo "$(YELLOW)Run 'make eval-extraction' first to generate the cache.$(NC)"; \
 		exit 1; \
 	fi
-	@echo "$(YELLOW)Running consolidation evaluation on cached extraction...$(NC)"
+	@echo "$(YELLOW)Running consolidation evaluation on cached extraction (excluding Diapers)...$(NC)"
 	@echo ""
 	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
-		--csv $(EVAL_CSV) --load-extraction $(EVAL_CACHE) --deepseek $(EVAL_ARGS)
+		--csv $(EVAL_CSV) --load-extraction $(EVAL_CACHE) --deepseek $(EVAL_DEFAULT_EXCLUDE_ARGS) $(EVAL_ARGS)
 
-eval-consolidation-no-diapers: ## Run consolidation evaluation excluding Diapers vertical
-	@if [ ! -f $(EVAL_CACHE) ]; then \
-		echo "$(RED)Error: No extraction cache found at $(EVAL_CACHE)$(NC)"; \
-		echo "$(YELLOW)Run 'make eval-extraction' first to generate the cache.$(NC)"; \
+eval-consolidation-all: ## Run consolidation evaluation on cached extraction for all verticals (fast, requires OpenRouter)
+	@if [ ! -f $(EVAL_CACHE_ALL) ]; then \
+		echo "$(RED)Error: No extraction cache found at $(EVAL_CACHE_ALL)$(NC)"; \
+		echo "$(YELLOW)Run 'make eval-extraction-all' first to generate the cache.$(NC)"; \
 		exit 1; \
 	fi
-	@echo "$(YELLOW)Running consolidation evaluation (excluding Diapers)...$(NC)"
+	@echo "$(YELLOW)Running consolidation evaluation on cached extraction for all verticals...$(NC)"
 	@echo ""
 	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run python scripts/evaluate_extraction.py \
-		--csv $(EVAL_CSV) --load-extraction $(EVAL_CACHE) --deepseek --exclude-vertical Diapers $(EVAL_ARGS)
+		--csv $(EVAL_CSV) --load-extraction $(EVAL_CACHE_ALL) --deepseek $(EVAL_ARGS)
+
+eval-consolidation-no-diapers: ## Alias for the default no-diapers consolidation evaluation
+	@$(MAKE) --no-print-directory eval-consolidation
 
 test-coverage: check-deps ## Run tests with coverage report
 	@echo "$(YELLOW)Running tests with coverage...$(NC)"
@@ -434,7 +460,7 @@ test-coverage: check-deps ## Run tests with coverage report
 clean: ## Clean up temporary files and logs
 	@echo "$(YELLOW)Cleaning up...$(NC)"
 	@rm -f $(API_LOG) $(CELERY_LOG) $(STREAMLIT_LOG) $(SENTIMENT_LOG)
-	@rm -f .api.pid .celery.pid .streamlit.pid .sentiment.pid
+	@rm -f .api.pid .celery.pid .celery-ollama.pid .streamlit.pid .sentiment.pid
 	@rm -rf .pytest_cache
 	@rm -rf htmlcov
 	@rm -rf .coverage

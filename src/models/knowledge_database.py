@@ -11,10 +11,16 @@ class KnowledgeBase(DeclarativeBase):
     pass
 
 
+_knowledge_url = settings.resolved_knowledge_database_url
+_knowledge_pool_kwargs: dict = {}
+if not is_sqlite_url(_knowledge_url):
+    _knowledge_pool_kwargs = {"pool_size": 5, "max_overflow": 10, "pool_pre_ping": True}
+
 knowledge_engine = create_engine(
-    settings.resolved_knowledge_database_url,
-    connect_args=sqlite_connect_args(settings.resolved_knowledge_database_url),
+    _knowledge_url,
+    connect_args=sqlite_connect_args(_knowledge_url),
     echo=settings.debug,
+    **_knowledge_pool_kwargs,
 )
 knowledge_read_engine = knowledge_engine
 knowledge_write_engine = knowledge_engine

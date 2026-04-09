@@ -524,6 +524,7 @@ async def _qwen_brand(
         model=ollama.ner_model,
         prompt=prompt,
         temperature=0.0,
+        format="json",
     )
     mapping = parse_product_brand_mapping_response(response, [product], set(candidates))
     return mapping.get(product, "")

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Migrate knowledge database schema to match models."""
+"""DEPRECATED: Knowledge DB now uses PostgreSQL managed by Alembic.
+Use `alembic upgrade head` instead. For data migration from SQLite,
+use `scripts/migrate_knowledge_to_pg.py`.
+"""
 
 from sqlalchemy import text
 from models.knowledge_database import knowledge_write_engine

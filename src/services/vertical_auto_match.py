@@ -108,6 +108,7 @@ async def _decide(vertical: Vertical, candidates: list[str], sample: dict) -> di
         prompt=prompt,
         system_prompt=system,
         temperature=0.0,
+        format="json",
     )
     return _parse_json_response(response) or {}
 

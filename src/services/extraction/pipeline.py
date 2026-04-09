@@ -210,7 +210,7 @@ class ExtractionPipeline:
                 valid_brands=valid_brands,
                 valid_products=valid_products,
             )
-            extraction_result = self._build_response_result(finalized_items)
+            extraction_result = self._build_response_result(finalized_items, brand_aliases, product_aliases)
             batch.response_results[response_id] = extraction_result
         logger.info(f"[EXTRACTION] Response results finalized")
 
@@ -241,7 +241,15 @@ class ExtractionPipeline:
             if pair.product and pair.product_source == "kb":
                 self.debug_info.step1_kb_matched_products.append(pair.product)
 
-    def _build_response_result(self, item_results: list[ItemExtractionResult]) -> ExtractionResult:
+    def _build_response_result(
+        self,
+        item_results: list[ItemExtractionResult],
+        brand_aliases: dict[str, str] | None = None,
+        product_aliases: dict[str, str] | None = None,
+    ) -> ExtractionResult:
+        reverse_brand = _invert_alias_map(brand_aliases or {})
+        reverse_product = _invert_alias_map(product_aliases or {})
+
         brands: dict[str, list[str]] = defaultdict(list)
         products: dict[str, list[str]] = defaultdict(list)
         relationships: dict[str, str] = {}
@@ -254,10 +262,16 @@ class ExtractionPipeline:
                     raw_brands.append(pair.brand)
                     if pair.brand not in brands[pair.brand]:
                         brands[pair.brand].append(pair.brand)
+                    for sf in reverse_brand.get(pair.brand, []):
+                        if sf not in brands[pair.brand]:
+                            brands[pair.brand].append(sf)
                 if pair.product:
                     raw_products.append(pair.product)
                     if pair.product not in products[pair.product]:
                         products[pair.product].append(pair.product)
+                    for sf in reverse_product.get(pair.product, []):
+                        if sf not in products[pair.product]:
+                            products[pair.product].append(sf)
                 if pair.brand and pair.product:
                     relationships[pair.product] = pair.brand
 
@@ -276,60 +290,9 @@ class ExtractionPipeline:
         )
 
     def _persist_knowledge(self, batch: BatchExtractionResult) -> None:
-        brand_rows: dict[str, KnowledgeBrand] = {}
-
-        for canonical in sorted(batch.validated_brands):
-            brand_rows[canonical] = _upsert_brand(self.knowledge_db, self.knowledge_vertical_id, canonical)
-
-        for alias, canonical in batch.brand_aliases.items():
-            if canonical not in batch.validated_brands:
-                continue
-            brand = brand_rows.setdefault(
-                canonical,
-                _upsert_brand(self.knowledge_db, self.knowledge_vertical_id, canonical),
-            )
-            _upsert_brand_alias(self.knowledge_db, brand.id, alias)
-
-        product_rows: dict[str, KnowledgeProduct] = {}
-        for canonical in sorted(batch.validated_products):
-            mapped_brand_name = batch.product_brand_map.get(canonical)
-            mapped_brand = brand_rows.get(mapped_brand_name) if mapped_brand_name else None
-            product_rows[canonical] = _upsert_product(
-                self.knowledge_db,
-                self.knowledge_vertical_id,
-                canonical,
-                brand_id=mapped_brand.id if mapped_brand else None,
-            )
-
-        for alias, canonical in batch.product_aliases.items():
-            if canonical not in batch.validated_products:
-                continue
-            product = product_rows.setdefault(
-                canonical,
-                _upsert_product(self.knowledge_db, self.knowledge_vertical_id, canonical),
-            )
-            _upsert_product_alias(self.knowledge_db, product.id, alias)
-
-        for product_name, brand_name in batch.product_brand_map.items():
-            if product_name not in batch.validated_products or brand_name not in batch.validated_brands:
-                continue
-            product = product_rows.setdefault(
-                product_name,
-                _upsert_product(self.knowledge_db, self.knowledge_vertical_id, product_name),
-            )
-            brand = brand_rows.setdefault(
-                brand_name,
-                _upsert_brand(self.knowledge_db, self.knowledge_vertical_id, brand_name),
-            )
-            if not product.brand_id:
-                product.brand_id = brand.id
-            _upsert_product_brand_mapping(
-                self.knowledge_db,
-                self.knowledge_vertical_id,
-                product.id,
-                brand.id,
-            )
-
+        persist_extraction_knowledge(
+            self.knowledge_db, self.knowledge_vertical_id, self.run_id, batch,
+        )
         self._write_extraction_logs(batch)
 
     def _write_extraction_logs(self, batch: BatchExtractionResult) -> None:
@@ -363,6 +326,72 @@ class ExtractionPipeline:
                             item_text=item.item.text,
                         )
                     )
+
+
+def persist_extraction_knowledge(
+    db: Session,
+    vertical_id: int,
+    run_id: int | None,
+    batch: BatchExtractionResult,
+) -> None:
+    """Persist validated extraction results to the knowledge DB.
+
+    Extracted from ExtractionPipeline._persist_knowledge so it can be
+    reused by the intermediate batch consolidation task.
+    """
+    brand_rows: dict[str, KnowledgeBrand] = {}
+
+    for canonical in sorted(batch.validated_brands):
+        brand_rows[canonical] = _upsert_brand(db, vertical_id, canonical)
+
+    for alias, canonical in batch.brand_aliases.items():
+        if canonical not in batch.validated_brands:
+            continue
+        brand = brand_rows.setdefault(
+            canonical,
+            _upsert_brand(db, vertical_id, canonical),
+        )
+        _upsert_brand_alias(db, brand.id, alias)
+
+    product_rows: dict[str, KnowledgeProduct] = {}
+    for canonical in sorted(batch.validated_products):
+        mapped_brand_name = batch.product_brand_map.get(canonical)
+        mapped_brand = brand_rows.get(mapped_brand_name) if mapped_brand_name else None
+        product_rows[canonical] = _upsert_product(
+            db,
+            vertical_id,
+            canonical,
+            brand_id=mapped_brand.id if mapped_brand else None,
+        )
+
+    for alias, canonical in batch.product_aliases.items():
+        if canonical not in batch.validated_products:
+            continue
+        product = product_rows.setdefault(
+            canonical,
+            _upsert_product(db, vertical_id, canonical),
+        )
+        _upsert_product_alias(db, product.id, alias)
+
+    for product_name, brand_name in batch.product_brand_map.items():
+        if product_name not in batch.validated_products or brand_name not in batch.validated_brands:
+            continue
+        product = product_rows.setdefault(
+            product_name,
+            _upsert_product(db, vertical_id, product_name),
+        )
+        brand = brand_rows.setdefault(
+            brand_name,
+            _upsert_brand(db, vertical_id, brand_name),
+        )
+        if not product.brand_id:
+            product.brand_id = brand.id
+        _upsert_product_brand_mapping(
+            db,
+            vertical_id,
+            product.id,
+            brand.id,
+        )
 
 
 def _brand_to_seed_dict(brand: object) -> dict:
@@ -606,6 +635,15 @@ def _ordered_unique(values: Iterable[str]) -> list[str]:
         seen.add(value)
         ordered.append(value)
     return ordered
+
+
+def _invert_alias_map(alias_map: dict[str, str]) -> dict[str, list[str]]:
+    """Invert {surface_form: canonical} to {canonical: [surface_forms]}."""
+    inverted: dict[str, list[str]] = defaultdict(list)
+    for surface_form, canonical in alias_map.items():
+        if surface_form != canonical:
+            inverted[canonical].append(surface_form)
+    return dict(inverted)
 
 
 def _enrich_with_latin_tokens(
