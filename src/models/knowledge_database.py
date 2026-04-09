@@ -2,6 +2,7 @@ from typing import Generator
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from config import settings
 from models.sqlite_config import apply_sqlite_pragmas, is_sqlite_url, sqlite_connect_args
@@ -15,6 +16,8 @@ _knowledge_url = settings.resolved_knowledge_database_url
 _knowledge_pool_kwargs: dict = {}
 if not is_sqlite_url(_knowledge_url):
     _knowledge_pool_kwargs = {"pool_size": 5, "max_overflow": 10, "pool_pre_ping": True}
+elif _knowledge_url == "sqlite:///:memory:":
+    _knowledge_pool_kwargs = {"poolclass": StaticPool}
 
 knowledge_engine = create_engine(
     _knowledge_url,

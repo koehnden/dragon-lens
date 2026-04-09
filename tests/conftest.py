@@ -85,6 +85,8 @@ def _models():
 
 
 def _knowledge_models():
+    import models.knowledge_domain  # noqa: F401
+
     from models.knowledge_database import (
         KnowledgeBase,
         get_knowledge_db,

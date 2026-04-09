@@ -48,11 +48,12 @@ def upgrade() -> None:
     # create_all reuses existing native PG enums even when models specify
     # native_enum=False. Convert these columns to VARCHAR so SQLAlchemy
     # sends string values correctly.
-    for table, column in ENUM_COLUMNS:
-        op.execute(
-            f"ALTER TABLE {table} ALTER COLUMN {column} "
-            f"TYPE VARCHAR(255) USING {column}::text"
-        )
+    if op.get_bind().dialect.name != "sqlite":
+        for table, column in ENUM_COLUMNS:
+            op.execute(
+                f"ALTER TABLE {table} ALTER COLUMN {column} "
+                f"TYPE VARCHAR(255) USING {column}::text"
+            )
 
 
 def downgrade() -> None:
