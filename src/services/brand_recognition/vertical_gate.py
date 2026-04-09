@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -8,6 +9,8 @@ from models import Brand, BrandMention, EntityType, LLMAnswer, Product, ProductM
 from models.domain import Sentiment
 from services.brand_recognition.prompts import load_prompt
 from services.ollama import OllamaService
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,9 @@ async def apply_vertical_gate_to_run(db: Session, run_id: int) -> int:
     brands = _gather_discovered_brand_evidence(db, run_id, run.vertical_id)
     if not brands:
         return 0
+    brands = _exclude_validated_brands(brands, run.vertical_id)
+    if not brands:
+        return 0
     rejected = await _classify_and_reject(run, list(brands.values()))
     _apply_rejections(db, run_id, rejected, run.vertical_id)
     return len(rejected)
@@ -40,6 +46,34 @@ def _get_run(db: Session, run_id: int) -> Run:
     if not run:
         raise ValueError(f"Run {run_id} not found")
     return run
+
+
+def _exclude_validated_brands(
+    brands: Dict[int, _BrandEvidence],
+    vertical_id: int,
+) -> Dict[int, _BrandEvidence]:
+    from models.knowledge_domain import KnowledgeBrand
+    from services.knowledge_session import knowledge_session
+
+    with knowledge_session() as kdb:
+        validated_names = {
+            row.display_name.lower()
+            for row in kdb.query(KnowledgeBrand.display_name).filter(
+                KnowledgeBrand.vertical_id == vertical_id,
+                KnowledgeBrand.is_validated.is_(True),
+            ).all()
+        }
+    if not validated_names:
+        return brands
+    filtered = {
+        bid: ev for bid, ev in brands.items()
+        if ev.brand_name.lower() not in validated_names
+        and ev.original_name.lower() not in validated_names
+    }
+    skipped = len(brands) - len(filtered)
+    if skipped:
+        logger.info("[VerticalGate] Skipped %d already-validated brands", skipped)
+    return filtered
 
 
 def _gather_discovered_brand_evidence(
@@ -160,7 +194,7 @@ async def _call_vertical_gate_llm(run: Run, candidates_json: str) -> str:
         vertical_description=run.vertical.description or "",
     )
     prompt = load_prompt("brand_vertical_relevance_user_prompt", candidates_json=candidates_json)
-    return await ollama._call_ollama(model=ollama.ner_model, prompt=prompt, system_prompt=system_prompt, temperature=0.0)
+    return await ollama._call_ollama(model=ollama.ner_model, prompt=prompt, system_prompt=system_prompt, temperature=0.0, format="json")
 
 
 def _ollama_ner_client() -> OllamaService:

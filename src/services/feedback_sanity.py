@@ -40,6 +40,7 @@ async def _check(prompt_id: str, vertical_name: str, **kwargs: object) -> tuple[
         prompt=prompt,
         system_prompt=_system_prompt(),
         temperature=0.0,
+        format="json",
     )
     return _decision(_parse_json_response(response))
 

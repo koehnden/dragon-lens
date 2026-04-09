@@ -210,6 +210,7 @@ async def normalize_brands_batch(
                 prompt=prompt,
                 system_prompt="",
                 temperature=0.0,
+                format="json",
             )
             qwen_result = _parse_normalization_response(
                 response,
@@ -379,6 +380,7 @@ async def validate_products_batch(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 temperature=0.0,
+                format="json",
             )
             qwen_result = _parse_validation_response(response, need_validation)
         except Exception as e:

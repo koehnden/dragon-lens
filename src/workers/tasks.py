@@ -295,7 +295,7 @@ def start_run(
     callback = intermediate_consolidation.s(
         run_id, 0, results_key, remaining,
         force_reextract, skip_entity_consolidation, llm_queue,
-    ).set(queue="default")
+    ).set(queue="ollama_extract")
     chord(group(header))(callback)
     return {"run_id": run_id, "prompt_count": len(prompt_ids)}
 
@@ -674,7 +674,7 @@ def intermediate_consolidation(
         callback = intermediate_consolidation.s(
             run_id, batch_index + 1, results_key, rest,
             force_reextract, skip_entity_consolidation, llm_queue,
-        ).set(queue="default")
+        ).set(queue="ollama_extract")
         chord(group(header))(callback)
     else:
         finalize_run.delay(
@@ -1549,20 +1549,40 @@ def _collect_all_snippets(
 ) -> tuple[list[str], dict[tuple[str, int, int], int]]:
     all_snippets: list[str] = []
     snippet_map: dict[tuple[str, int, int], int] = {}
+    seen: dict[str, int] = {}
+    deferred: list[tuple[tuple[str, int, int], str]] = []
+    cap = settings.snippet_translation_cap_per_entity
+
+    def _add_snippets(
+        entity_type: str,
+        entity_idx: int,
+        snippets: list[str],
+    ) -> None:
+        unique_count = 0
+        for j, snippet in enumerate(snippets):
+            if snippet in seen:
+                snippet_map[(entity_type, entity_idx, j)] = seen[snippet]
+                continue
+            if unique_count >= cap:
+                deferred.append(((entity_type, entity_idx, j), snippet))
+                continue
+            idx = len(all_snippets)
+            seen[snippet] = idx
+            snippet_map[(entity_type, entity_idx, j)] = idx
+            all_snippets.append(snippet)
+            unique_count += 1
+
     for mention_data in brand_mentions:
         if not mention_data.get("mentioned"):
             continue
-        brand_idx = mention_data["brand_index"]
-        for j, snippet in enumerate(mention_data.get("snippets", [])):
-            snippet_map[("brand", brand_idx, j)] = len(all_snippets)
-            all_snippets.append(snippet)
+        _add_snippets("brand", mention_data["brand_index"], mention_data.get("snippets", []))
     for mention_data in product_mentions:
         if not mention_data.get("mentioned") or mention_data.get("rank") is None:
             continue
-        product_idx = mention_data["product_index"]
-        for j, snippet in enumerate(mention_data.get("snippets", [])):
-            snippet_map[("product", product_idx, j)] = len(all_snippets)
-            all_snippets.append(snippet)
+        _add_snippets("product", mention_data["product_index"], mention_data.get("snippets", []))
+    for key, snippet in deferred:
+        if snippet in seen:
+            snippet_map[key] = seen[snippet]
     return all_snippets, snippet_map
 
 

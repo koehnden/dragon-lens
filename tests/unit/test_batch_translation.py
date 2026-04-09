@@ -14,7 +14,7 @@ class FakeOllama:
         self.last_prompts = []
         self.translation_model = "test-model"
 
-    async def _call_ollama(self, model: str, prompt: str, system_prompt: str = None, temperature: float = 0.7):
+    async def _call_ollama(self, model: str, prompt: str, system_prompt: str = None, temperature: float = 0.7, format: str = None):
         self.call_count += 1
         self.last_prompts.append(prompt)
         return self.response

@@ -81,6 +81,7 @@ class QwenBatchExtractor:
             prompt="Return JSON only.",
             system_prompt=system_prompt,
             temperature=0.0,
+            format="json",
         )
 
         parsed = _parse_qwen_response(response)

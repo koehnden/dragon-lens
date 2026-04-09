@@ -283,15 +283,24 @@ start-api: check-deps start-db ## Start FastAPI server
 	if [ -f .api.pid ]; then kill -9 $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid; fi; \
 	exit 1
 
-start-celery: check-deps start-db start-redis ## Start Celery worker
-	@echo "$(YELLOW)Starting Celery worker...$(NC)"
-	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run celery -A workers.celery_app worker --loglevel=info --concurrency="$${CELERY_CONCURRENCY:-8}" -Q "default,remote_llm,local_llm,ollama_extract" > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
+start-celery: check-deps start-db start-redis ## Start Celery workers (main + ollama)
+	@echo "$(YELLOW)Starting Celery main worker...$(NC)"
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run celery -A workers.celery_app worker --loglevel=info --concurrency="$${CELERY_CONCURRENCY_MAIN:-8}" -Q "default,remote_llm,local_llm" -n main@%h > $(CELERY_LOG) 2>&1 & echo $$! > .celery.pid
+	@echo "$(YELLOW)Starting Celery ollama worker...$(NC)"
+	@PYTHONPATH="$(CURDIR)/src:$${PYTHONPATH}" poetry run celery -A workers.celery_app worker --loglevel=info --concurrency="$${CELERY_CONCURRENCY_OLLAMA:-2}" -Q "ollama_extract" -n ollama@%h >> $(CELERY_LOG) 2>&1 & echo $$! > .celery-ollama.pid
 	@sleep 2
 	@if [ -f .celery.pid ] && kill -0 $$(cat .celery.pid) 2>/dev/null; then \
-		echo "$(GREEN)✓ Celery worker started$(NC)"; \
+		echo "$(GREEN)✓ Celery main worker started$(NC)"; \
 		echo "  Logs: tail -f $(CELERY_LOG)"; \
 	else \
-		echo "$(RED)✗ Failed to start Celery worker$(NC)"; \
+		echo "$(RED)✗ Failed to start Celery main worker$(NC)"; \
+		cat $(CELERY_LOG); \
+		exit 1; \
+	fi
+	@if [ -f .celery-ollama.pid ] && kill -0 $$(cat .celery-ollama.pid) 2>/dev/null; then \
+		echo "$(GREEN)✓ Celery ollama worker started (concurrency=$${CELERY_CONCURRENCY_OLLAMA:-2})$(NC)"; \
+	else \
+		echo "$(RED)✗ Failed to start Celery ollama worker$(NC)"; \
 		cat $(CELERY_LOG); \
 		exit 1; \
 	fi
@@ -362,7 +371,12 @@ stop: ## Stop all services
 	@if [ -f .celery.pid ]; then \
 		kill $$(cat .celery.pid) 2>/dev/null || true; \
 		rm .celery.pid; \
-		echo "$(GREEN)✓ Celery stopped$(NC)"; \
+		echo "$(GREEN)✓ Celery main worker stopped$(NC)"; \
+	fi
+	@if [ -f .celery-ollama.pid ]; then \
+		kill $$(cat .celery-ollama.pid) 2>/dev/null || true; \
+		rm .celery-ollama.pid; \
+		echo "$(GREEN)✓ Celery ollama worker stopped$(NC)"; \
 	fi
 	@if [ -f .sentiment.pid ]; then \
 		kill $$(cat .sentiment.pid) 2>/dev/null || true; \
@@ -446,7 +460,7 @@ test-coverage: check-deps ## Run tests with coverage report
 clean: ## Clean up temporary files and logs
 	@echo "$(YELLOW)Cleaning up...$(NC)"
 	@rm -f $(API_LOG) $(CELERY_LOG) $(STREAMLIT_LOG) $(SENTIMENT_LOG)
-	@rm -f .api.pid .celery.pid .streamlit.pid .sentiment.pid
+	@rm -f .api.pid .celery.pid .celery-ollama.pid .streamlit.pid .sentiment.pid
 	@rm -rf .pytest_cache
 	@rm -rf htmlcov
 	@rm -rf .coverage
