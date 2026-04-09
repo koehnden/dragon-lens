@@ -752,23 +752,15 @@ def _gather_item_pairs_for_run(db: Session, run_id: int) -> list[tuple[str | Non
     ]
     pairs: list[tuple[str | None, str | None]] = []
     for aid in answer_ids:
-        brand_names = [
-            row[0]
-            for row in db.query(Brand.display_name)
-            .join(BrandMention, BrandMention.brand_id == Brand.id)
-            .filter(BrandMention.llm_answer_id == aid, BrandMention.mentioned == True)
-            .all()
-        ]
-        product_names = [
-            row[0]
-            for row in db.query(Product.display_name)
+        rows = (
+            db.query(Brand.display_name, Product.display_name)
+            .join(Product, Product.brand_id == Brand.id)
             .join(ProductMention, ProductMention.product_id == Product.id)
             .filter(ProductMention.llm_answer_id == aid, ProductMention.mentioned == True)
             .all()
-        ]
-        for b in brand_names:
-            for p in product_names:
-                pairs.append((b, p))
+        )
+        for brand_name, product_name in rows:
+            pairs.append((brand_name, product_name))
     return pairs
 
 
