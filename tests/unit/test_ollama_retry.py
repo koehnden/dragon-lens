@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from services.ollama import OllamaService
+from services.ollama import OllamaOverloadedError, OllamaService
 
 
 @pytest.fixture(autouse=True)

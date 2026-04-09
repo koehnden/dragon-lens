@@ -283,7 +283,7 @@ async def _translate_with_guardrails(
     return cleaned or fallback
 
 
-def _is_valid_english_entity_name(name: object) -> bool:
+def _is_valid_english_entity_name(name: str | None) -> bool:
     if not isinstance(name, str) or not name:
         return False
     cleaned = name.strip()

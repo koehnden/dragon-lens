@@ -13,7 +13,17 @@ from services.sentiment_analysis import get_sentiment_service
 
 logger = logging.getLogger(__name__)
 
-_RETRYABLE_EXCEPTIONS = (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError)
+
+class OllamaOverloadedError(httpx.HTTPStatusError):
+    """Raised when Ollama returns 503 (overloaded/busy)."""
+
+
+_RETRYABLE_EXCEPTIONS = (
+    httpx.ReadTimeout,
+    httpx.ConnectTimeout,
+    httpx.ConnectError,
+    OllamaOverloadedError,
+)
 
 
 class OllamaService:
@@ -39,6 +49,12 @@ class OllamaService:
             )
             cls._shared_client = httpx.AsyncClient(timeout=timeout)
         return cls._shared_client
+
+    @classmethod
+    async def close_client(cls) -> None:
+        if cls._shared_client is not None and not cls._shared_client.is_closed:
+            await cls._shared_client.aclose()
+            cls._shared_client = None
 
     def _get_sentiment_service(self):
         if self._sentiment_service is None:
@@ -79,7 +95,11 @@ class OllamaService:
             try:
                 response = await client.post(url, json=payload)
                 if response.status_code == 503:
-                    raise httpx.ReadTimeout("Ollama overloaded (503)")
+                    raise OllamaOverloadedError(
+                        "Ollama overloaded (503)",
+                        request=response.request,
+                        response=response,
+                    )
                 response.raise_for_status()
                 result = response.json()
                 return result.get("message", {}).get("content", "")

@@ -60,7 +60,7 @@ def _exclude_validated_brands(
             row.display_name.lower()
             for row in kdb.query(KnowledgeBrand.display_name).filter(
                 KnowledgeBrand.vertical_id == vertical_id,
-                KnowledgeBrand.is_validated == True,
+                KnowledgeBrand.is_validated.is_(True),
             ).all()
         }
     if not validated_names:
