@@ -28,6 +28,7 @@ _RETRYABLE_EXCEPTIONS = (
 
 class OllamaService:
     _shared_client: Optional[httpx.AsyncClient] = None
+    _client_loop: Optional[asyncio.AbstractEventLoop] = None
 
     def __init__(self) -> None:
         self.base_url = settings.ollama_base_url
@@ -40,7 +41,16 @@ class OllamaService:
 
     @classmethod
     def _get_client(cls) -> httpx.AsyncClient:
-        if cls._shared_client is None or cls._shared_client.is_closed:
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        loop_changed = current_loop is not None and current_loop is not cls._client_loop
+        if cls._shared_client is not None and (cls._shared_client.is_closed or loop_changed):
+            cls._shared_client = None
+
+        if cls._shared_client is None:
             timeout = httpx.Timeout(
                 connect=10.0,
                 read=settings.ollama_read_timeout,
@@ -48,6 +58,7 @@ class OllamaService:
                 pool=10.0,
             )
             cls._shared_client = httpx.AsyncClient(timeout=timeout)
+            cls._client_loop = current_loop
         return cls._shared_client
 
     @classmethod
@@ -55,6 +66,7 @@ class OllamaService:
         if cls._shared_client is not None and not cls._shared_client.is_closed:
             await cls._shared_client.aclose()
             cls._shared_client = None
+            cls._client_loop = None
 
     def _get_sentiment_service(self):
         if self._sentiment_service is None:

@@ -67,6 +67,18 @@ def test_products_also_deduped(monkeypatch):
     assert snippet_map[("brand", 0, 0)] == snippet_map[("product", 0, 0)]
 
 
+def test_capped_snippet_backfilled_when_seen_later(monkeypatch):
+    monkeypatch.setattr("workers.tasks.settings.snippet_translation_cap_per_entity", 1)
+    brand_mentions = [
+        {"mentioned": True, "brand_index": 0, "snippets": ["s1", "s2"]},
+        {"mentioned": True, "brand_index": 1, "snippets": ["s2", "s3"]},
+    ]
+    all_snippets, snippet_map = _collect_all_snippets(brand_mentions, [])
+
+    assert ("brand", 0, 1) in snippet_map
+    assert snippet_map[("brand", 0, 1)] == snippet_map[("brand", 1, 0)]
+
+
 def test_get_translated_snippets_uses_map():
     snippet_map = {("brand", 0, 0): 0, ("brand", 0, 1): 1}
     translated = ["english A", "english B"]

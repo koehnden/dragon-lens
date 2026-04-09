@@ -295,7 +295,7 @@ def start_run(
     callback = intermediate_consolidation.s(
         run_id, 0, results_key, remaining,
         force_reextract, skip_entity_consolidation, llm_queue,
-    ).set(queue="default")
+    ).set(queue="ollama_extract")
     chord(group(header))(callback)
     return {"run_id": run_id, "prompt_count": len(prompt_ids)}
 
@@ -674,7 +674,7 @@ def intermediate_consolidation(
         callback = intermediate_consolidation.s(
             run_id, batch_index + 1, results_key, rest,
             force_reextract, skip_entity_consolidation, llm_queue,
-        ).set(queue="default")
+        ).set(queue="ollama_extract")
         chord(group(header))(callback)
     else:
         finalize_run.delay(
@@ -1550,6 +1550,7 @@ def _collect_all_snippets(
     all_snippets: list[str] = []
     snippet_map: dict[tuple[str, int, int], int] = {}
     seen: dict[str, int] = {}
+    deferred: list[tuple[tuple[str, int, int], str]] = []
     cap = settings.snippet_translation_cap_per_entity
 
     def _add_snippets(
@@ -1563,6 +1564,7 @@ def _collect_all_snippets(
                 snippet_map[(entity_type, entity_idx, j)] = seen[snippet]
                 continue
             if unique_count >= cap:
+                deferred.append(((entity_type, entity_idx, j), snippet))
                 continue
             idx = len(all_snippets)
             seen[snippet] = idx
@@ -1578,6 +1580,9 @@ def _collect_all_snippets(
         if not mention_data.get("mentioned") or mention_data.get("rank") is None:
             continue
         _add_snippets("product", mention_data["product_index"], mention_data.get("snippets", []))
+    for key, snippet in deferred:
+        if snippet in seen:
+            snippet_map[key] = seen[snippet]
     return all_snippets, snippet_map
 
 

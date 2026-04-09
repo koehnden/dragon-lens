@@ -1,17 +1,30 @@
 """Unit tests for OllamaService retry logic, persistent client, and format param."""
 
+import asyncio
+
 import httpx
 import pytest
 
 from services.ollama import OllamaOverloadedError, OllamaService
 
 
+def _inject_client(monkeypatch: pytest.MonkeyPatch, client: httpx.AsyncClient) -> None:
+    monkeypatch.setattr(OllamaService, "_shared_client", client)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    monkeypatch.setattr(OllamaService, "_client_loop", loop)
+
+
 @pytest.fixture(autouse=True)
 def _reset_shared_client():
     OllamaService._shared_client = None
+    OllamaService._client_loop = None
     yield
     if OllamaService._shared_client and not OllamaService._shared_client.is_closed:
         OllamaService._shared_client = None
+    OllamaService._client_loop = None
 
 
 @pytest.fixture()
@@ -43,7 +56,7 @@ def _overload_response() -> httpx.Response:
 @pytest.mark.asyncio
 async def test_call_succeeds_on_first_try(ollama, monkeypatch):
     transport = _FakeTransport([_ok_response("hello")])
-    monkeypatch.setattr(OllamaService, "_shared_client", httpx.AsyncClient(transport=transport))
+    _inject_client(monkeypatch, httpx.AsyncClient(transport=transport))
 
     result = await ollama._call_ollama(model="test", prompt="hi")
     assert result == "hello"
@@ -57,7 +70,7 @@ async def test_retry_on_read_timeout(ollama, monkeypatch):
         httpx.ReadTimeout("timeout"),
         _ok_response("recovered"),
     ])
-    monkeypatch.setattr(OllamaService, "_shared_client", httpx.AsyncClient(transport=transport))
+    _inject_client(monkeypatch, httpx.AsyncClient(transport=transport))
     monkeypatch.setattr("services.ollama.settings.ollama_retry_base_delay", 0.01)
 
     result = await ollama._call_ollama(model="test", prompt="hi")
@@ -71,7 +84,7 @@ async def test_retry_on_connect_error(ollama, monkeypatch):
         httpx.ConnectError("refused"),
         _ok_response("back"),
     ])
-    monkeypatch.setattr(OllamaService, "_shared_client", httpx.AsyncClient(transport=transport))
+    _inject_client(monkeypatch, httpx.AsyncClient(transport=transport))
     monkeypatch.setattr("services.ollama.settings.ollama_retry_base_delay", 0.01)
 
     result = await ollama._call_ollama(model="test", prompt="hi")
@@ -86,7 +99,7 @@ async def test_exhausted_retries_raises(ollama, monkeypatch):
         httpx.ReadTimeout("t2"),
         httpx.ReadTimeout("t3"),
     ])
-    monkeypatch.setattr(OllamaService, "_shared_client", httpx.AsyncClient(transport=transport))
+    _inject_client(monkeypatch, httpx.AsyncClient(transport=transport))
     monkeypatch.setattr("services.ollama.settings.ollama_retry_base_delay", 0.01)
 
     with pytest.raises(httpx.ReadTimeout):
@@ -100,7 +113,7 @@ async def test_503_triggers_retry(ollama, monkeypatch):
         _overload_response(),
         _ok_response("ok"),
     ])
-    monkeypatch.setattr(OllamaService, "_shared_client", httpx.AsyncClient(transport=transport))
+    _inject_client(monkeypatch, httpx.AsyncClient(transport=transport))
     monkeypatch.setattr("services.ollama.settings.ollama_retry_base_delay", 0.01)
 
     result = await ollama._call_ollama(model="test", prompt="hi")
@@ -113,7 +126,7 @@ async def test_non_retryable_error_raises_immediately(ollama, monkeypatch):
     transport = _FakeTransport([
         httpx.Response(400, text="bad request"),
     ])
-    monkeypatch.setattr(OllamaService, "_shared_client", httpx.AsyncClient(transport=transport))
+    _inject_client(monkeypatch, httpx.AsyncClient(transport=transport))
 
     with pytest.raises(httpx.HTTPStatusError):
         await ollama._call_ollama(model="test", prompt="hi")
@@ -133,7 +146,7 @@ async def test_format_json_in_payload(ollama, monkeypatch):
             captured_payloads.append(body)
             return _ok_response()
 
-    monkeypatch.setattr(OllamaService, "_shared_client", httpx.AsyncClient(transport=_CapturingTransport()))
+    _inject_client(monkeypatch, httpx.AsyncClient(transport=_CapturingTransport()))
 
     await ollama._call_ollama(model="test", prompt="hi", format="json")
     assert captured_payloads[0]["format"] == "json"
@@ -156,7 +169,7 @@ async def test_keep_alive_in_payload(ollama, monkeypatch):
             return _ok_response()
 
     transport = _CapturingTransport()
-    monkeypatch.setattr(OllamaService, "_shared_client", httpx.AsyncClient(transport=transport))
+    _inject_client(monkeypatch, httpx.AsyncClient(transport=transport))
 
     await ollama._call_ollama(model="test", prompt="hi")
     assert "keep_alive" in transport.last_payload
@@ -166,3 +179,15 @@ def test_shared_client_reused():
     c1 = OllamaService._get_client()
     c2 = OllamaService._get_client()
     assert c1 is c2
+
+
+@pytest.mark.asyncio
+async def test_client_recreated_on_loop_change():
+    loop1 = asyncio.get_running_loop()
+    c1 = OllamaService._get_client()
+    assert OllamaService._client_loop is loop1
+
+    OllamaService._client_loop = asyncio.new_event_loop()
+    c2 = OllamaService._get_client()
+    assert c2 is not c1
+    assert OllamaService._client_loop is loop1
